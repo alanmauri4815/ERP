@@ -755,6 +755,32 @@ const views = {
         <p style="text-align: center; margin-top: 2rem; opacity: 0.5; font-size: 0.8rem">Software de Control Industrial v2.0</p>
       </div>
     </div>
+  `,
+
+  profile: () => `
+    <header class="animate-fade">
+      <h1>Mi Perfil</h1>
+    </header>
+    <div class="card animate-fade" style="max-width: 500px">
+      <h2>Cambiar Contraseña</h2>
+      <form id="change-pass-form">
+        <div class="form-group">
+          <label>Contraseña Actual</label>
+          <input type="password" id="cp-old" required placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label>Nueva Contraseña</label>
+          <input type="password" id="cp-new" required placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label>Confirmar Nueva Contraseña</label>
+          <input type="password" id="cp-confirm" required placeholder="••••••••">
+        </div>
+        <div class="form-actions">
+          <button type="submit" style="width: 100%">Actualizar Contraseña</button>
+        </div>
+      </form>
+    </div>
   `
 };
 
@@ -1327,9 +1353,9 @@ function renderView(viewName) {
 
     // Definimos qué puede ver cada uno
     const permissions = {
-      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters'],
-      user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history'],
-      viewer: ['dashboard', 'reports', 'history'] // El "Externo" que solo revisa informes
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'profile'],
+      user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history', 'profile'],
+      viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
 
     const allowedViews = permissions[userRole] || permissions['user'];
@@ -1639,6 +1665,31 @@ function renderView(viewName) {
       document.getElementById('prod-modal-title').textContent = 'Nueva Orden de Producción';
       document.getElementById('btn-prod-text').textContent = 'Iniciar Producción';
       fetchData();
+    });
+  }
+
+  if (viewName === 'profile') {
+    document.getElementById('change-pass-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const oldPassword = document.getElementById('cp-old').value;
+      const newPassword = document.getElementById('cp-new').value;
+      const confirm = document.getElementById('cp-confirm').value;
+
+      if (newPassword !== confirm) {
+        return alert('Las contraseñas nuevas no coinciden');
+      }
+
+      const res = await apiFetch('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ oldPassword, newPassword })
+      });
+
+      if (res && res.success) {
+        alert(res.message);
+        e.target.reset();
+      } else if (res) {
+        alert('Error: ' + res.error);
+      }
     });
   }
 

@@ -93,6 +93,27 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+app.post('/api/auth/change-password', authenticateToken, async (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    try {
+        const { data: user, error } = await supabase.from('users').select('*').eq('id', userId).single();
+        if (error || !user) return res.status(404).json({ error: 'Usuario no encontrado.' });
+
+        const validPassword = await bcrypt.compare(oldPassword, user.password);
+        if (!validPassword) return res.status(401).json({ error: 'La contraseña actual es incorrecta.' });
+
+        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+        const { error: updateError } = await supabase.from('users').update({ password: hashedNewPassword }).eq('id', userId);
+
+        if (updateError) throw updateError;
+        res.json({ success: true, message: 'Contraseña actualizada exitosamente.' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // GET Routes
 app.get('/api/products', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
