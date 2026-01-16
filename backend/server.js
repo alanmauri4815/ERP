@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -9,8 +11,53 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 app.use(cors());
 app.use(express.json());
 
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
+
+// Auth Middleware
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) return res.status(401).json({ error: 'Acceso denegado. Token no proporcionado.' });
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) return res.status(403).json({ error: 'Token inválido o expirado.' });
+        req.user = user;
+        next();
+    });
+};
+
+// Auth Routes
+app.post('/api/auth/register', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const { error } = await supabase.from('users').insert({ username, password: hashedPassword });
+        if (error) throw error;
+        res.json({ success: true, message: 'Usuario registrado exitosamente.' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const { data: user, error } = await supabase.from('users').select('*').eq('username', username).single();
+        if (error || !user) return res.status(401).json({ error: 'Usuario no encontrado.' });
+
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) return res.status(401).json({ error: 'Contraseña incorrecta.' });
+
+        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
+        res.json({ success: true, token, user: { username: user.username, role: user.role } });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // GET Routes
-app.get('/api/products', async (req, res) => {
+app.get('/api/products', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from('products')
         .select('*')
@@ -21,7 +68,7 @@ app.get('/api/products', async (req, res) => {
     res.json(data);
 });
 
-app.get('/api/raw-materials', async (req, res) => {
+app.get('/api/raw-materials', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from('raw_materials')
         .select('*')
@@ -32,7 +79,7 @@ app.get('/api/raw-materials', async (req, res) => {
     res.json(data);
 });
 
-app.get('/api/providers', async (req, res) => {
+app.get('/api/providers', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from('providers')
         .select('*')
@@ -42,7 +89,7 @@ app.get('/api/providers', async (req, res) => {
     res.json(data);
 });
 
-app.get('/api/clients', async (req, res) => {
+app.get('/api/clients', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from('clients')
         .select('*')
@@ -52,7 +99,7 @@ app.get('/api/clients', async (req, res) => {
     res.json(data);
 });
 
-app.get('/api/recipes/:productCode', async (req, res) => {
+app.get('/api/recipes/:productCode', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from('recipes')
         .select(`
@@ -78,7 +125,7 @@ app.get('/api/recipes/:productCode', async (req, res) => {
     res.json(flattened);
 });
 
-app.put('/api/recipes/:productCode', async (req, res) => {
+app.put('/api/recipes/:productCode', authenticateToken, async (req, res) => {
     const { items } = req.body;
     const productCode = req.params.productCode;
 
@@ -119,7 +166,7 @@ app.put('/api/recipes/:productCode', async (req, res) => {
     }
 });
 
-app.get('/api/history/purchases', async (req, res) => {
+app.get('/api/history/purchases', authenticateToken, async (req, res) => {
     const { data: history, error } = await supabase
         .from('purchases')
         .select('*, providers(name)')
@@ -149,7 +196,7 @@ app.get('/api/history/purchases', async (req, res) => {
     res.json(fullHistory);
 });
 
-app.get('/api/history/sales', async (req, res) => {
+app.get('/api/history/sales', authenticateToken, async (req, res) => {
     const { data: history, error } = await supabase
         .from('sales')
         .select('*, clients(name)')
@@ -179,7 +226,7 @@ app.get('/api/history/sales', async (req, res) => {
     res.json(fullHistory);
 });
 
-app.get('/api/history/production', async (req, res) => {
+app.get('/api/history/production', authenticateToken, async (req, res) => {
     const { data: history, error } = await supabase
         .from('production')
         .select('*')
@@ -208,7 +255,7 @@ app.get('/api/history/production', async (req, res) => {
     res.json(fullHistory);
 });
 
-app.post('/api/purchases', async (req, res) => {
+app.post('/api/purchases', authenticateToken, async (req, res) => {
     const { providerId, items, net, iva, total } = req.body;
     const date = new Date().toISOString().split('T')[0];
 
@@ -246,7 +293,7 @@ app.post('/api/purchases', async (req, res) => {
     }
 });
 
-app.post('/api/sales', async (req, res) => {
+app.post('/api/sales', authenticateToken, async (req, res) => {
     const { clientId, items, net, iva, total } = req.body;
     const date = new Date().toISOString().split('T')[0];
 
@@ -282,7 +329,7 @@ app.post('/api/sales', async (req, res) => {
     }
 });
 
-app.post('/api/production', async (req, res) => {
+app.post('/api/production', authenticateToken, async (req, res) => {
     const { items, date } = req.body;
     const productionDate = date || new Date().toISOString();
 
@@ -327,23 +374,79 @@ app.post('/api/production', async (req, res) => {
 
 // Master routes (POST, PUT, DELETE) follow similar patterns...
 // Adding some key ones
-app.post('/api/products', async (req, res) => {
+app.post('/api/products', authenticateToken, async (req, res) => {
     const { code, name, type, price_net, price_sale, cost_unit, color, size, parent_code } = req.body;
     const { error } = await supabase.from('products').insert({ code, name, type, price_net, price_sale, cost_unit, color, size, parent_code });
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Producto creado.' });
 });
 
-app.put('/api/products/:code', async (req, res) => {
+app.put('/api/products/:code', authenticateToken, async (req, res) => {
     const { name, type, price_net, price_sale, cost_unit, color, size, parent_code } = req.body;
     const { error } = await supabase.from('products').update({ name, type, price_net, price_sale, cost_unit, color, size, parent_code }).eq('code', req.params.code);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Producto actualizado.' });
 });
 
-app.get('/api/stats', async (req, res) => {
+app.get('/api/reports/monthly', authenticateToken, async (req, res) => {
     try {
-        const { data: sales } = await supabase.from('sales').select('total');
+        // Fetch all sales with items and their products' cost_unit
+        const { data: sales, error } = await supabase
+            .from('sales')
+            .select(`
+                id,
+                date,
+                total,
+                net,
+                sale_items (
+                    quantity,
+                    subtotal,
+                    product_code,
+                    products (
+                        cost_unit
+                    )
+                )
+            `)
+            .order('date', { ascending: true });
+
+        if (error) throw error;
+
+        const monthlyData = {};
+
+        sales.forEach(sale => {
+            const date = new Date(sale.date);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+
+            if (!monthlyData[monthKey]) {
+                monthlyData[monthKey] = {
+                    month: monthKey,
+                    revenue: 0,
+                    cost: 0,
+                    profit: 0,
+                    salesCount: 0
+                };
+            }
+
+            monthlyData[monthKey].revenue += sale.total || 0;
+            monthlyData[monthKey].salesCount += 1;
+
+            sale.sale_items.forEach(item => {
+                const itemCost = (item.products?.cost_unit || 0) * (item.quantity || 0);
+                monthlyData[monthKey].cost += itemCost;
+            });
+
+            monthlyData[monthKey].profit = monthlyData[monthKey].revenue - monthlyData[monthKey].cost;
+        });
+
+        res.json(Object.values(monthlyData));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/stats', authenticateToken, async (req, res) => {
+    try {
+        const { data: sales } = await supabase.from('sales').select('total, date');
         const revenue = sales.reduce((sum, s) => sum + (s.total || 0), 0);
 
         const { count: salesCount } = await supabase.from('sales').select('*', { count: 'exact', head: true });
@@ -353,12 +456,27 @@ app.get('/api/stats', async (req, res) => {
 
         const { count: lowStock } = await supabase.from('raw_materials').select('*', { count: 'exact', head: true }).lt('stock', 2);
 
+        // Weekly sales logic
+        const last7Days = [...Array(7)].map((_, i) => {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            return d.toISOString().split('T')[0];
+        }).reverse();
+
+        const weeklySales = last7Days.map(date => {
+            const daySales = sales.filter(s => s.date === date);
+            return {
+                date,
+                total: daySales.reduce((sum, s) => sum + (s.total || 0), 0)
+            };
+        });
+
         res.json({
             totalRevenue: revenue,
             totalSales: salesCount,
             totalProduction: productionCount,
             lowStockItems: lowStock,
-            weeklySales: [] // Simplified for now
+            weeklySales: weeklySales
         });
     } catch (e) {
         res.status(500).json({ error: e.message });

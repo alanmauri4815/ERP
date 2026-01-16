@@ -5,6 +5,31 @@ const API_BASE = 'https://erp-backend-0fis.onrender.com/api';
 const mainContent = document.getElementById('main-content');
 const navItems = document.querySelectorAll('.nav-item');
 
+let token = localStorage.getItem('erp_token');
+let currentUser = JSON.parse(localStorage.getItem('erp_user') || 'null');
+
+async function apiFetch(endpoint, options = {}) {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...options.headers
+  };
+
+  const response = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+
+  if (response.status === 401 || response.status === 403) {
+    if (token) {
+      token = null;
+      localStorage.removeItem('erp_token');
+      localStorage.removeItem('erp_user');
+      renderView('login');
+    }
+    return null;
+  }
+
+  return response.json();
+}
+
 let state = {
   products: [],
   rawMaterials: [],
@@ -26,17 +51,21 @@ let state = {
 };
 
 async function fetchData() {
+  if (!token) return renderView('login');
+
   try {
     const [products, rawMaterials, providers, clients, stats, hPurchases, hSales, hProduction] = await Promise.all([
-      fetch(`${API_BASE}/products`).then(r => r.json()),
-      fetch(`${API_BASE}/raw-materials`).then(r => r.json()),
-      fetch(`${API_BASE}/providers`).then(r => r.json()),
-      fetch(`${API_BASE}/clients`).then(r => r.json()),
-      fetch(`${API_BASE}/stats`).then(r => r.json()),
-      fetch(`${API_BASE}/history/purchases`).then(r => r.json()),
-      fetch(`${API_BASE}/history/sales`).then(r => r.json()),
-      fetch(`${API_BASE}/history/production`).then(r => r.json()),
+      apiFetch('/products'),
+      apiFetch('/raw-materials'),
+      apiFetch('/providers'),
+      apiFetch('/clients'),
+      apiFetch('/stats'),
+      apiFetch('/history/purchases'),
+      apiFetch('/history/sales'),
+      apiFetch('/history/production'),
     ]);
+
+    if (!products) return; // session expired
 
     state.products = products;
     state.rawMaterials = rawMaterials;
@@ -58,7 +87,7 @@ async function fetchData() {
 
 async function getRecipe(pid) {
   if (state.recipes[pid]) return state.recipes[pid];
-  const recipe = await fetch(`${API_BASE}/recipes/${pid}`).then(r => r.json());
+  const recipe = await apiFetch(`/recipes/${pid}`);
   state.recipes[pid] = recipe;
   return recipe;
 }
@@ -525,6 +554,45 @@ const views = {
     </div>
   `,
 
+  reports: () => `
+    <header class="animate-fade">
+      <h1>Reportes Avanzados</h1>
+      <div class="date-display">Análisis de Ganancias y Rendimiento</div>
+    </header>
+
+    <div class="grid-2 animate-fade">
+      <div class="card">
+        <h2>Ingresos vs Costos Mensuales</h2>
+        <canvas id="monthlyProfitChart" style="max-height: 400px;"></canvas>
+      </div>
+      <div class="card">
+        <h2>Evolución de Ganancia Neta</h2>
+        <canvas id="netProfitChart" style="max-height: 400px;"></canvas>
+      </div>
+    </div>
+
+    <div class="card animate-fade" style="margin-top: 2rem">
+      <h2>Resumen Mensual</h2>
+      <div class="table-container">
+        <table id="monthly-report-table">
+          <thead>
+            <tr>
+              <th>Mes</th>
+              <th>Operaciones</th>
+              <th>Ingresos</th>
+              <th>Costos Estimados</th>
+              <th>Ganancia Neta</th>
+              <th>Margen %</th>
+            </tr>
+          </thead>
+          <tbody id="monthly-report-body">
+            <tr><td colspan="6" style="text-align: center">Cargando datos...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `,
+
   masters: () => `
     <header class="animate-fade"><h1>Gestión de Datos</h1></header>
     <div class="grid-2 animate-fade">
@@ -624,6 +692,27 @@ const views = {
             <button type="submit">Guardar</button>
           </div>
         </form>
+      </div>
+    </div>
+  `,
+
+  login: () => `
+    <div style="height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); margin: -2rem">
+      <div class="card animate-fade" style="width: 100%; max-width: 400px; padding: 2rem; border-radius: 1rem">
+        <h1 style="text-align: center; margin-bottom: 2rem; font-size: 1.8rem; background: linear-gradient(45deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">ERP Universal</h1>
+        <form id="login-form">
+          <div class="form-group">
+            <label>Usuario</label>
+            <input type="text" id="login-user" required placeholder="Tu nombre de usuario" style="padding: 0.8rem">
+          </div>
+          <div class="form-group">
+            <label>Contraseña</label>
+            <input type="password" id="login-pass" required placeholder="••••••••" style="padding: 0.8rem">
+          </div>
+          <button type="submit" style="width: 100%; padding: 1rem; margin-top: 1rem; font-size: 1rem; background: var(--primary)">Ingresar</button>
+          <p id="login-error" style="color: var(--danger); text-align: center; margin-top: 1rem; font-size: 0.9rem; display: none"></p>
+        </form>
+        <p style="text-align: center; margin-top: 2rem; opacity: 0.5; font-size: 0.8rem">Software de Control Industrial v2.0</p>
       </div>
     </div>
   `
@@ -1183,12 +1272,85 @@ async function postData(endpoint, body) {
 }
 
 function renderView(viewName) {
+  const appContainer = document.getElementById('app');
+  if (viewName === 'login') {
+    appContainer.style.display = 'block';
+    document.querySelector('.sidebar').style.display = 'none';
+    document.querySelector('.main-content').style.marginLeft = '0';
+  } else {
+    appContainer.style.display = 'flex';
+    document.querySelector('.sidebar').style.display = 'flex';
+    document.querySelector('.main-content').style.marginLeft = 'var(--sidebar-width)';
+
+    // --- SISTEMA DE PERMISOS POR ROL ---
+    const userRole = currentUser?.role || 'user';
+
+    // Definimos qué puede ver cada uno
+    const permissions = {
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters'],
+      user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history'],
+      viewer: ['dashboard', 'reports', 'history'] // El "Externo" que solo revisa informes
+    };
+
+    const allowedViews = permissions[userRole] || permissions['user'];
+
+    navItems.forEach(item => {
+      const view = item.dataset.view;
+      if (allowedViews.includes(view)) {
+        item.style.display = 'flex';
+      } else {
+        item.style.display = 'none';
+      }
+    });
+
+    // Si el usuario intenta entrar a una vista no permitida (por link manual o error)
+    if (!allowedViews.includes(viewName) && viewName !== 'login') {
+      return renderView('dashboard');
+    }
+  }
+
   if (!views[viewName]) return;
   mainContent.innerHTML = views[viewName]();
   navItems.forEach(item => item.classList.toggle('active', item.dataset.view === viewName));
 
+  if (viewName === 'login') {
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('login-user').value;
+      const password = document.getElementById('login-pass').value;
+      const errorEl = document.getElementById('login-error');
+
+      try {
+        const res = await fetch(`${API_BASE}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        }).then(r => r.json());
+
+        if (res.token) {
+          token = res.token;
+          currentUser = res.user;
+          localStorage.setItem('erp_token', token);
+          localStorage.setItem('erp_user', JSON.stringify(currentUser));
+          fetchData();
+        } else {
+          errorEl.textContent = res.error || 'Error al ingresar';
+          errorEl.style.display = 'block';
+        }
+      } catch (err) {
+        errorEl.textContent = 'Error de conexión';
+        errorEl.style.display = 'block';
+      }
+    });
+    return;
+  }
+
   if (viewName === 'dashboard') {
     initSalesChart();
+  }
+
+  if (viewName === 'reports') {
+    initReports();
   }
 
   if (viewName === 'history') {
@@ -1441,6 +1603,94 @@ function renderView(viewName) {
   }
 }
 
+async function initReports() {
+  try {
+    const data = await apiFetch('/reports/monthly');
+    if (!data) return;
+
+    // Monthly Profit Chart (Revenue vs Cost)
+    new Chart(document.getElementById('monthlyProfitChart'), {
+      type: 'bar',
+      data: {
+        labels: data.map(d => d.month),
+        datasets: [
+          {
+            label: 'Ingresos',
+            data: data.map(d => d.revenue),
+            backgroundColor: 'rgba(59, 130, 246, 0.6)',
+            borderColor: '#3b82f6',
+            borderWidth: 1
+          },
+          {
+            label: 'Costos',
+            data: data.map(d => d.cost),
+            backgroundColor: 'rgba(239, 68, 68, 0.6)',
+            borderColor: '#ef4444',
+            borderWidth: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'bottom' }
+        },
+        scales: {
+          y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+
+    // Net Profit Evolution Chart
+    new Chart(document.getElementById('netProfitChart'), {
+      type: 'line',
+      data: {
+        labels: data.map(d => d.month),
+        datasets: [{
+          label: 'Ganancia Neta',
+          data: data.map(d => d.profit),
+          borderColor: '#10b981',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'bottom' }
+        },
+        scales: {
+          y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+
+    // Populate Table
+    const tbody = document.getElementById('monthly-report-body');
+    tbody.innerHTML = data.slice().reverse().map(d => {
+      const margin = d.revenue > 0 ? (d.profit / d.revenue) * 100 : 0;
+      return `
+        <tr>
+          <td><strong>${d.month}</strong></td>
+          <td>${d.salesCount}</td>
+          <td>$${Math.round(d.revenue).toLocaleString()}</td>
+          <td>$${Math.round(d.cost).toLocaleString()}</td>
+          <td style="color: ${d.profit >= 0 ? '#10b981' : '#ef4444'}; font-weight: 600">$${Math.round(d.profit).toLocaleString()}</td>
+          <td>${margin.toFixed(1)}%</td>
+        </tr>
+      `;
+    }).join('');
+
+  } catch (error) {
+    console.error('Error loading reports:', error);
+    const tbody = document.getElementById('monthly-report-body');
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--danger)">Error al cargar datos</td></tr>`;
+  }
+}
+
 function initSalesChart() {
   const ctx = document.getElementById('salesChart');
   if (!ctx) return;
@@ -1564,5 +1814,12 @@ async function putData(endpoint, body) {
 }
 
 navItems.forEach(item => item.addEventListener('click', () => renderView(item.dataset.view)));
+
+document.getElementById('btn-logout').addEventListener('click', () => {
+  token = null;
+  localStorage.removeItem('erp_token');
+  localStorage.removeItem('erp_user');
+  renderView('login');
+});
 
 fetchData();
