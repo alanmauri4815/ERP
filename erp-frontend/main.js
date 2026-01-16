@@ -1,7 +1,7 @@
 import './style.css'
 import Chart from 'chart.js/auto'
 
-const API_BASE = 'http://localhost:3001/api';
+const API_BASE = 'https://erp-backend-0fis.onrender.com/api';
 const mainContent = document.getElementById('main-content');
 const navItems = document.querySelectorAll('.nav-item');
 
