@@ -671,6 +671,46 @@ const views = {
           </table>
         </div>
       </div>
+
+      <div class="card" id="alerts-config-section">
+        <h2>📱 Alertas al Celular (Telegram)</h2>
+        <div style="margin-top: 1rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border-radius: 0.5rem; border: 1px solid var(--primary)">
+            <p style="font-size: 0.85rem; margin-bottom: 1rem; color: var(--text-muted)">
+                Vincula tu ERP con Telegram para recibir avisos de stock bajo al instante.
+            </p>
+            <div class="form-group">
+                <label>Telegram Bot Token</label>
+                <input type="password" id="tg-token" placeholder="Ej: 123456:ABC-DEF...">
+            </div>
+            <div class="form-group">
+                <label>Telegram Chat ID</label>
+                <input type="text" id="tg-chatid" placeholder="Ej: 987654321">
+            </div>
+            <div style="display: flex; gap: 0.5rem; margin-top: 1rem">
+                <button onclick="window.saveAlertSettings()" style="flex:1">Guardar Config</button>
+                <button onclick="window.testTelegram()" style="background:var(--secondary)">Probar Envío</button>
+            </div>
+            <p style="font-size: 0.75rem; margin-top: 0.5rem; opacity: 0.6">
+                Consigue estos datos hablando con <b>@BotFather</b> y <b>@userinfobot</b> en Telegram.
+            </p>
+        </div>
+
+        <h3 style="margin-top: 2rem; margin-bottom: 1rem">Límites de Stock por Insumo</h3>
+        <div class="table-container" style="max-height: 250px; overflow-y: auto;">
+          <table>
+            <thead><tr><th>Insumo</th><th style="width: 100px">Mínimo</th><th>Acción</th></tr></thead>
+            <tbody id="alerts-thresholds-body">
+              ${state.rawMaterials.map(m => `
+                <tr>
+                  <td><small>${m.code}</small><br>${m.name}</td>
+                  <td><input type="number" class="alt-val" data-code="${m.code}" value="0" style="width: 80px; padding: 0.3rem"></td>
+                  <td><button class="btn-sm" onclick="window.saveThreshold('${m.code}', this)">Set</button></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- Raw Material Modal -->
@@ -1601,7 +1641,71 @@ function renderView(viewName) {
       fetchData();
     });
   }
+
+  if (viewName === 'masters') {
+    // Load current settings
+    fetch(`${API_BASE}/settings`, { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(settings => {
+        if (settings.telegram_bot_token) document.getElementById('tg-token').value = settings.telegram_bot_token;
+        if (settings.telegram_chat_id) document.getElementById('tg-chatid').value = settings.telegram_chat_id;
+      });
+
+    // Load current thresholds
+    fetch(`${API_BASE}/alerts-config`, { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(configs => {
+        configs.forEach(c => {
+          const input = document.querySelector(`.alt-val[data-code="${c.mp_code}"]`);
+          if (input) input.value = c.threshold;
+        });
+      });
+  }
 }
+
+window.saveAlertSettings = async () => {
+  const tkn = document.getElementById('tg-token').value;
+  const cid = document.getElementById('tg-chatid').value;
+
+  try {
+    await fetch(`${API_BASE}/settings`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'telegram_bot_token', value: tkn })
+    });
+    await fetch(`${API_BASE}/settings`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'telegram_chat_id', value: cid })
+    });
+    alert('Configuración de Telegram guardada.');
+  } catch (e) { alert('Error al guardar configuración'); }
+};
+
+window.testTelegram = async () => {
+  const res = await fetch(`${API_BASE}/test-notification`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+  }).then(r => r.json());
+  if (res.success) alert(res.message);
+  else alert('Error: ' + res.error);
+};
+
+window.saveThreshold = async (code, btn) => {
+  const input = document.querySelector(`.alt-val[data-code="${code}"]`);
+  const threshold = parseFloat(input.value);
+
+  const res = await fetch(`${API_BASE}/alerts-config`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mp_code: code, threshold })
+  }).then(r => r.json());
+
+  if (res.success) {
+    btn.textContent = '✅';
+    setTimeout(() => btn.textContent = 'Set', 2000);
+  } else alert('Error al guardar límite');
+};
 
 async function initReports() {
   try {

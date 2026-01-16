@@ -8,6 +8,43 @@ const jwt = require('jsonwebtoken');
 const app = express();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+// Telegram Helper
+async function sendTelegramMessage(message) {
+    try {
+        const { data: tokenData } = await supabase.from('settings').select('value').eq('key', 'telegram_bot_token').single();
+        const { data: chatData } = await supabase.from('settings').select('value').eq('key', 'telegram_chat_id').single();
+
+        const token = tokenData?.value;
+        const chatId = chatData?.value;
+
+        if (!token || !chatId) {
+            console.log('Telegram not configured');
+            return;
+        }
+
+        await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' })
+        });
+    } catch (e) {
+        console.error('Error sending Telegram alert:', e.message);
+    }
+}
+
+async function checkLowStockAlerts(mpCode) {
+    try {
+        const { data: rm } = await supabase.from('raw_materials').select('name, stock').eq('code', mpCode).single();
+        const { data: alertConfig } = await supabase.from('alerts_config').select('threshold').eq('mp_code', mpCode).single();
+
+        if (rm && alertConfig && rm.stock <= alertConfig.threshold) {
+            await sendTelegramMessage(`⚠️ <b>ALERTA DE STOCK BAJO</b>\n\nEl insumo <b>${rm.name}</b> (${mpCode}) tiene un stock de <b>${rm.stock}</b>, llegando al límite de <b>${alertConfig.threshold}</b>.\n\nFavor revisar stock.`);
+        }
+    } catch (e) {
+        console.error('Error checking alerts:', e.message);
+    }
+}
+
 app.use(cors());
 app.use(express.json());
 
@@ -284,6 +321,8 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
                 // For simplicity, direct update (beware of race conditions in high load)
                 const { data: rm } = await supabase.from('raw_materials').select('stock').eq('code', item.mpCode).single();
                 await supabase.from('raw_materials').update({ stock: (rm?.stock || 0) + item.quantity }).eq('code', item.mpCode);
+
+                // Alert check is usually done on decrement, but can also be checked here
             }
         }
 
@@ -361,7 +400,11 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                 const { data: recipe } = await supabase.from('recipes').select('mp_code, quantity').eq('product_code', item.productCode);
                 for (const r of recipe) {
                     const { data: rm } = await supabase.from('raw_materials').select('stock').eq('code', r.mp_code).single();
-                    await supabase.from('raw_materials').update({ stock: (rm?.stock || 0) - (r.quantity * item.quantity) }).eq('code', r.mp_code);
+                    const newStock = (rm?.stock || 0) - (r.quantity * item.quantity);
+                    await supabase.from('raw_materials').update({ stock: newStock }).eq('code', r.mp_code);
+
+                    // Check alert
+                    await checkLowStockAlerts(r.mp_code);
                 }
             }
         }
@@ -481,6 +524,40 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
+});
+
+// Settings & Alerts Config
+app.get('/api/settings', authenticateToken, async (req, res) => {
+    const { data, error } = await supabase.from('settings').select('*');
+    if (error) return res.status(500).json({ error: error.message });
+    const settings = {};
+    data.forEach(s => settings[s.key] = s.value);
+    res.json(settings);
+});
+
+app.post('/api/settings', authenticateToken, async (req, res) => {
+    const { key, value } = req.body;
+    const { error } = await supabase.from('settings').upsert({ key, value });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+app.get('/api/alerts-config', authenticateToken, async (req, res) => {
+    const { data, error } = await supabase.from('alerts_config').select('*');
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
+app.post('/api/alerts-config', authenticateToken, async (req, res) => {
+    const { mp_code, threshold } = req.body;
+    const { error } = await supabase.from('alerts_config').upsert({ mp_code, threshold });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+app.post('/api/test-notification', authenticateToken, async (req, res) => {
+    await sendTelegramMessage('✅ <b>Prueba de Notificación</b>\n\nSi recibiste este mensaje, tu ERP Universal está correctamente vinculado a tu celular.');
+    res.json({ success: true, message: 'Prueba enviada. Revisa tu celular.' });
 });
 
 const PORT = process.env.PORT || 3001;
