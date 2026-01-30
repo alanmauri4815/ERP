@@ -81,7 +81,8 @@ app.post('/api/auth/login', async (req, res) => {
     const { username, password } = req.body;
     try {
         const { data: user, error } = await supabase.from('users').select('*').eq('username', username).single();
-        if (error || !user) return res.status(401).json({ error: 'Usuario no encontrado.' });
+        if (error) return res.status(401).json({ error: 'Error de base de datos', details: error.message, code: error.code });
+        if (!user) return res.status(401).json({ error: 'Usuario no encontrado.' });
 
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) return res.status(401).json({ error: 'Contraseña incorrecta.' });
