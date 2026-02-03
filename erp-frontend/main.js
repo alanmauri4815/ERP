@@ -1598,6 +1598,18 @@ function renderView(viewName) {
   mainContent.innerHTML = views[viewName]();
   navItems.forEach(item => item.classList.toggle('active', item.dataset.view === viewName));
 
+  // Actualizar nombre de usuario en el sidebar si no estamos en login
+  if (viewName !== 'login') {
+    const userDisplay = document.getElementById('display-username');
+    const roleDisplay = document.getElementById('display-user-role');
+    if (userDisplay && currentUser) {
+      userDisplay.textContent = currentUser.username;
+    }
+    if (roleDisplay && currentUser) {
+      roleDisplay.textContent = currentUser.role === 'admin' ? 'Administrador' : (currentUser.role === 'user' ? 'Usuario' : 'Visor');
+    }
+  }
+
   if (viewName === 'login') {
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
