@@ -47,6 +47,26 @@ body {
     position: fixed;
     height: 100vh;
     z-index: 100;
+    overflow-y: auto;
+}
+
+.sidebar nav {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+}
+
+.sidebar .nav-links {
+    flex: 1;
+}
+
+.sidebar-footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--surface);
+    padding: 1rem !important;
+    margin-top: auto !important;
+    border-top: 1px solid rgba(255,255,255,0.1) !important;
 }
 
 .logo {
