@@ -160,7 +160,7 @@ const views = {
             <tr>
               <th>Código</th>
               <th>Producto</th>
-              <th>Color</th>
+              <th>Atributo</th>
               <th>Tamaño</th>
               <th>Stock</th>
               <th>Neto</th>
@@ -231,7 +231,7 @@ const views = {
           </div>
           
           <div class="grid-2">
-            <div class="form-group"><label>Color</label><input type="text" id="np-color" placeholder="Ej: Rojo"></div>
+            <div class="form-group"><label>Atributo</label><input type="text" id="np-color" placeholder="Ej: Sabor, Material"></div>
             <div class="form-group"><label>Tamaño</label><input type="text" id="np-size" placeholder="Ej: XL"></div>
           </div>
           <div class="form-group"><label>Costo Estimado ($)</label><input type="number" id="np-cost" value="0"></div>
@@ -261,7 +261,7 @@ const views = {
             <tr>
               <th>Código</th>
               <th>Insumo</th>
-              <th>Color</th>
+              <th>Atributo</th>
               <th>Tamaño</th>
               <th>Stock</th>
               <th>Unidad</th>
@@ -302,7 +302,7 @@ const views = {
           <div class="form-group"><label>Unidad</label><input type="text" id="nrm-unit" required placeholder="Mts, Kg, Uni"></div>
           <div class="form-group"><label>Costo Neto Unitario ($)</label><input type="number" id="nrm-cost" required></div>
           <div class="grid-2">
-            <div class="form-group"><label>Color</label><input type="text" id="nrm-color" placeholder="Ej: Rojo"></div>
+            <div class="form-group"><label>Atributo</label><input type="text" id="nrm-color" placeholder="Ej: Sabor, Material"></div>
             <div class="form-group"><label>Tamaño</label><input type="text" id="nrm-size" placeholder="Ej: XL"></div>
           </div>
           <div class="form-group"><label>Es Variante de (Código Base)</label><input type="text" id="nrm-parent" placeholder="Ej: TELA-BASE"></div>
@@ -773,7 +773,7 @@ const views = {
           <div class="form-group"><label>Unidad (Mts, Uni, Kg, etc.)</label><input type="text" id="nmp-unit" required></div>
           <div class="form-group"><label>Costo Neto Unitario ($)</label><input type="number" id="nmp-cost" required></div>
           <div class="grid-2">
-            <div class="form-group"><label>Color</label><input type="text" id="nmp-color" placeholder="Ej: Rojo"></div>
+            <div class="form-group"><label>Atributo</label><input type="text" id="nmp-color" placeholder="Ej: Sabor, Material"></div>
             <div class="form-group"><label>Tamaño</label><input type="text" id="nmp-size" placeholder="Ej: XL"></div>
           </div>
           <div class="form-group"><label>Es Variante de (Código Base)</label><input type="text" id="nmp-parent" placeholder="Ej: TELA-BASE"></div>

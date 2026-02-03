@@ -51,7 +51,7 @@ export function formatProductsForExport(products) {
         'IVA (19%)': p.iva || 0,
         'Precio Venta': p.price_sale,
         'Costo Unitario': p.cost_unit || p.cost_net,
-        'Color': p.color || '-',
+        'Atributo': p.color || '-',
         'Tamaño': p.size || '-'
     }));
 }
@@ -69,7 +69,7 @@ export function formatMaterialsForExport(materials) {
         'Unidad': m.unit,
         'Stock': m.stock,
         'Costo Neto': m.cost_net,
-        'Color': m.color || '-',
+        'Atributo': m.color || '-',
         'Tamaño': m.size || '-'
     }));
 }
