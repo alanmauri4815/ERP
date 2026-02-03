@@ -1,5 +1,13 @@
 import './style.css'
 import Chart from 'chart.js/auto'
+import {
+  exportToExcel,
+  formatProductsForExport,
+  formatMaterialsForExport,
+  formatSalesForExport,
+  formatPurchasesForExport,
+  formatProductionForExport
+} from './export-utils.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://erp-backend-0fis.onrender.com/api';
 const mainContent = document.getElementById('main-content');
@@ -139,6 +147,7 @@ const views = {
     <header class="animate-fade">
       <h1>Inventario de Productos</h1>
       <div style="display: flex; gap: 0.5rem">
+        <button onclick="window.exportProducts()" style="background: var(--secondary)">📊 Exportar a Excel</button>
         <button onclick="window.recalculateAllCosts()" style="background: var(--accent)">🔄 Recalcular Costos</button>
         <button onclick="document.getElementById('new-prod-modal').style.display='flex'">+ Nuevo Producto</button>
       </div>
@@ -210,7 +219,10 @@ const views = {
   inventory_rm: () => `
     <header class="animate-fade">
       <h1>Inventario de Insumos</h1>
-      <button onclick="document.getElementById('new-rm-modal').style.display='flex'">+ Nuevo Insumo</button>
+      <div style="display: flex; gap: 0.5rem">
+        <button onclick="window.exportRawMaterials()" style="background: var(--secondary)">📊 Exportar a Excel</button>
+        <button onclick="document.getElementById('new-rm-modal').style.display='flex'">+ Nuevo Insumo</button>
+      </div>
     </header>
 
     <div class="card animate-fade">
@@ -303,7 +315,10 @@ const views = {
   production: () => `
     <header class="animate-fade">
       <h1>Producción</h1>
-      <button onclick="window.openProductionModal()" style="background: var(--secondary)">+ Registrar Producción</button>
+      <div style="display: flex; gap: 0.5rem">
+        <button onclick="window.exportProduction()" style="background: var(--accent)">📊 Exportar a Excel</button>
+        <button onclick="window.openProductionModal()" style="background: var(--secondary)">+ Registrar Producción</button>
+      </div>
     </header>
 
     <div class="card animate-fade">
@@ -366,7 +381,10 @@ const views = {
   purchases: () => `
     <header class="animate-fade">
       <h1>Compras (Entrada MP)</h1>
-      <button onclick="document.getElementById('buy-modal').style.display='flex'">+ Registrar Compra</button>
+      <div style="display: flex; gap: 0.5rem">
+        <button onclick="window.exportPurchases()" style="background: var(--accent)">📊 Exportar a Excel</button>
+        <button onclick="document.getElementById('buy-modal').style.display='flex'">+ Registrar Compra</button>
+      </div>
     </header>
 
     <div class="card animate-fade">
@@ -453,7 +471,10 @@ const views = {
   sales: () => `
     <header class="animate-fade">
       <h1>Ventas (Salida PT)</h1>
-      <button onclick="document.getElementById('sale-modal').style.display='flex'" style="background: var(--secondary)">+ Registrar Venta</button>
+      <div style="display: flex; gap: 0.5rem">
+        <button onclick="window.exportSales()" style="background: var(--accent)">📊 Exportar a Excel</button>
+        <button onclick="document.getElementById('sale-modal').style.display='flex'" style="background: var(--secondary)">+ Registrar Venta</button>
+      </div>
     </header>
 
     <div class="card animate-fade">
@@ -1967,6 +1988,37 @@ async function putData(endpoint, body) {
     alert('Error al actualizar datos');
   }
 }
+
+// Export Functions
+window.exportProducts = function () {
+  const formatted = formatProductsForExport(state.products);
+  exportToExcel(formatted, 'Inventario_Productos', 'Productos');
+  alert('✅ Productos exportados a Excel exitosamente');
+};
+
+window.exportRawMaterials = function () {
+  const formatted = formatMaterialsForExport(state.rawMaterials);
+  exportToExcel(formatted, 'Inventario_Insumos', 'Insumos');
+  alert('✅ Insumos exportados a Excel exitosamente');
+};
+
+window.exportSales = function () {
+  const formatted = formatSalesForExport(state.history.sales);
+  exportToExcel(formatted, 'Historial_Ventas', 'Ventas');
+  alert('✅ Ventas exportadas a Excel exitosamente');
+};
+
+window.exportPurchases = function () {
+  const formatted = formatPurchasesForExport(state.history.purchases);
+  exportToExcel(formatted, 'Historial_Compras', 'Compras');
+  alert('✅ Compras exportadas a Excel exitosamente');
+};
+
+window.exportProduction = function () {
+  const formatted = formatProductionForExport(state.history.production);
+  exportToExcel(formatted, 'Historial_Produccion', 'Producción');
+  alert('✅ Producción exportada a Excel exitosamente');
+};
 
 navItems.forEach(item => item.addEventListener('click', () => renderView(item.dataset.view)));
 
