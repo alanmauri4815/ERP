@@ -71,6 +71,14 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
+const checkAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ error: 'Acceso restringido. Se requieren permisos de administrador.' });
+    }
+};
+
 // Auth Routes
 app.post('/api/auth/register', async (req, res) => {
     const { username, password } = req.body;
@@ -603,6 +611,54 @@ app.post('/api/alerts-config', authenticateToken, async (req, res) => {
 app.post('/api/test-notification', authenticateToken, async (req, res) => {
     await sendTelegramMessage('✅ <b>Prueba de Notificación</b>\n\nSi recibiste este mensaje, tu ERP Universal está correctamente vinculado a tu celular.');
     res.json({ success: true, message: 'Prueba enviada. Revisa tu celular.' });
+});
+
+// User Management Routes (Admin Only)
+app.get('/api/users', authenticateToken, checkAdmin, async (req, res) => {
+    const { data, error } = await supabase.from('users').select('id, username, role');
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
+app.post('/api/users', authenticateToken, checkAdmin, async (req, res) => {
+    const { username, password, role } = req.body;
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const { error } = await supabase.from('users').insert({ username, password: hashedPassword, role });
+        if (error) throw error;
+        res.json({ success: true, message: 'Usuario creado exitosamente.' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/users/:id', authenticateToken, checkAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { username, password, role } = req.body;
+    const updateData = { username, role };
+
+    if (password && password.trim() !== '') {
+        updateData.password = await bcrypt.hash(password, 10);
+    }
+
+    try {
+        const { error } = await supabase.from('users').update(updateData).eq('id', id);
+        if (error) throw error;
+        res.json({ success: true, message: 'Usuario actualizado exitosamente.' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/users/:id', authenticateToken, checkAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { error } = await supabase.from('users').delete().eq('id', id);
+        if (error) throw error;
+        res.json({ success: true, message: 'Usuario eliminado.' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 const PORT = process.env.PORT || 3001;

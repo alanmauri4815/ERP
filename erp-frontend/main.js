@@ -55,8 +55,17 @@ let state = {
     sales: [],
     production: []
   },
-  recipes: {}
+  recipes: {},
+  users: []
 };
+
+async function fetchUsers() {
+  if (currentUser?.role !== 'admin') return;
+  state.users = await apiFetch('/users');
+  if (document.querySelector('.nav-item.active')?.dataset.view === 'user_management') {
+    renderView('user_management');
+  }
+}
 
 async function fetchData() {
   if (!token) return renderView('login');
@@ -70,7 +79,7 @@ async function fetchData() {
   `;
 
   try {
-    const [products, rawMaterials, providers, clients, stats, hPurchases, hSales, hProduction] = await Promise.all([
+    const [products, rawMaterials, providers, clients, stats, hPurchases, hSales, hProduction, users] = await Promise.all([
       apiFetch('/products'),
       apiFetch('/raw-materials'),
       apiFetch('/providers'),
@@ -79,6 +88,7 @@ async function fetchData() {
       apiFetch('/history/purchases'),
       apiFetch('/history/sales'),
       apiFetch('/history/production'),
+      currentUser?.role === 'admin' ? apiFetch('/users') : Promise.resolve([])
     ]);
 
     if (!products) return; // session expired
@@ -93,6 +103,8 @@ async function fetchData() {
       sales: hSales,
       production: hProduction
     };
+    state.users = users || [];
+
 
     const activeView = document.querySelector('.nav-item.active')?.dataset.view || 'dashboard';
     renderView(activeView);
@@ -838,6 +850,101 @@ const views = {
           <button type="submit" style="width: 100%">Actualizar Contraseña</button>
         </div>
       </form>
+    </div>
+  `,
+
+  user_management: () => `
+    <header class="animate-fade">
+      <h1>Gestión de Usuarios</h1>
+      <button onclick="window.openUserModal()">+ Nuevo Usuario</button>
+    </header>
+
+    <div class="card animate-fade">
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Usuario</th>
+              <th>Rol</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${state.users.map(u => `
+              <tr>
+                <td>${u.id}</td>
+                <td><strong>${u.username}</strong></td>
+                <td><span class="badge ${u.role === 'admin' ? 'badge-success' : 'badge-info'}">${u.role}</span></td>
+                <td>
+                  <button class="btn-sm" onclick="window.editUser(${u.id})">✏️</button>
+                  ${u.username !== currentUser.username ? `<button class="btn-sm" onclick="window.deleteUser(${u.id})" style="background:var(--danger)">🗑️</button>` : ''}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- User Modal -->
+    <div id="user-modal" class="modal" style="display:none">
+      <div class="card modal-content">
+        <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
+          <h3><span id="user-modal-title">Nuevo Usuario</span></h3>
+          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted); border:none; font-size: 1.2rem; cursor:pointer">✕</button>
+        </header>
+        <form id="user-form">
+          <input type="hidden" id="user-edit-id" value="">
+          <div class="form-group">
+            <label>Nombre de Usuario</label>
+            <input type="text" id="user-name" required>
+          </div>
+          <div class="form-group">
+            <label id="user-pass-label">Contraseña</label>
+            <input type="password" id="user-pass">
+            <small id="user-pass-hint" style="display:none; opacity: 0.6">Dejar en blanco para no cambiar</small>
+          </div>
+          <div class="form-group">
+            <label>Rol</label>
+            <select id="user-role">
+              <option value="admin">Administrador (Acceso Total)</option>
+              <option value="user">Usuario (Operaciones)</option>
+              <option value="viewer">Visor (Sólo Lectura/Reportes)</option>
+            </select>
+          </div>
+          <div class="form-actions">
+            <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
+            <button type="submit">Guardar</button>
+          </div>
+        </form>
+    </div>
+  `,
+
+  profile: () => `
+    <header class="animate-fade">
+      <h1>Mi Perfil</h1>
+    </header>
+    <div class="card animate-fade" style="max-width: 500px">
+      <h2>Cambiar Contraseña</h2>
+      <form id="change-pass-form">
+        <div class="form-group">
+          <label>Contraseña Actual</label>
+          <input type="password" id="cp-old" required placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label>Nueva Contraseña</label>
+          <input type="password" id="cp-new" required placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label>Confirmar Nueva Contraseña</label>
+          <input type="password" id="cp-confirm" required placeholder="••••••••">
+        </div>
+        <div class="form-actions">
+          <button type="submit" style="width: 100%">Actualizar Contraseña</button>
+        </div>
+      </form>
+    </div>
     <div class="card animate-fade" style="max-width: 500px; margin-top: 1.5rem; border: 1px solid var(--danger-light); background: rgba(239, 68, 68, 0.05);">
       <h2 style="color: var(--danger)">Cerrar Sesión</h2>
       <p style="margin-bottom: 1.5rem; opacity: 0.8">¿Deseas salir del sistema? Tendrás que ingresar tus credenciales nuevamente.</p>
@@ -857,11 +964,11 @@ function renderHistoryTable(type) {
   const data = state.history[type];
   if (type === 'sales') {
     return `
-      <div class="table-container">
-        <table>
-          <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th><th>Acción</th></tr></thead>
-          <tbody>
-            ${data.map(h => `
+  <div class="table-container">
+    <table>
+      <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th><th>Acción</th></tr></thead>
+      <tbody>
+        ${data.map(h => `
               <tr>
                 <td>${h.id}</td>
                 <td>${h.date}</td>
@@ -870,10 +977,10 @@ function renderHistoryTable(type) {
                 <td><button class="btn-sm" onclick="window.showTransactionDetails('sale', ${h.id})">Detalle</button></td>
               </tr>
             `).join('')}
-          </tbody>
-        </table>
+      </tbody>
+    </table>
       </div>
-    `;
+  `;
   }
   if (type === 'production') {
     const flatItems = [];
@@ -890,23 +997,23 @@ function renderHistoryTable(type) {
     });
 
     return `
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Ítem</th>
-              <th>Fecha</th>
-              <th>Producto</th>
-              <th>Nombre P</th>
-              <th>Cant</th>
-              <th>Costo M.O.</th>
-              <th>T. M.O.</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${flatItems.reverse().map(it => `
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Ítem</th>
+          <th>Fecha</th>
+          <th>Producto</th>
+          <th>Nombre P</th>
+          <th>Cant</th>
+          <th>Costo M.O.</th>
+          <th>T. M.O.</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${flatItems.reverse().map(it => `
               <tr>
                 <td><strong>#${it.transId}</strong></td>
                 <td>${it.item_number}</td>
@@ -919,18 +1026,18 @@ function renderHistoryTable(type) {
                 <td style="text-align: center"><button class="btn-sm" onclick="window.editProduction(${it.transId})">✏️ Editar</button></td>
               </tr>
             `).join('')}
-          </tbody>
-        </table>
+      </tbody>
+    </table>
       </div>
-    `;
+  `;
   }
   if (type === 'purchases') {
     return `
-      <div class="table-container">
-        <table>
-          <thead><tr><th>ID</th><th>Fecha</th><th>Proveedor</th><th>Total</th><th>Acción</th></tr></thead>
-          <tbody>
-            ${data.map(h => `
+  <div class="table-container">
+    <table>
+      <thead><tr><th>ID</th><th>Fecha</th><th>Proveedor</th><th>Total</th><th>Acción</th></tr></thead>
+      <tbody>
+        ${data.map(h => `
               <tr>
                 <td>${h.id}</td>
                 <td>${h.date}</td>
@@ -939,10 +1046,10 @@ function renderHistoryTable(type) {
                 <td><button class="btn-sm" onclick="window.showTransactionDetails('purchase', ${h.id})">Detalle</button></td>
               </tr>
             `).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
+      </tbody>
+    </table>
+      </div >
+  `;
   }
 }
 
@@ -963,26 +1070,26 @@ window.showTransactionDetails = (type, id) => {
   const title = isProduction ? 'Producción' : (type === 'sale' ? 'Venta' : 'Compra');
 
   modal.innerHTML = `
-    <div class="card modal-content modal-wide animate-fade">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem">
-        <h3>Detalle de ${title} #${transaction.id}</h3>
-        <span style="color: var(--text-muted)">Fecha: ${transaction.date.split('T')[0]}</span>
-      </div>
+  <div class="card modal-content modal-wide animate-fade">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem">
+      <h3>Detalle de ${title} #${transaction.id}</h3>
+      <span style="color: var(--text-muted)">Fecha: ${transaction.date.split('T')[0]}</span>
+    </div>
       
       ${!isProduction ? `<p style="margin-bottom: 1rem"><strong>${type === 'sale' ? 'Cliente' : 'Proveedor'}:</strong> ${transaction.client_name || transaction.provider_name || 'N/A'}</p>` : ''}
 
-      <table class="item-table">
-        <thead>
-          <tr>
-            <th style="width: 50px">Ítem</th>
-            <th>${type === 'purchase' ? 'Insumo' : 'Producto'}</th>
-            ${!isProduction ? `<th style="width: 120px">Precio Unit</th>` : ''}
-            <th style="width: 100px">Cantidad</th>
-            ${!isProduction ? `<th style="width: 150px">Sub Tot</th>` : ''}
-          </tr>
-        </thead>
-        <tbody>
-          ${transaction.items.map(item => `
+<table class="item-table">
+  <thead>
+    <tr>
+      <th style="width: 50px">Ítem</th>
+      <th>${type === 'purchase' ? 'Insumo' : 'Producto'}</th>
+      ${!isProduction ? `<th style="width: 120px">Precio Unit</th>` : ''}
+      <th style="width: 100px">Cantidad</th>
+      ${!isProduction ? `<th style="width: 150px">Sub Tot</th>` : ''}
+    </tr>
+  </thead>
+  <tbody>
+    ${transaction.items.map(item => `
             <tr>
               <td style="text-align: center">${item.item_number}</td>
               <td>${item.product_name || item.mp_name}${item.color ? ' (' + item.color + ')' : ''}${item.size ? ' [' + item.size + ']' : ''}</td>
@@ -991,8 +1098,8 @@ window.showTransactionDetails = (type, id) => {
               ${!isProduction ? `<td style="text-align: right">$${(item.subtotal || 0).toLocaleString()}</td>` : ''}
             </tr>
           `).join('')}
-        </tbody>
-      </table>
+  </tbody>
+</table>
 
       ${!isProduction ? `
       <div class="summary-section">
@@ -1002,13 +1109,14 @@ window.showTransactionDetails = (type, id) => {
           <tr><td>Total</td><td style="text-align: right"><strong>$${(transaction.total || 0).toLocaleString()}</strong></td></tr>
         </table>
       </div>
-      ` : ''}
+      ` : ''
+    }
 
-      <div class="form-actions">
-        ${!isProduction ? `<button class="btn-warning" onclick="window.editTransaction('${type}', ${transaction.id})">✏️ Editar</button>` : ''}
-        <button onclick="document.getElementById('${modalId}').style.display='none'">Cerrar</button>
-      </div>
-    </div>
+<div class="form-actions">
+  ${!isProduction ? `<button class="btn-warning" onclick="window.editTransaction('${type}', ${transaction.id})">✏️ Editar</button>` : ''}
+  <button onclick="document.getElementById('${modalId}').style.display='none'">Cerrar</button>
+</div>
+    </div >
   `;
   modal.style.display = 'flex';
 };
@@ -1021,10 +1129,10 @@ window.editTransaction = (type, id) => {
   const modalId = type === 'sale' ? 'sale-modal' : 'buy-modal';
 
   // Set edit mode
-  document.getElementById(`${prefix}-edit-mode`).value = 'true';
-  document.getElementById(`${prefix}-edit-id`).value = transaction.id;
-  document.getElementById(`${prefix}-modal-title`).textContent = `Editar ${type === 'sale' ? 'Venta' : 'Compra'} #${transaction.id}`;
-  document.getElementById(`btn-submit-${type === 'sale' ? 'sale' : 'purchase'}`).textContent = 'Guardar Cambios';
+  document.getElementById(`${prefix} -edit - mode`).value = 'true';
+  document.getElementById(`${prefix} -edit - id`).value = transaction.id;
+  document.getElementById(`${prefix} -modal - title`).textContent = `Editar ${type === 'sale' ? 'Venta' : 'Compra'} #${transaction.id} `;
+  document.getElementById(`btn - submit - ${type === 'sale' ? 'sale' : 'purchase'} `).textContent = 'Guardar Cambios';
 
   // Fill main fields
   if (type === 'sale') {
@@ -1037,7 +1145,7 @@ window.editTransaction = (type, id) => {
 
   // Clear rows first
   const bodyId = type === 'sale' ? 'sale-items-body' : 'purchase-items-body';
-  const rows = document.querySelectorAll(`#${bodyId} .item-row`);
+  const rows = document.querySelectorAll(`#${bodyId} .item - row`);
   rows.forEach(row => {
     row.querySelector('.item-code').value = '';
     row.querySelector('.item-price').value = 0;
@@ -1058,12 +1166,12 @@ window.editTransaction = (type, id) => {
   });
 
   // Update summary
-  document.getElementById(`${prefix}-net`).value = transaction.net;
-  document.getElementById(`${prefix}-iva`).value = transaction.iva;
-  document.getElementById(`${prefix}-total`).value = transaction.total;
-  document.getElementById(`${prefix}-net-display`).textContent = (transaction.net || 0).toLocaleString();
-  document.getElementById(`${prefix}-iva-display`).textContent = (transaction.iva || 0).toLocaleString();
-  document.getElementById(`${prefix}-total-display`).textContent = (transaction.total || 0).toLocaleString();
+  document.getElementById(`${prefix} -net`).value = transaction.net;
+  document.getElementById(`${prefix} -iva`).value = transaction.iva;
+  document.getElementById(`${prefix} -total`).value = transaction.total;
+  document.getElementById(`${prefix} -net - display`).textContent = (transaction.net || 0).toLocaleString();
+  document.getElementById(`${prefix} -iva - display`).textContent = (transaction.iva || 0).toLocaleString();
+  document.getElementById(`${prefix} -total - display`).textContent = (transaction.total || 0).toLocaleString();
 
   // Close details modal and open edit modal
   document.getElementById('details-modal').style.display = 'none';
@@ -1118,7 +1226,7 @@ window.recalculateAllCosts = async () => {
   if (!confirm('¿Deseas recalcular los costos de todos los productos basados en sus recetas?')) return;
 
   try {
-    const response = await fetch(`${API_BASE}/products/recalculate-all-costs`, {
+    const response = await fetch(`${API_BASE} /products/recalculate - all - costs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -1141,17 +1249,17 @@ window.recipeState = {
 };
 
 window.editRecipeRow = (index) => {
-  const row = document.querySelector(`.recipe-row[data-index="${index}"]`);
+  const row = document.querySelector(`.recipe - row[data - index="${index}"]`);
   if (!row) return;
 
   const item = window.recipeState.items[index];
   row.innerHTML = `
-    <td>
-      <select class="edit-mp-code" onchange="window.updateRecipeRowMP(${index}, this.value)">
-        <option value="">Seleccione...</option>
-        ${state.rawMaterials.map(m => `<option value="${m.code}" ${m.code === item.mp_code ? 'selected' : ''}>${m.name}${m.color ? ' (' + m.color + ')' : ''}</option>`).join('')}
-      </select>
-    </td>
+  < td >
+  <select class="edit-mp-code" onchange="window.updateRecipeRowMP(${index}, this.value)">
+    <option value="">Seleccione...</option>
+    ${state.rawMaterials.map(m => `<option value="${m.code}" ${m.code === item.mp_code ? 'selected' : ''}>${m.name}${m.color ? ' (' + m.color + ')' : ''}</option>`).join('')}
+  </select>
+    </td >
     <td><input type="number" step="any" class="edit-qty" value="${item.quantity}" oninput="window.updateRecipeRowData(${index})"></td>
     <td class="row-unit">${item.unit || '-'}</td>
     <td class="row-net-cost">$${(item.cost_net || 0).toLocaleString()}</td>
@@ -1161,7 +1269,7 @@ window.editRecipeRow = (index) => {
       <button class="btn-sm" onclick="window.saveRecipeRow(${index})" style="background: var(--success); margin-right: 0.5rem">✔️</button>
       <button class="btn-sm" onclick="window.refreshRecipeView()" style="background: var(--surface-light)">❌</button>
     </td>
-  `;
+`;
 };
 
 window.updateRecipeRowMP = (index, code) => {
@@ -1176,7 +1284,7 @@ window.updateRecipeRowMP = (index, code) => {
 };
 
 window.updateRecipeRowData = (index) => {
-  const row = document.querySelector(`.recipe-row[data-index="${index}"]`);
+  const row = document.querySelector(`.recipe - row[data - index="${index}"]`);
   const item = window.recipeState.items[index];
 
   const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
@@ -1188,8 +1296,8 @@ window.updateRecipeRowData = (index) => {
   item.unit_cost = unitCost;
 
   row.querySelector('.row-unit').textContent = item.unit || '-';
-  row.querySelector('.row-net-cost').textContent = `$${(item.cost_net || 0).toLocaleString()}`;
-  row.querySelector('.row-unit-cost').textContent = `$${unitCost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}`;
+  row.querySelector('.row-net-cost').textContent = `$${(item.cost_net || 0).toLocaleString()} `;
+  row.querySelector('.row-unit-cost').textContent = `$${unitCost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })} `;
 
   window.calculateRecipeTotal();
 };
@@ -1221,7 +1329,7 @@ window.addRecipeRow = () => {
 
 window.calculateRecipeTotal = () => {
   const total = window.recipeState.items.reduce((sum, item) => sum + (item.unit_cost || 0), 0);
-  document.getElementById('display-total-cost').textContent = `$${Math.round(total).toLocaleString()}`;
+  document.getElementById('display-total-cost').textContent = `$${Math.round(total).toLocaleString()} `;
 };
 
 window.showProductionHistory = () => {
@@ -1231,11 +1339,12 @@ window.showProductionHistory = () => {
 window.populateProductDropdowns = (selector) => {
   const selects = document.querySelectorAll(selector);
   const optionsHtml = `
-    <option value="">Seleccione...</option>
+  < option value = "" > Seleccione...</option >
     ${state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
       <option value="${p.code}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>
-    `).join('')}
-  `;
+    `).join('')
+    }
+`;
   selects.forEach(s => {
     const currentVal = s.value;
     s.innerHTML = optionsHtml;
@@ -1273,7 +1382,7 @@ window.editProduction = (id) => {
 
   window.populateProductDropdowns('.prod-item-code');
 
-  document.getElementById('prod-modal-title').textContent = `Editar Producción #${id}`;
+  document.getElementById('prod-modal-title').textContent = `Editar Producción #${id} `;
   document.getElementById('btn-prod-text').textContent = 'Guardar Cambios';
   document.getElementById('prod-edit-mode').value = 'true';
   document.getElementById('prod-edit-id').value = id;
@@ -1297,12 +1406,46 @@ window.editProduction = (id) => {
   });
 };
 
+// --- USER MANAGEMENT HELPERS ---
+window.openUserModal = () => {
+  document.getElementById('user-modal').style.display = 'flex';
+  document.getElementById('user-modal-title').textContent = 'Nuevo Usuario';
+  document.getElementById('user-edit-id').value = '';
+  document.getElementById('user-form').reset();
+  document.getElementById('user-pass-label').textContent = 'Contraseña';
+  document.getElementById('user-pass').required = true;
+  document.getElementById('user-pass-hint').style.display = 'none';
+};
+
+window.editUser = (id) => {
+  const user = state.users.find(u => u.id === id);
+  if (!user) return;
+
+  window.openUserModal();
+  document.getElementById('user-modal-title').textContent = 'Editar Usuario';
+  document.getElementById('user-edit-id').value = id;
+  document.getElementById('user-name').value = user.username;
+  document.getElementById('user-role').value = user.role;
+  document.getElementById('user-pass-label').textContent = 'Nueva Contraseña';
+  document.getElementById('user-pass').required = false;
+  document.getElementById('user-pass-hint').style.display = 'block';
+};
+
+window.deleteUser = async (id) => {
+  if (!confirm('¿Está seguro de eliminar este usuario?')) return;
+  const res = await apiFetch(`/ users / ${id} `, { method: 'DELETE' });
+  if (res && res.success) {
+    alert(res.message);
+    fetchData();
+  }
+};
+
 window.refreshRecipeView = () => {
   const container = document.getElementById('recipe-items-body');
   if (!container) return;
 
   container.innerHTML = window.recipeState.items.map((r, i) => `
-    <tr class="recipe-row" data-index="${i}">
+  < tr class="recipe-row" data - index="${i}" >
       <td>${r.mp_name}</td>
       <td style="text-align: center">${r.quantity}</td>
       <td>${r.unit || ''}</td>
@@ -1313,7 +1456,7 @@ window.refreshRecipeView = () => {
         <button class="btn-sm" onclick="window.editRecipeRow(${i})" title="Modificar">✏️</button>
         <button class="btn-sm" onclick="window.deleteRecipeRow(${i})" style="background: var(--danger)" title="Eliminar">🗑️</button>
       </td>
-    </tr>
+    </tr >
   `).join('');
   window.calculateRecipeTotal();
 };
@@ -1329,7 +1472,7 @@ async function showRecipe(pid) {
   const totalCost = window.recipeState.items.reduce((sum, r) => sum + (r.unit_cost || 0), 0);
 
   container.innerHTML = `
-    <div class="animate-fade">
+  < div class="animate-fade" >
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
         <h2>Receta: ${product.name} ${product.color ? '(' + product.color + ')' : ''}</h2>
         <button class="btn-sm" onclick="window.addRecipeRow()" style="background: var(--secondary)">➕ Agregar Insumo</button>
@@ -1371,7 +1514,7 @@ async function showRecipe(pid) {
         <button id="btn-save-recipe" style="background: var(--surface-light); color: var(--text)">💾 Guardar Cambios Receta</button>
         <button id="btn-produce" style="flex: 1">🚀 Iniciar Producción</button>
       </div>
-    </div>
+    </div >
   `;
 
   window.refreshRecipeView();
@@ -1384,7 +1527,7 @@ async function showRecipe(pid) {
       batchSize: item.batch_size
     }));
 
-    await putData(`/recipes/${pid}`, { items });
+    await putData(`/ recipes / ${pid} `, { items });
     state.products = await fetch(`${API_BASE}/products`).then(r => r.json());
     state.recipes[pid] = null; // Clear cache
     showRecipe(pid);
@@ -1429,7 +1572,7 @@ function renderView(viewName) {
 
     // Definimos qué puede ver cada uno
     const permissions = {
-      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'profile'],
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'user_management', 'profile'],
       user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history', 'profile'],
       viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
@@ -1810,6 +1953,34 @@ function renderView(viewName) {
 
     document.getElementById('btn-logout-profile')?.addEventListener('click', () => {
       logout();
+    });
+  }
+
+  if (viewName === 'user_management') {
+    document.getElementById('user-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('user-edit-id').value;
+      const body = {
+        username: document.getElementById('user-name').value,
+        password: document.getElementById('user-pass').value,
+        role: document.getElementById('user-role').value
+      };
+
+      let result;
+      if (id) {
+        result = await apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        if (!body.password) return alert('La contraseña es requerida para nuevos usuarios');
+        result = await apiFetch('/users', { method: 'POST', body: JSON.stringify(body) });
+      }
+
+      if (result && result.success) {
+        alert(result.message);
+        document.getElementById('user-modal').style.display = 'none';
+        fetchData();
+      } else if (result) {
+        alert('Error: ' + result.error);
+      }
     });
   }
 
