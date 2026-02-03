@@ -1376,7 +1376,10 @@ async function postData(endpoint, body) {
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify(body)
     });
     const result = await response.json();
@@ -2039,7 +2042,10 @@ async function putData(endpoint, body) {
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify(body)
     });
     const result = await response.json();
