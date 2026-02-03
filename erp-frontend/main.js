@@ -61,6 +61,14 @@ let state = {
 async function fetchData() {
   if (!token) return renderView('login');
 
+  // Mostrar estado de carga brevemente
+  mainContent.innerHTML = `
+    <div style="height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; opacity: 0.6">
+      <div class="spinner"></div>
+      <p>Sincronizando datos...</p>
+    </div>
+  `;
+
   try {
     const [products, rawMaterials, providers, clients, stats, hPurchases, hSales, hProduction] = await Promise.all([
       apiFetch('/products'),
@@ -1403,14 +1411,18 @@ async function postData(endpoint, body) {
 
 function renderView(viewName) {
   const appContainer = document.getElementById('app');
+
+  // Limpiar cualquier residuo de vistas anteriores
   if (viewName === 'login') {
     appContainer.style.display = 'block';
     document.querySelector('.sidebar').style.display = 'none';
     document.querySelector('.main-content').style.marginLeft = '0';
+    document.querySelector('.main-content').style.padding = '0';
   } else {
     appContainer.style.display = 'flex';
     document.querySelector('.sidebar').style.display = 'flex';
     document.querySelector('.main-content').style.marginLeft = 'var(--sidebar-width)';
+    document.querySelector('.main-content').style.padding = '2rem';
 
     // --- SISTEMA DE PERMISOS POR ROL ---
     const userRole = currentUser?.role || 'user';
@@ -1462,6 +1474,10 @@ function renderView(viewName) {
           currentUser = res.user;
           localStorage.setItem('erp_token', token);
           localStorage.setItem('erp_user', JSON.stringify(currentUser));
+
+          // Ocultar formulario inmediatamente
+          mainContent.innerHTML = '<div class="animate-fade" style="text-align:center; padding: 2rem;"><h3>Ingreso exitoso...</h3></div>';
+
           fetchData();
         } else {
           errorEl.textContent = res.error || 'Error al ingresar';
