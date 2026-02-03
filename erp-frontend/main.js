@@ -830,6 +830,17 @@ const views = {
           <button type="submit" style="width: 100%">Actualizar Contraseña</button>
         </div>
       </form>
+    <div class="card animate-fade" style="max-width: 500px; margin-top: 1.5rem; border: 1px solid var(--danger-light); background: rgba(239, 68, 68, 0.05);">
+      <h2 style="color: var(--danger)">Cerrar Sesión</h2>
+      <p style="margin-bottom: 1.5rem; opacity: 0.8">¿Deseas salir del sistema? Tendrás que ingresar tus credenciales nuevamente.</p>
+      <button id="btn-logout-profile" class="btn" style="width: 100%; background: var(--danger); color: white; border: none; padding: 0.8rem; border-radius: 0.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.8rem;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+          <polyline points="16 17 21 12 16 7"></polyline>
+          <line x1="21" y1="12" x2="9" y2="12"></line>
+        </svg>
+        Cerrar Sesión Activa
+      </button>
     </div>
   `
 };
@@ -1780,6 +1791,10 @@ function renderView(viewName) {
         alert('Error: ' + res.error);
       }
     });
+
+    document.getElementById('btn-logout-profile')?.addEventListener('click', () => {
+      logout();
+    });
   }
 
   if (viewName === 'masters') {
@@ -2093,11 +2108,13 @@ window.exportProduction = function () {
 
 navItems.forEach(item => item.addEventListener('click', () => renderView(item.dataset.view)));
 
-document.getElementById('btn-logout').addEventListener('click', () => {
+function logout() {
   token = null;
   localStorage.removeItem('erp_token');
   localStorage.removeItem('erp_user');
   renderView('login');
-});
+}
+
+document.getElementById('btn-logout')?.addEventListener('click', logout);
 
 fetchData();
