@@ -60,7 +60,7 @@ let state = {
 };
 
 async function fetchUsers() {
-  if (currentUser?.role !== 'admin') return;
+  if (currentUser?.role !== 'superadmin') return;
   state.users = await apiFetch('/users');
   if (document.querySelector('.nav-item.active')?.dataset.view === 'user_management') {
     renderView('user_management');
@@ -88,7 +88,7 @@ async function fetchData() {
       apiFetch('/history/purchases'),
       apiFetch('/history/sales'),
       apiFetch('/history/production'),
-      currentUser?.role === 'admin' ? apiFetch('/users') : Promise.resolve([])
+      currentUser?.role === 'superadmin' ? apiFetch('/users') : Promise.resolve([])
     ]);
 
     if (!products) return; // session expired
@@ -908,7 +908,8 @@ const views = {
           <div class="form-group">
             <label>Rol</label>
             <select id="user-role">
-              <option value="admin">Administrador (Acceso Total)</option>
+              <option value="superadmin">Gestor del ERP (Máximo Nivel)</option>
+              <option value="admin">Administrador (Gestión General)</option>
               <option value="user">Usuario (Operaciones)</option>
               <option value="viewer">Visor (Sólo Lectura/Reportes)</option>
             </select>
@@ -1572,7 +1573,8 @@ function renderView(viewName) {
 
     // Definimos qué puede ver cada uno
     const permissions = {
-      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'user_management', 'profile'],
+      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'user_management', 'profile'],
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'profile'],
       user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history', 'profile'],
       viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
@@ -1606,7 +1608,13 @@ function renderView(viewName) {
       userDisplay.textContent = currentUser.username;
     }
     if (roleDisplay && currentUser) {
-      roleDisplay.textContent = currentUser.role === 'admin' ? 'Administrador' : (currentUser.role === 'user' ? 'Usuario' : 'Visor');
+      const roleMap = {
+        'superadmin': 'Gestor del ERP',
+        'admin': 'Administrador',
+        'user': 'Usuario',
+        'viewer': 'Visor'
+      };
+      roleDisplay.textContent = roleMap[currentUser.role] || currentUser.role;
     }
   }
 

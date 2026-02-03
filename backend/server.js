@@ -72,10 +72,18 @@ const authenticateToken = (req, res, next) => {
 };
 
 const checkAdmin = (req, res, next) => {
-    if (req.user && req.user.role === 'admin') {
+    if (req.user && (req.user.role === 'admin' || req.user.role === 'superadmin')) {
         next();
     } else {
         res.status(403).json({ error: 'Acceso restringido. Se requieren permisos de administrador.' });
+    }
+};
+
+const checkSuperAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'superadmin') {
+        next();
+    } else {
+        res.status(403).json({ error: 'Acceso restringido. Se requieren permisos de Gestor del ERP.' });
     }
 };
 
@@ -614,13 +622,13 @@ app.post('/api/test-notification', authenticateToken, async (req, res) => {
 });
 
 // User Management Routes (Admin Only)
-app.get('/api/users', authenticateToken, checkAdmin, async (req, res) => {
+app.get('/api/users', authenticateToken, checkSuperAdmin, async (req, res) => {
     const { data, error } = await supabase.from('users').select('id, username, role');
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
 });
 
-app.post('/api/users', authenticateToken, checkAdmin, async (req, res) => {
+app.post('/api/users', authenticateToken, checkSuperAdmin, async (req, res) => {
     const { username, password, role } = req.body;
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -632,7 +640,7 @@ app.post('/api/users', authenticateToken, checkAdmin, async (req, res) => {
     }
 });
 
-app.put('/api/users/:id', authenticateToken, checkAdmin, async (req, res) => {
+app.put('/api/users/:id', authenticateToken, checkSuperAdmin, async (req, res) => {
     const { id } = req.params;
     const { username, password, role } = req.body;
     const updateData = { username, role };
@@ -650,7 +658,7 @@ app.put('/api/users/:id', authenticateToken, checkAdmin, async (req, res) => {
     }
 });
 
-app.delete('/api/users/:id', authenticateToken, checkAdmin, async (req, res) => {
+app.delete('/api/users/:id', authenticateToken, checkSuperAdmin, async (req, res) => {
     const { id } = req.params;
     try {
         const { error } = await supabase.from('users').delete().eq('id', id);
