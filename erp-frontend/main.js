@@ -1615,6 +1615,8 @@ function renderView(viewName) {
         'viewer': 'Visor'
       };
       roleDisplay.textContent = roleMap[currentUser.role] || currentUser.role;
+      // DEBUG:
+      console.log('Current User Role:', currentUser.role);
     }
   }
 
