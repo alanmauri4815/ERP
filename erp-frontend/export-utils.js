@@ -47,7 +47,9 @@ export function formatProductsForExport(products) {
         'Nombre': p.name,
         'Tipo': p.type,
         'Stock': p.stock,
-        'Precio Venta': p.price_sale || p.price_net,
+        'Precio Neto': p.price_net,
+        'IVA (19%)': p.iva || 0,
+        'Precio Venta': p.price_sale,
         'Costo Unitario': p.cost_unit || p.cost_net,
         'Color': p.color || '-',
         'Tamaño': p.size || '-'

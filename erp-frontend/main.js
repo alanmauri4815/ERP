@@ -163,7 +163,8 @@ const views = {
               <th>Color</th>
               <th>Tamaño</th>
               <th>Stock</th>
-              <th>Costo Unit.</th>
+              <th>Neto</th>
+              <th>IVA</th>
               <th>Precio Venta</th>
               <th>Acción</th>
             </tr>
@@ -176,8 +177,9 @@ const views = {
                 <td>${p.color || '-'}</td>
                 <td>${p.size || '-'}</td>
                 <td><span class="badge ${p.stock < 5 ? 'badge-warning' : 'badge-success'}">${p.stock}</span></td>
-                <td>$${(p.cost_unit || 0).toLocaleString()}</td>
-                <td>$${p.price_sale.toLocaleString()}</td>
+                <td>$${(p.price_net || 0).toLocaleString()}</td>
+                <td style="color: var(--accent)">$${(p.iva || 0).toLocaleString()}</td>
+                <td style="font-weight: 600">$${(p.price_sale || 0).toLocaleString()}</td>
                 <td><button class="btn-sm" onclick="window.editItem('product', '${p.code}')" title="Editar producto">✏️</button></td>
               </tr>
             `).join('')}
@@ -199,8 +201,35 @@ const views = {
           <div class="form-group"><label>Código</label><input type="text" id="np-code" required placeholder="PT-001"></div>
           <div class="form-group"><label>Nombre del Producto</label><input type="text" id="np-name" required></div>
           <div class="form-group"><label>Tipo</label><input type="text" id="np-type" placeholder="Textil, etc."></div>
-          <div class="form-group"><label>Precio Neto ($)</label><input type="number" id="np-pnet" required></div>
-          <div class="form-group"><label>Precio Venta ($)</label><input type="number" id="np-psale" required></div>
+          
+          <div style="background: rgba(59, 130, 246, 0.1); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; border: 1px solid var(--primary)">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem">
+              <input type="checkbox" id="np-incluye-iva" style="width: 18px; height: 18px; cursor: pointer">
+              <label for="np-incluye-iva" style="cursor: pointer; font-weight: 600; color: var(--primary)">El precio ingresado INCLUYE IVA (19%)</label>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.5rem">
+              <label>Precio Ingresado ($)</label>
+              <input type="number" id="np-precio-input" required placeholder="Ingrese el precio" style="font-size: 1.1rem">
+            </div>
+            <div class="grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-top: 0.75rem; padding: 0.5rem; background: var(--surface-light); border-radius: 0.25rem">
+              <div style="text-align: center">
+                <small style="opacity: 0.7">Neto</small><br>
+                <strong id="np-neto-display">$0</strong>
+                <input type="hidden" id="np-pnet" value="0">
+              </div>
+              <div style="text-align: center">
+                <small style="opacity: 0.7">IVA (19%)</small><br>
+                <strong id="np-iva-display" style="color: var(--accent)">$0</strong>
+                <input type="hidden" id="np-iva" value="0">
+              </div>
+              <div style="text-align: center">
+                <small style="opacity: 0.7">Precio Venta</small><br>
+                <strong id="np-total-display" style="color: var(--secondary)">$0</strong>
+                <input type="hidden" id="np-psale" value="0">
+              </div>
+            </div>
+          </div>
+          
           <div class="grid-2">
             <div class="form-group"><label>Color</label><input type="text" id="np-color" placeholder="Ej: Rojo"></div>
             <div class="form-group"><label>Tamaño</label><input type="text" id="np-size" placeholder="Ej: XL"></div>
@@ -1527,6 +1556,40 @@ function renderView(viewName) {
   }
 
   if (viewName === 'inventory_products') {
+    // IVA Calculation Logic
+    function calculateProductPrices() {
+      const input = parseFloat(document.getElementById('np-precio-input').value) || 0;
+      const incluyeIva = document.getElementById('np-incluye-iva').checked;
+
+      let neto, iva, total;
+
+      if (incluyeIva) {
+        // El precio ingresado YA incluye IVA, calcular hacia atrás
+        total = input;
+        neto = Math.round(input / 1.19 * 100) / 100;
+        iva = Math.round((total - neto) * 100) / 100;
+      } else {
+        // El precio es neto, calcular IVA y total
+        neto = input;
+        iva = Math.round(neto * 0.19 * 100) / 100;
+        total = Math.round((neto + iva) * 100) / 100;
+      }
+
+      // Update displays
+      document.getElementById('np-neto-display').textContent = '$' + neto.toLocaleString('es-CL');
+      document.getElementById('np-iva-display').textContent = '$' + iva.toLocaleString('es-CL');
+      document.getElementById('np-total-display').textContent = '$' + total.toLocaleString('es-CL');
+
+      // Update hidden inputs
+      document.getElementById('np-pnet').value = neto;
+      document.getElementById('np-iva').value = iva;
+      document.getElementById('np-psale').value = total;
+    }
+
+    // Add event listeners for calculation
+    document.getElementById('np-precio-input')?.addEventListener('input', calculateProductPrices);
+    document.getElementById('np-incluye-iva')?.addEventListener('change', calculateProductPrices);
+
     document.getElementById('new-prod-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const isEditMode = document.getElementById('np-edit-mode').value === 'true';
@@ -1536,8 +1599,9 @@ function renderView(viewName) {
         code: document.getElementById('np-code').value,
         name: document.getElementById('np-name').value,
         type: document.getElementById('np-type').value,
-        price_net: parseInt(document.getElementById('np-pnet').value),
-        price_sale: parseInt(document.getElementById('np-psale').value),
+        price_net: parseFloat(document.getElementById('np-pnet').value),
+        price_sale: parseFloat(document.getElementById('np-psale').value),
+        iva: parseFloat(document.getElementById('np-iva').value),
         cost_unit: parseFloat(document.getElementById('np-cost').value),
         color: document.getElementById('np-color').value,
         size: document.getElementById('np-size').value,
@@ -1556,6 +1620,7 @@ function renderView(viewName) {
       document.getElementById('np-original-code').value = '';
       document.getElementById('prod-modal-title').textContent = 'Nuevo Producto Terminado';
       e.target.reset();
+      fetchData();
     });
   }
 

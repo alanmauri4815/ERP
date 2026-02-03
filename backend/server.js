@@ -33,16 +33,23 @@ async function sendTelegramMessage(message) {
 }
 
 async function checkLowStockAlerts(mpCode) {
-    try {
-        const { data: rm } = await supabase.from('raw_materials').select('name, stock').eq('code', mpCode).single();
-        const { data: alertConfig } = await supabase.from('alerts_config').select('threshold').eq('mp_code', mpCode).single();
-
-        if (rm && alertConfig && rm.stock <= alertConfig.threshold) {
-            await sendTelegramMessage(`⚠️ <b>ALERTA DE STOCK BAJO</b>\n\nEl insumo <b>${rm.name}</b> (${mpCode}) tiene un stock de <b>${rm.stock}</b>, llegando al límite de <b>${alertConfig.threshold}</b>.\n\nFavor revisar stock.`);
-        }
-    } catch (e) {
-        console.error('Error checking alerts:', e.message);
+    const { data: rm } = await supabase.from('raw_materials').select('stock, name').eq('code', mpCode).single();
+    const { data: config } = await supabase.from('alerts_config').select('threshold').eq('mp_code', mpCode).single();
+    if (config && rm && rm.stock < config.threshold) {
+        await sendTelegramMessage(
+            `⚠️ <b>ALERTA DE STOCK BAJO</b>\n\n` +
+            `Insumo: <b>${rm.name}</b> (${mpCode})\n` +
+            `Stock actual: ${rm.stock.toFixed(2)}\n` +
+            `Límite configurado: ${config.threshold}`
+        );
     }
+}
+
+// Tax calculation helper
+function calculateTax(netPrice, taxRate = 0.19) {
+    const iva = Math.round(netPrice * taxRate * 100) / 100;
+    const total = Math.round((netPrice + iva) * 100) / 100;
+    return { iva, total };
 }
 
 app.use(cors());
@@ -440,15 +447,31 @@ app.post('/api/production', authenticateToken, async (req, res) => {
 // Master routes (POST, PUT, DELETE) follow similar patterns...
 // Adding some key ones
 app.post('/api/products', authenticateToken, async (req, res) => {
-    const { code, name, type, price_net, price_sale, cost_unit, color, size, parent_code } = req.body;
-    const { error } = await supabase.from('products').insert({ code, name, type, price_net, price_sale, cost_unit, color, size, parent_code });
+    let { code, name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total } = req.body;
+
+    // Auto-calculate tax if not provided
+    if (price_sale && (!iva || !total)) {
+        const tax = calculateTax(price_sale);
+        iva = tax.iva;
+        total = tax.total;
+    }
+
+    const { error } = await supabase.from('products').insert({ code, name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total });
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Producto creado.' });
 });
 
 app.put('/api/products/:code', authenticateToken, async (req, res) => {
-    const { name, type, price_net, price_sale, cost_unit, color, size, parent_code } = req.body;
-    const { error } = await supabase.from('products').update({ name, type, price_net, price_sale, cost_unit, color, size, parent_code }).eq('code', req.params.code);
+    let { name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total } = req.body;
+
+    // Auto-calculate tax if not provided but price changed
+    if (price_sale && (!iva || !total)) {
+        const tax = calculateTax(price_sale);
+        iva = tax.iva;
+        total = tax.total;
+    }
+
+    const { error } = await supabase.from('products').update({ name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total }).eq('code', req.params.code);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Producto actualizado.' });
 });
