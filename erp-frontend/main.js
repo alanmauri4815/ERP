@@ -1559,7 +1559,7 @@ function renderView(viewName) {
   }
 
   if (viewName === 'inventory_products') {
-    // IVA Calculation Logic
+    // IVA Calculation Logic - All values rounded to integers (Chilean pesos)
     function calculateProductPrices() {
       const input = parseFloat(document.getElementById('np-precio-input').value) || 0;
       const incluyeIva = document.getElementById('np-incluye-iva').checked;
@@ -1568,14 +1568,14 @@ function renderView(viewName) {
 
       if (incluyeIva) {
         // El precio ingresado YA incluye IVA, calcular hacia atrás
-        total = input;
-        neto = Math.round(input / 1.19 * 100) / 100;
-        iva = Math.round((total - neto) * 100) / 100;
+        total = Math.round(input);
+        neto = Math.round(input / 1.19);
+        iva = total - neto;
       } else {
         // El precio es neto, calcular IVA y total
-        neto = input;
-        iva = Math.round(neto * 0.19 * 100) / 100;
-        total = Math.round((neto + iva) * 100) / 100;
+        neto = Math.round(input);
+        iva = Math.round(neto * 0.19);
+        total = neto + iva;
       }
 
       // Update displays
@@ -1583,7 +1583,7 @@ function renderView(viewName) {
       document.getElementById('np-iva-display').textContent = '$' + iva.toLocaleString('es-CL');
       document.getElementById('np-total-display').textContent = '$' + total.toLocaleString('es-CL');
 
-      // Update hidden inputs
+      // Update hidden inputs (all integers)
       document.getElementById('np-pnet').value = neto;
       document.getElementById('np-iva').value = iva;
       document.getElementById('np-psale').value = total;
