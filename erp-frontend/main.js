@@ -1448,7 +1448,7 @@ window.refreshRecipeView = () => {
   if (!container) return;
 
   container.innerHTML = window.recipeState.items.map((r, i) => `
-  < tr class="recipe-row" data - index="${i}" >
+    <tr class="recipe-row" data-index="${i}">
       <td>${r.mp_name}</td>
       <td style="text-align: center">${r.quantity}</td>
       <td>${r.unit || ''}</td>
@@ -1459,7 +1459,7 @@ window.refreshRecipeView = () => {
         <button class="btn-sm" onclick="window.editRecipeRow(${i})" title="Modificar">✏️</button>
         <button class="btn-sm" onclick="window.deleteRecipeRow(${i})" style="background: var(--danger)" title="Eliminar">🗑️</button>
       </td>
-    </tr >
+    </tr>
   `).join('');
   window.calculateRecipeTotal();
 };
@@ -1475,7 +1475,7 @@ async function showRecipe(pid) {
   const totalCost = window.recipeState.items.reduce((sum, r) => sum + (r.unit_cost || 0), 0);
 
   container.innerHTML = `
-  < div class="animate-fade" >
+    <div class="animate-fade">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
         <h2>Receta: ${product.name} ${product.color ? '(' + product.color + ')' : ''}</h2>
         <button class="btn-sm" onclick="window.addRecipeRow()" style="background: var(--secondary)">➕ Agregar Insumo</button>
