@@ -79,31 +79,33 @@ async function fetchData() {
   `;
 
   try {
-    const [products, rawMaterials, providers, clients, stats, hPurchases, hSales, hProduction, users] = await Promise.all([
+    const [prods, rms, hSales, hPurch, hProd, st, usrs, recipes, accs, quotes, clis] = await Promise.all([
       apiFetch('/products'),
       apiFetch('/raw-materials'),
-      apiFetch('/providers'),
-      apiFetch('/clients'),
+      apiFetch('/sales'),
+      apiFetch('/purchases'),
+      apiFetch('/production'),
       apiFetch('/stats'),
-      apiFetch('/history/purchases'),
-      apiFetch('/history/sales'),
-      apiFetch('/history/production'),
-      currentUser?.role === 'superadmin' ? apiFetch('/users') : Promise.resolve([])
+      (currentUser.role === 'superadmin') ? apiFetch('/users') : Promise.resolve([]),
+      apiFetch('/recipes'),
+      apiFetch('/accounts'),
+      apiFetch('/quotations'),
+      apiFetch('/clients')
     ]);
 
-    if (!products) return; // session expired
+    if (!prods) return; // session expired
 
-    state.products = products;
-    state.rawMaterials = rawMaterials;
-    state.providers = providers;
-    state.clients = clients;
-    state.stats = stats;
-    state.history = {
-      purchases: hPurchases,
-      sales: hSales,
-      production: hProduction
-    };
-    state.users = users || [];
+    state.products = prods || [];
+    state.rawMaterials = rms || [];
+    state.history.sales = hSales || [];
+    state.history.purchases = hPurch || [];
+    state.history.production = hProd || [];
+    state.stats = st || {};
+    state.users = usrs || [];
+    state.recipes = recipes || {};
+    state.accounts = accs || [];
+    state.quotations = quotes || [];
+    state.clients = clis || [];
 
 
     const activeView = document.querySelector('.nav-item.active')?.dataset.view || 'dashboard';
@@ -1507,17 +1509,7 @@ async function showRecipe(pid) {
         </table>
       </div>
       
-      <div style="display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 1.5rem">
-        <div class="form-group" style="margin-bottom: 0">
-          <label>Cantidad a Producir</label>
-          <input type="number" id="prod-qty" value="1" min="1" style="width: 100px">
-        </div>
-        <button id="btn-save-recipe" style="background: var(--surface-light); color: var(--text)">💾 Guardar Cambios Receta</button>
-        <button id="btn-produce" style="flex: 1">🚀 Iniciar Producción</button>
-      </div>
-    </div >
-  `;
-
+`;
   window.refreshRecipeView();
 
   // Save recipe
@@ -1528,12 +1520,474 @@ async function showRecipe(pid) {
       batchSize: item.batch_size
     }));
 
-    await putData(`/ recipes / ${pid} `, { items });
+    await putData(`/recipes/${pid}`, { items });
     state.products = await fetch(`${API_BASE}/products`).then(r => r.json());
     state.recipes[pid] = null; // Clear cache
     showRecipe(pid);
   });
 }
+
+// --- Accounts State & View ---
+state.accounts = [];
+
+// ... (in fetchData) ...
+// Add fetch accounts logic
+
+views.accounts_management = () => `
+  <header class="animate-fade">
+    <h1>Gestión de Cuentas (Fondos)</h1>
+    <button onclick="window.openAccountModal()">+ Nueva Cuenta</button>
+  </header>
+  <div class="card animate-fade">
+    <div class="table-container">
+      <table>
+        <thead><tr><th>Nombre</th><th>Tipo</th><th>Saldo Actual</th><th>Acción</th></tr></thead>
+        <tbody>
+          ${state.accounts.map(acc => `
+            <tr>
+              <td><strong>${acc.name}</strong></td>
+              <td>${acc.type === 'debit' ? 'Débito / Banco' : (acc.type === 'credit' ? 'Tarjeta Crédito' : 'Efectivo')}</td>
+              <td style="color: ${acc.current_balance >= 0 ? 'var(--success)' : 'var(--danger)'}; font-weight: 600">
+                $${(acc.current_balance || 0).toLocaleString()}
+              </td>
+              <td><button class="btn-sm" onclick="window.editAccount('${acc.id}')">✏️</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="account-modal" class="modal" style="display:none">
+    <div class="card modal-content">
+       <h3 id="acc-modal-title">Nueva Cuenta</h3>
+       <form id="account-form">
+         <input type="hidden" id="acc-id">
+         <div class="form-group"><label>Nombre</label><input type="text" id="acc-name" required></div>
+         <div class="form-group"><label>Tipo</label>
+           <select id="acc-type">
+             <option value="debit">Banco / Débito</option>
+             <option value="credit">Tarjeta de Crédito</option>
+             <option value="cash">Efectivo / Caja Chica</option>
+           </select>
+         </div>
+         <div class="form-group"><label>Saldo Inicial</label><input type="number" id="acc-balance" value="0"></div>
+         <div class="form-actions">
+           <button type="button" onclick="document.getElementById('account-modal').style.display='none'">Cancelar</button>
+           <button type="submit">Guardar</button>
+         </div>
+       </form>
+    </div>
+  </div>
+`;
+
+window.openAccountModal = () => {
+  document.getElementById('account-modal').style.display = 'flex';
+  document.getElementById('acc-modal-title').textContent = 'Nueva Cuenta';
+  document.getElementById('acc-id').value = '';
+  document.getElementById('account-form').reset();
+};
+
+window.editAccount = (id) => {
+  const acc = state.accounts.find(a => a.id === id);
+  if (!acc) return;
+  window.openAccountModal();
+  document.getElementById('acc-modal-title').textContent = 'Editar Cuenta';
+  document.getElementById('acc-id').value = acc.id;
+  document.getElementById('acc-name').value = acc.name;
+  document.getElementById('acc-type').value = acc.type;
+  document.getElementById('acc-balance').value = acc.current_balance;
+};
+
+// --- Quotations State & View ---
+state.quotations = [];
+window.quotationItems = []; // Temporary items for current editing quote
+
+views.quotations = () => `
+  <header class="animate-fade">
+    <div style="display:flex; align-items:center; gap:1rem">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <line x1="16" y1="13" x2="8" y2="13"></line>
+        <line x1="16" y1="17" x2="8" y2="17"></line>
+        <polyline points="10 9 9 9 8 9"></polyline>
+      </svg>
+      <h1>Cotizaciones</h1>
+    </div>
+    <button onclick="window.openQuotationModal()">+ Nueva Cotización</button>
+  </header>
+  
+  <div class="card animate-fade">
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>Nombre Proyecto</th>
+            <th style="text-align:right">Costo Interno</th>
+            <th style="text-align:right">Precio Venta (IVA Inc)</th>
+            <th style="text-align:center">Estado</th>
+            <th style="text-align:center">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.quotations.length === 0 ? '<tr><td colspan="7" style="text-align:center; padding:3rem; opacity:0.5">No hay cotizaciones registradas</td></tr>' :
+    state.quotations.map(q => `
+              <tr>
+                <td>${q.date}</td>
+                <td>${q.clients?.name || 'Varios'}</td>
+                <td><strong>${q.name || '-'}</strong></td>
+                <td style="text-align:right">$${Math.round(q.total_net_cost || 0).toLocaleString()}</td>
+                <td style="text-align:right; font-weight:bold; color:var(--primary)">$${Math.round(q.total_price_gross || 0).toLocaleString()}</td>
+                <td style="text-align:center"><span class="badge ${q.status}">${q.status === 'draft' ? 'Borrador' : (q.status === 'approved' ? 'Aprobada' : q.status)}</span></td>
+                <td style="text-align:center">
+                  <button class="btn-sm" onclick="window.viewQuotation('${q.id}')">👁️ Ver</button>
+                </td>
+              </tr>
+            `).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Quotation Modal -->
+  <div id="quotation-modal" class="modal" style="display:none">
+    <div class="card modal-content modal-wide animate-fade">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem">
+        <h3 id="quote-modal-title">Nueva Cotización</h3>
+        <button class="btn-sm" style="background:none; color:var(--text-muted); font-size:1.5rem" onclick="document.getElementById('quotation-modal').style.display='none'">✕</button>
+      </div>
+
+      <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1.5rem">
+        <div class="form-group">
+          <label>Cliente</label>
+          <select id="quote-client">
+            <option value="">Seleccione...</option>
+            ${state.clients?.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group" style="flex:2">
+          <label>Nombre del Proyecto / Descripción</label>
+          <input type="text" id="quote-name" placeholder="Ej: Pedido 50 Poleras Estampadas">
+        </div>
+        <div class="form-group" style="width:120px">
+          <label>Cant. Total</label>
+          <input type="number" id="quote-qty" value="1" min="1" oninput="window.calculateQuotation()">
+        </div>
+        <div class="form-group" style="width:120px">
+          <label>% Utilidad</label>
+          <input type="number" id="quote-utility" value="80" min="0" oninput="window.calculateQuotation()">
+        </div>
+      </div>
+
+      <div style="margin-top: 2rem">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
+          <h4 style="margin:0; display:flex; align-items:center; gap:0.5rem">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7h-9m9 4h-9m9 4h-9M4 7h2m-2 4h2m-2 4h2"></path></svg>
+            Desglose de Costos Internos
+          </h4>
+          <button class="btn-sm btn-primary" onclick="window.addQuotationItem()">+ Agregar Ítem</button>
+        </div>
+        <div class="table-container" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px">
+          <table class="item-table" style="width:100%">
+            <thead style="position:sticky; top:0; background:var(--surface); z-index:10">
+              <tr>
+                <th style="width:120px">Tipo</th>
+                <th>Descripción / Insumo</th>
+                <th style="width:100px">Doc.</th>
+                <th style="width:140px">Costo Unit Neto</th>
+                <th style="width:80px">Cant</th>
+                <th style="width:140px; text-align:right">Subtotal</th>
+                <th style="width:40px"></th>
+              </tr>
+            </thead>
+            <tbody id="quote-items-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 2rem; margin-top: 2rem; padding-top: 1.5rem; border-top: 2px solid var(--border)">
+        <div style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 8px">
+          <h4 style="margin-top:0; color:var(--text-muted)">Resumen de Costos</h4>
+          <table class="summary-table" style="width:100%">
+            <tr><td>Neto (Facturas)</td><td id="res-cost-net" style="text-align:right">$0</td></tr>
+            <tr><td>IVA Gasto (Boletas)</td><td id="res-cost-iva" style="text-align:right">$0</td></tr>
+            <tr style="border-top: 1px solid var(--border)"><td style="padding-top:0.5rem"><strong>Costo Total</strong></td><td id="res-cost-total" style="text-align:right; font-weight:bold; padding-top:0.5rem">$0</td></tr>
+            <tr><td style="color:var(--primary)">Costo Unitario (CTU)</td><td id="res-ctu" style="text-align:right; font-weight:bold; color:var(--primary)">$0</td></tr>
+          </table>
+        </div>
+        <div style="background: var(--primary-light); padding: 1rem; border-radius: 8px; border-left: 4px solid var(--primary)">
+          <h4 style="margin-top:0; color:var(--primary)">Propuesta Venta Cliente</h4>
+          <table class="summary-table" style="width:100%">
+            <tr><td>Subtotal Venta Neto</td><td id="res-price-net" style="text-align:right">$0</td></tr>
+            <tr><td>IVA Venta (19%)</td><td id="res-price-iva" style="text-align:right">$0</td></tr>
+            <tr style="font-size: 1.1rem">
+                <td><strong>Total a Cobrar</strong></td>
+                <td id="res-price-total" style="text-align:right; color:var(--primary); font-weight:bold">$0</td>
+            </tr>
+            <tr style="font-size: 0.9rem; opacity:0.8">
+              <td>Precio Unitario (PVP)</td>
+              <td id="res-pvp" style="text-align:right">$0</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <div class="form-actions" style="margin-top: 2rem; border-top:none">
+        <button onclick="document.getElementById('quotation-modal').style.display='none'" style="background:var(--surface-light)">Cancelar</button>
+        <button class="btn-primary" style="padding: 0.8rem 2rem; font-weight:600" onclick="window.saveQuotation()">💾 Guardar y Finalizar</button>
+      </div>
+    </div>
+  </div>
+`;
+
+window.openQuotationModal = () => {
+  window.quotationItems = [];
+  document.getElementById('quotation-modal').style.display = 'flex';
+  document.getElementById('quote-modal-title').textContent = 'Nueva Cotización';
+  document.getElementById('quote-name').value = '';
+  document.getElementById('quote-client').value = '';
+  document.getElementById('quote-qty').value = '1';
+  document.getElementById('quote-utility').value = '80';
+  window.addQuotationItem(); // Start with one row
+  window.calculateQuotation();
+};
+
+window.addQuotationItem = () => {
+  window.quotationItems.push({
+    type: 'material',
+    description: '',
+    document_type: 'factura',
+    unit_value_net: 0,
+    quantity: 1
+  });
+  window.renderQuotationItems();
+};
+
+window.renderQuotationItems = () => {
+  const tbody = document.getElementById('quote-items-body');
+  if (!tbody) return;
+
+  tbody.innerHTML = window.quotationItems.map((item, index) => `
+    <tr>
+      <td>
+        <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'type', this.value)">
+          <option value="material" ${item.type === 'material' ? 'selected' : ''}>Material</option>
+          <option value="service" ${item.type === 'service' ? 'selected' : ''}>Servicio</option>
+          <option value="labor" ${item.type === 'labor' ? 'selected' : ''}>Mano Obra</option>
+          <option value="other" ${item.type === 'other' ? 'selected' : ''}>Otro</option>
+        </select>
+      </td>
+      <td>
+        <input type="text" class="form-input-sm" value="${item.description}" placeholder="Descripción ítem..." oninput="window.updateQuoteItem(${index}, 'description', this.value)">
+      </td>
+      <td>
+        <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'document_type', this.value)">
+          <option value="factura" ${item.document_type === 'factura' ? 'selected' : ''}>Factura</option>
+          <option value="boleta" ${item.document_type === 'boleta' ? 'selected' : ''}>Boleta</option>
+        </select>
+      </td>
+      <td>
+        <input type="number" class="form-input-sm" value="${item.unit_value_net}" style="text-align:right" oninput="window.updateQuoteItem(${index}, 'unit_value_net', this.value)">
+      </td>
+      <td>
+        <input type="number" class="form-input-sm" value="${item.quantity}" style="text-align:center" oninput="window.updateQuoteItem(${index}, 'quantity', this.value)">
+      </td>
+      <td style="text-align:right; font-weight:500">
+        $${Math.round(item.unit_value_net * item.quantity * (item.document_type === 'boleta' ? 1.19 : 1)).toLocaleString()}
+      </td>
+      <td>
+        <button class="btn-sm" onclick="window.removeQuoteItem(${index})" style="background:none; color:var(--danger); border:none; padding:0">✕</button>
+      </td>
+    </tr>
+  `).join('');
+};
+
+window.updateQuoteItem = (index, field, value) => {
+  const item = window.quotationItems[index];
+  item[field] = (field === 'unit_value_net' || field === 'quantity') ? parseFloat(value) || 0 : value;
+  window.renderQuotationItems();
+  window.calculateQuotation();
+};
+
+window.removeQuoteItem = (index) => {
+  window.quotationItems.splice(index, 1);
+  window.renderQuotationItems();
+  window.calculateQuotation();
+};
+
+window.calculateQuotation = () => {
+  const globalQty = parseFloat(document.getElementById('quote-qty').value) || 1;
+  const utilityPerc = parseFloat(document.getElementById('quote-utility').value) || 0;
+
+  let costFacturas = 0;
+  let costBoletas = 0;
+
+  window.quotationItems.forEach(item => {
+    let sub = (item.unit_value_net || 0) * (item.quantity || 0);
+    if (item.document_type === 'boleta') {
+      costBoletas += sub * 0.19; // IVA as cost
+      sub *= 1.19;
+    } else {
+      costFacturas += sub;
+    }
+  });
+
+  const totalInternalCost = costFacturas + (costBoletas); // Wait, costBoletas above already includes the 1.19 multiplier? 
+  // Let's re-fix logic:
+  let totalCost = 0;
+  let factNet = 0;
+  let bolIVA = 0;
+
+  window.quotationItems.forEach(item => {
+    const raw = (item.unit_value_net || 0) * (item.quantity || 0);
+    if (item.document_type === 'boleta') {
+      totalCost += raw * 1.19;
+      bolIVA += raw * 0.19;
+    } else {
+      totalCost += raw;
+      factNet += raw;
+    }
+  });
+
+  const ctu = totalCost / globalQty;
+  const priceNet = totalCost * (1 + (utilityPerc / 100));
+  const iva = priceNet * 0.19;
+  const priceGross = priceNet + iva;
+
+  document.getElementById('res-cost-net').textContent = `$${Math.round(factNet).toLocaleString()}`;
+  document.getElementById('res-cost-iva').textContent = `$${Math.round(bolIVA).toLocaleString()}`;
+  document.getElementById('res-cost-total').textContent = `$${Math.round(totalCost).toLocaleString()}`;
+  document.getElementById('res-ctu').textContent = `$${Math.round(ctu).toLocaleString()}`;
+
+  document.getElementById('res-price-net').textContent = `$${Math.round(priceNet).toLocaleString()}`;
+  document.getElementById('res-price-iva').textContent = `$${Math.round(iva).toLocaleString()}`;
+  document.getElementById('res-price-total').textContent = `$${Math.round(priceGross).toLocaleString()}`;
+  document.getElementById('res-pvp').textContent = `$${Math.round(priceGross / globalQty).toLocaleString()}`;
+
+  window.currentQuoteCalcs = {
+    total_net_cost: totalCost,
+    total_price_net: priceNet,
+    total_iva: iva,
+    total_price_gross: priceGross
+  };
+};
+
+window.saveQuotation = async () => {
+  const clientId = document.getElementById('quote-client').value;
+  const name = document.getElementById('quote-name').value;
+  if (!clientId || !name) return alert('Por favor complete Cliente y Nombre del Proyecto');
+
+  const body = {
+    client_id: clientId,
+    name: name,
+    quantity: parseFloat(document.getElementById('quote-qty').value),
+    utility_percentage: parseFloat(document.getElementById('quote-utility').value),
+    ...window.currentQuoteCalcs,
+    items: window.quotationItems.map(it => ({
+      ...it,
+      subtotal_cost: Math.round(it.unit_value_net * it.quantity * (it.document_type === 'boleta' ? 1.19 : 1))
+    }))
+  };
+
+  const res = await apiFetch('/quotations', { method: 'POST', body: JSON.stringify(body) });
+  if (res && res.success) {
+    alert('Cotización guardada correctamente');
+    document.getElementById('quotation-modal').style.display = 'none';
+    fetchData();
+  }
+};
+
+window.viewQuotation = async (id) => {
+  const q = await apiFetch(`/quotations/${id}`);
+  if (!q) return;
+
+  const modalId = 'view-quote-modal';
+  let modal = document.getElementById(modalId);
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'modal';
+    document.body.appendChild(modal);
+  }
+
+  const renderContent = (viewType) => {
+    let tableHtml = '';
+    if (viewType === 'internal') {
+      tableHtml = `
+        <table>
+          <thead>
+            <tr><th>Tipo</th><th>Descripción</th><th>Doc.</th><th>Costo Unit</th><th>Cant</th><th>Subtotal</th></tr>
+          </thead>
+          <tbody>
+            ${q.items.map(it => `
+              <tr>
+                <td>${it.type}</td>
+                <td>${it.description}</td>
+                <td>${it.document_type}</td>
+                <td>$${Math.round(it.unit_value_net).toLocaleString()}</td>
+                <td>${it.quantity}</td>
+                <td style="text-align:right">$${Math.round(it.subtotal_cost).toLocaleString()}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } else {
+      // Client view: Consolidate by type or just show items with final price
+      // For now, let's show items but with a "Client Price" (Cost * Utility * 1.19)
+      const multiplier = (1 + (q.utility_percentage / 100)) * 1.19;
+      tableHtml = `
+        <table>
+          <thead>
+            <tr><th>Descripción</th><th>Unidades</th><th style="text-align:right">Valor Unitario (IVA Inc)</th><th style="text-align:right">Total</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>${q.name}</td>
+              <td style="text-align:center">${q.quantity}</td>
+              <td style="text-align:right">$${Math.round(q.total_price_gross / q.quantity).toLocaleString()}</td>
+              <td style="text-align:right; font-weight:bold">$${Math.round(q.total_price_gross).toLocaleString()}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p style="margin-top:1rem; font-size:0.9rem; opacity:0.7">Nota: Valores incluyen IVA (19%). Cotización sujeta a factibilidad técnica.</p>
+      `;
+    }
+
+    modal.innerHTML = `
+      <div class="card modal-content modal-wide animate-fade">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem">
+          <h3>Cotización #${q.id.split('-')[0]} - ${q.name}</h3>
+          <div class="tab-group">
+            <button class="tab-btn ${viewType === 'internal' ? 'active' : ''}" onclick="window.updateViewQuoteType('internal')">Vista Interna</button>
+            <button class="tab-btn ${viewType === 'client' ? 'active' : ''}" onclick="window.updateViewQuoteType('client')">Vista Cliente (PVP)</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:1.5rem">
+          <p><strong>Cliente:</strong> ${q.clients?.name || 'Varios'}</p>
+          <p><strong>Fecha:</strong> ${q.date}</p>
+        </div>
+
+        <div class="table-container">${tableHtml}</div>
+
+        <div class="form-actions" style="margin-top:2rem">
+          <button onclick="document.getElementById('${modalId}').style.display='none'">Cerrar</button>
+          ${viewType === 'client' ? `<button class="btn-primary" onclick="window.printQuotation()">🖨️ Imprimir / PDF</button>` : ''}
+        </div>
+      </div>
+    `;
+  };
+
+  window.updateViewQuoteType = (type) => renderContent(type);
+  window.currentViewedQuote = q;
+  renderContent('client'); // Default to client view
+  modal.style.display = 'flex';
+};
+
 
 async function postData(endpoint, body) {
   try {
@@ -1656,9 +2110,10 @@ function renderView(viewName) {
     return;
   }
 
-  if (viewName === 'dashboard') {
-    initSalesChart();
+  if (viewName === 'quotations') {
+    // Initialization for quotations view
   }
+
 
   if (viewName === 'reports') {
     initReports();
