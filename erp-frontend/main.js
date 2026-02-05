@@ -9,7 +9,7 @@ import {
   formatProductionForExport
 } from './export-utils.js'
 
-const API_BASE = import.meta.env.VITE_API_BASE || (typeof window !== 'undefined' && window.location.origin.includes('localhost') ? 'http://localhost:3001/api' : '/api');
+const API_BASE = 'https://erp-backend-0fis.onrender.com/api';
 const mainContent = document.getElementById('main-content');
 const navItems = document.querySelectorAll('.nav-item');
 
