@@ -202,6 +202,12 @@ app.get('/api/clients', authenticateToken, async (req, res) => {
     res.json(data);
 });
 
+app.get('/api/recipes', authenticateToken, async (req, res) => {
+    // Return an empty object to satisfy the frontend pre-load
+    // Individual recipes will still be fetched by productCode
+    res.json({});
+});
+
 app.get('/api/recipes/:productCode', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from(T.RECIPES)
@@ -269,10 +275,10 @@ app.put('/api/recipes/:productCode', authenticateToken, async (req, res) => {
     }
 });
 
-app.get('/api/history/purchases', authenticateToken, async (req, res) => {
+app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (req, res) => {
     const { data: history, error } = await supabase
         .from(T.PURCHASES)
-        .select(`*, providers:"${T.PROVIDERS}"(name)`)
+        .select(`*, proveedores:"${T.PROVIDERS}"(name)`)
         .order('date', { ascending: false });
 
     if (error) return res.status(500).json({ error: error.message });
@@ -299,7 +305,7 @@ app.get('/api/history/purchases', authenticateToken, async (req, res) => {
     res.json(fullHistory);
 });
 
-app.get('/api/history/sales', authenticateToken, async (req, res) => {
+app.get(['/api/history/sales', '/api/sales'], authenticateToken, async (req, res) => {
     const { data: history, error } = await supabase
         .from(T.SALES)
         .select(`*, clients:"${T.CLIENTS}"(name)`)
@@ -329,7 +335,7 @@ app.get('/api/history/sales', authenticateToken, async (req, res) => {
     res.json(fullHistory);
 });
 
-app.get('/api/history/production', authenticateToken, async (req, res) => {
+app.get(['/api/history/production', '/api/production'], authenticateToken, async (req, res) => {
     const { data: history, error } = await supabase
         .from(T.PRODUCTION)
         .select('*')
