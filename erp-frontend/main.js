@@ -1993,7 +1993,10 @@ window.refreshRecipeView = () => {
 
   container.innerHTML = window.recipeState.items.map((r, i) => `
     <tr class="recipe-row" data-index="${i}">
-      <td>${r.mp_name}</td>
+      <td>
+        <strong>${r.mp_name}</strong>
+        ${r.color || r.size ? `<br><small style="opacity:0.7">${r.color || ''} ${r.size ? '| ' + r.size : ''}</small>` : ''}
+      </td>
       <td style="text-align: center">${r.quantity}</td>
       <td>${r.unit || ''}</td>
       <td>$${(r.cost_net || 0).toLocaleString()}</td>

@@ -330,7 +330,9 @@ app.get('/api/recipes/:productCode', authenticateToken, async (req, res) => {
             raw_materials:"${T.MP}" (
                 name,
                 unit,
-                cost_net
+                cost_net,
+                color,
+                size
             )
         `)
         .eq('product_code', req.params.productCode);
@@ -342,7 +344,9 @@ app.get('/api/recipes/:productCode', authenticateToken, async (req, res) => {
         ...r,
         mp_name: r.raw_materials?.name,
         unit: r.raw_materials?.unit,
-        cost_net: r.raw_materials?.cost_net
+        cost_net: r.raw_materials?.cost_net,
+        color: r.raw_materials?.color,
+        size: r.raw_materials?.size
     }));
 
     res.json(flattened);
