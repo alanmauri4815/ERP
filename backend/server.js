@@ -607,7 +607,7 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 
         await createAccountingEntry({
             date,
-            description: `Venta de productos (${event_name || 'General'})`,
+            description: `Venta de productos (${event_name || 'General'})`, // Reverted to original as the provided change was syntactically incorrect.
             type: 'venta',
             document_number: sale.id.toString(),
             userId: req.user.id,
@@ -1031,32 +1031,30 @@ app.get('/api/accounting/ledger', authenticateToken, async (req, res) => {
     try {
         const { data: entries, error: eError } = await supabase
             .from(T.ACCOUNTING_ENTRIES)
-            .select('*')
+            .select(`
+                *,
+                lines:accounting_lines(
+                    *,
+                    account:accounting_accounts(name, code)
+                )
+            `)
             .order('date', { ascending: false });
 
         if (eError) throw eError;
 
-        const ledger = [];
-        for (const entry of entries) {
-            const { data: lines, error: lError } = await supabase
-                .from(T.ACCOUNTING_LINES)
-                // Use inner join or separate fetch for account details
-                .select(`*, accounting_accounts(name, code)`)
-                .eq('asiento_id', entry.id);
+        // Map it to the format the frontend expects
+        const formattedLedger = entries.map(entry => ({
+            ...entry,
+            lines: (entry.lines || []).map(l => ({
+                ...l,
+                account_name: l.account?.name,
+                account_code: l.account?.code
+            }))
+        }));
 
-            if (lError) throw lError;
-
-            ledger.push({
-                ...entry,
-                lines: lines.map(l => ({
-                    ...l,
-                    account_name: l.accounting_accounts?.name,
-                    account_code: l.accounting_accounts?.code
-                }))
-            });
-        }
-        res.json(ledger);
+        res.json(formattedLedger);
     } catch (e) {
+        console.error('Ledger error:', e);
         res.status(500).json({ error: e.message });
     }
 });

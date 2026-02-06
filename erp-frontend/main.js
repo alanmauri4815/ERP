@@ -76,7 +76,7 @@ let state = {
   accountingAccounts: [],
   ledger: [],
   ledgerFilter: {
-    type: 'venta',
+    type: 'all',
     order: 'asc'
   }
 };

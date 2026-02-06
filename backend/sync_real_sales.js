@@ -137,24 +137,26 @@ async function syncRealSales() {
         const payments = {}; // { account_id: amount }
 
         items.forEach(it => {
-            const total = parseInt(it[12]);
-            const type = it[13].charAt(0).toUpperCase();
+            // Buscamos los índices correctos ignorando celdas vacías o ajustando al formato
+            // 11: Total, 12: Tipo Pago, 13: Comisión, 14: IVA, 15: Neto
+            const total = parseInt(it[11]) || 0;
+            const type = it[12] ? it[12].trim().toUpperCase() : 'E';
+            const comm = parseInt(it[13]) || 0;
             const iva = parseInt(it[14]) || 0;
-            const comm = (type === 'M' || type === 'T') ? (parseInt(it[15]) || 0) : 0; // Comm only for M/T
 
             totalRev += (total - iva);
             totalIva += iva;
 
             let accCode = '1.1.01.01'; // Default Caja
-            if (type === 'M') accCode = '1.1.01.03';
-            if (type === 'T') accCode = '1.1.01.02';
+            if (type === 'M') accCode = '1.1.01.03'; // Máquina
+            if (type === 'T') accCode = '1.1.01.02'; // Banco
 
             const accId = codeMap[accCode];
             payments[accId] = (payments[accId] || 0) + (total - comm);
             if (comm > 0) totalComm += comm;
         });
 
-        // 1. Debits (Ingresos)
+        // 1. Debits (IngresosNetos por cuenta)
         for (const accId in payments) {
             journalLines.push({
                 asiento_id: header.id,
