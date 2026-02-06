@@ -8,7 +8,6 @@ const jwt = require('jsonwebtoken');
 const app = express();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// Table Mapping for Spanish consistency
 const T = {
     MP: 'materias primas',
     PRODUCTS: 'productos',
@@ -26,8 +25,54 @@ const T = {
     ALERTS: 'alerts_config',
     ACCOUNTS: 'accounts',
     QUOTATIONS: 'quotations',
-    QUOTE_ITEMS: 'quotation_items'
+    QUOTE_ITEMS: 'quotation_items',
+    PAYMENT_MACHINES: 'payment_machines',
+    ACCOUNTING_ENTRIES: 'asientos_contables',
+    ACCOUNTING_ACCOUNTS: 'accounting_accounts',
+    ACCOUNTING_LINES: 'accounting_lines'
 };
+
+// Accounting Helper
+async function createAccountingEntry({ date, description, type, document_number, lines, userId }) {
+    try {
+        // 1. Create Header
+        const { data: header, error: hError } = await supabase
+            .from(T.ACCOUNTING_ENTRIES)
+            .insert({
+                date: date || new Date().toISOString().split('T')[0],
+                description,
+                entry_type: type,
+                document_number,
+                created_by: userId
+            })
+            .select()
+            .single();
+
+        if (hError) throw hError;
+
+        // 2. Resolve account codes to IDs (Utility)
+        const { data: accs } = await supabase.from(T.ACCOUNTING_ACCOUNTS).select('id, code');
+        const codeMap = {};
+        accs.forEach(a => codeMap[a.code] = a.id);
+
+        // 3. Create Lines
+        const journalLines = lines.map(line => ({
+            asiento_id: header.id,
+            account_id: codeMap[line.account_code] || line.account_id,
+            debit: line.debit || 0,
+            credit: line.credit || 0,
+            glosa: line.glosa || description
+        }));
+
+        const { error: lError } = await supabase.from(T.ACCOUNTING_LINES).insert(journalLines);
+        if (lError) throw lError;
+
+        return { success: true, id: header.id };
+    } catch (e) {
+        console.error('Accounting Entry Error:', e);
+        return { success: false, error: e.message };
+    }
+}
 
 // Telegram Helper
 async function sendTelegramMessage(message) {
@@ -183,23 +228,92 @@ app.get('/api/raw-materials', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/providers', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase
-        .from(T.PROVIDERS)
-        .select('*')
-        .not('id', 'is', null);
-
+    const { data, error } = await supabase.from(T.PROVIDERS).select('*').order('name');
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
+    res.json(data || []);
+});
+
+app.post('/api/providers', authenticateToken, async (req, res) => {
+    const { rut, name, address, contact, phone, email, notes } = req.body;
+    const { data, error } = await supabase.from(T.PROVIDERS).insert({ rut, name, address, contact, phone, email, notes }).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, data });
+});
+
+app.put('/api/providers/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { rut, name, address, contact, phone, email, notes } = req.body;
+    const { error } = await supabase.from(T.PROVIDERS).update({ rut, name, address, contact, phone, email, notes }).eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+app.delete('/api/providers/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { error } = await supabase.from(T.PROVIDERS).delete().eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
 });
 
 app.get('/api/clients', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase
-        .from(T.CLIENTS)
-        .select('*')
-        .not('id', 'is', null);
-
+    const { data, error } = await supabase.from(T.CLIENTS).select('*').order('name');
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
+    res.json(data || []);
+});
+
+app.post('/api/clients', authenticateToken, async (req, res) => {
+    const { name, address, phone, email, rut, notes } = req.body;
+    const { data, error } = await supabase.from(T.CLIENTS).insert({ name, address, phone, email, rut, notes }).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, data });
+});
+
+app.put('/api/clients/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { name, address, phone, email, rut, notes } = req.body;
+    const { error } = await supabase.from(T.CLIENTS).update({ name, address, phone, email, rut, notes }).eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+app.delete('/api/clients/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { error } = await supabase.from(T.CLIENTS).delete().eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+// ========== PAYMENT MACHINES ==========
+app.get('/api/payment-machines', authenticateToken, async (req, res) => {
+    const { data, error } = await supabase.from(T.PAYMENT_MACHINES).select('*').order('name');
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data || []);
+});
+
+app.post('/api/payment-machines', authenticateToken, async (req, res) => {
+    const { name, provider, commission_percent, account_id, active } = req.body;
+    const { data, error } = await supabase.from(T.PAYMENT_MACHINES)
+        .insert({ name, provider, commission_percent: commission_percent || 0, account_id, active: active !== false })
+        .select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, data });
+});
+
+app.put('/api/payment-machines/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { name, provider, commission_percent, account_id, active } = req.body;
+    const { error } = await supabase.from(T.PAYMENT_MACHINES)
+        .update({ name, provider, commission_percent, account_id, active })
+        .eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+app.delete('/api/payment-machines/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { error } = await supabase.from(T.PAYMENT_MACHINES).delete().eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
 });
 
 app.get('/api/recipes', authenticateToken, async (req, res) => {
@@ -365,13 +479,20 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 });
 
 app.post('/api/purchases', authenticateToken, async (req, res) => {
-    const { providerId, items, net, iva, total } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type } = req.body;
     const date = new Date().toISOString().split('T')[0];
 
     try {
         const { data: purchase, error: pError } = await supabase
             .from(T.PURCHASES)
-            .insert({ date, provider_id: providerId || null, net, iva, total })
+            .insert({
+                date,
+                provider_id: providerId || null,
+                net, iva, total,
+                payment_method: payment_method || null,
+                account_id: account_id || null,
+                document_type: document_type || 'factura'
+            })
             .select()
             .single();
 
@@ -395,6 +516,20 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             }
         }
 
+        // Create Accounting Entry
+        await createAccountingEntry({
+            date,
+            description: `Compra a proveedor (Factura #${purchase.id})`,
+            type: 'compra',
+            document_number: purchase.id.toString(),
+            userId: req.user.id,
+            lines: [
+                { account_code: '1.1.02.01', debit: net },         // Inventario MP (Neto)
+                { account_code: '1.1.03.01', debit: iva },         // IVA Crédito Fiscal
+                { account_code: '1.1.01.01', credit: total }       // Pago desde Caja/Banco (Total)
+            ]
+        });
+
         res.json({ success: true, message: 'Compra registrada exitosamente.' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -402,13 +537,23 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/sales', authenticateToken, async (req, res) => {
-    const { clientId, items, net, iva, total } = req.body;
+    const { clientId, items, net, iva, total, payment_method, account_id, is_iva_exempt, machine_id, event_name } = req.body;
     const date = new Date().toISOString().split('T')[0];
 
     try {
         const { data: sale, error: sError } = await supabase
             .from(T.SALES)
-            .insert({ date, client_id: clientId || null, net, iva, total })
+            .insert({
+                date,
+                client_id: clientId || null,
+                net, iva, total,
+                payment_method: payment_method || null,
+                account_id: account_id || null,
+                is_iva_exempt: is_iva_exempt || false,
+                machine_id: machine_id || null,
+                event_name: event_name || null,
+                transferred: false
+            })
             .select()
             .single();
 
@@ -431,10 +576,125 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             }
         }
 
+        // Create Accounting Entry
+        let paymentAccount = '1.1.01.01'; // Default: Caja
+        let commissionAmount = 0;
+
+        if (payment_method === 'machine') {
+            paymentAccount = '1.1.01.03'; // Fondos por Recaudar
+            if (machine_id) {
+                const { data: machine } = await supabase.from(T.PAYMENT_MACHINES).select('commission_percent').eq('id', machine_id).single();
+                if (machine && machine.commission_percent) {
+                    commissionAmount = Math.round(total * machine.commission_percent / 100);
+                }
+            }
+        } else if (payment_method === 'transfer') {
+            paymentAccount = '1.1.01.02'; // Banco
+        }
+
+        const journalLines = [
+            { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Venta #${sale.id} (${payment_method})` },
+            { account_code: '4.1.01.01', credit: net, glosa: `Ingreso neto venta #${sale.id}` }
+        ];
+
+        if (commissionAmount > 0) {
+            journalLines.push({ account_code: '5.1.02.02', debit: commissionAmount, glosa: `Comisión máquina venta #${sale.id}` });
+        }
+
+        if (!is_iva_exempt && iva > 0) {
+            journalLines.push({ account_code: '2.1.02.01', credit: iva, glosa: `IVA Débito venta #${sale.id}` });
+        }
+
+        await createAccountingEntry({
+            date,
+            description: `Venta de productos (${event_name || 'General'})`,
+            type: 'venta',
+            document_number: sale.id.toString(),
+            userId: req.user.id,
+            lines: journalLines
+        });
+
         res.json({ success: true, message: 'Venta registrada exitosamente.' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
+});
+
+// ========== DIRECT SALES TRANSFERS ==========
+app.get('/api/sales/pending-transfer', authenticateToken, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from(T.SALES)
+            .select('*, payment_machines:machine_id(name, commission_percent)')
+            .is('client_id', null)
+            .eq('transferred', false)
+            .order('date', { ascending: false });
+        if (error) throw error;
+        res.json(data || []);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/sales/bulk-transfer', authenticateToken, async (req, res) => {
+    const { sale_ids, destination_account_id } = req.body;
+    const transferDate = new Date().toISOString().split('T')[0];
+
+    try {
+        // Get sales with machine info
+        const { data: sales, error: sError } = await supabase
+            .from(T.SALES)
+            .select('*, payment_machines:machine_id(commission_percent)')
+            .in('id', sale_ids);
+        if (sError) throw sError;
+
+        let totalGross = 0, totalIva = 0, totalCommission = 0;
+
+        for (const sale of sales) {
+            const gross = sale.total || 0;
+            const commissionRate = sale.payment_machines?.commission_percent || 0;
+            const commission = Math.round(gross * commissionRate / 100);
+            const actualTransfer = gross - commission;
+
+            totalGross += gross;
+            totalCommission += commission;
+
+            // Update sale as transferred
+            await supabase.from(T.SALES).update({
+                transferred: true,
+                transferred_date: transferDate,
+                transferred_to_account_id: destination_account_id,
+                transfer_amount: actualTransfer
+            }).eq('id', sale.id);
+        }
+
+        const totalNetTransfer = totalGross - totalCommission;
+
+        // Create Simplified Accounting Entry for Transfer (Since commission was already recorded at sale)
+        await createAccountingEntry({
+            date: transferDate,
+            description: `Liquidación masiva Transbank (${sales.length} ventas)`,
+            type: 'transferencia',
+            userId: req.user.id,
+            lines: [
+                { account_code: '1.1.01.02', debit: totalNetTransfer },      // Entra al Banco
+                { account_code: '1.1.01.03', credit: totalNetTransfer }     // Sale de Fondos por Recaudar (ya neto)
+            ]
+        });
+
+        res.json({
+            success: true,
+            summary: { totalGross, totalIva, totalCommission, totalNet, salesCount: sales.length }
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/accounting-entries', authenticateToken, async (req, res) => {
+    const { data, error } = await supabase.from(T.ACCOUNTING_ENTRIES).select('*').order('date', { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data || []);
 });
 
 app.post('/api/production', authenticateToken, async (req, res) => {
@@ -450,6 +710,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
 
         if (pError) throw pError;
 
+        let totalProductionCost = 0;
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.productCode && item.quantity > 0) {
@@ -468,14 +729,32 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                 // Update MP stock based on recipe
                 const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', item.productCode);
                 for (const r of recipe) {
-                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).single();
-                    const newStock = (rm?.stock || 0) - (r.quantity * item.quantity);
+                    const { data: rm } = await supabase.from(T.MP).select('stock, cost_net').eq('code', r.mp_code).single();
+                    const consumptionQty = (r.quantity * item.quantity);
+                    const consumptionCost = consumptionQty * (rm?.cost_net || 0);
+                    totalProductionCost += consumptionCost;
+
+                    const newStock = (rm?.stock || 0) - consumptionQty;
                     await supabase.from(T.MP).update({ stock: newStock }).eq('code', r.mp_code);
 
                     // Check alert
                     await checkLowStockAlerts(r.mp_code);
                 }
             }
+        }
+
+        // Create Accounting Entry for Consumption
+        if (totalProductionCost > 0) {
+            await createAccountingEntry({
+                date,
+                description: `Consumo de Materias Primas - Producción #${prod.id}`,
+                type: 'consumo',
+                userId: req.user.id,
+                lines: [
+                    { account_code: '1.1.02.02', debit: totalProductionCost }, // Inventario PT
+                    { account_code: '1.1.02.01', credit: totalProductionCost } // Inventario MP
+                ]
+            });
         }
 
         res.json({ success: true, message: 'Producción registrada exitosamente.' });
@@ -738,6 +1017,82 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
     if (iError) return res.status(500).json({ error: iError.message });
 
     res.json({ ...quotation, items });
+});
+
+// --- Accounting System Endpoints ---
+
+app.get('/api/accounting/accounts', authenticateToken, async (req, res) => {
+    const { data, error } = await supabase.from(T.ACCOUNTING_ACCOUNTS).select('*').order('code');
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
+app.get('/api/accounting/ledger', authenticateToken, async (req, res) => {
+    try {
+        const { data: entries, error: eError } = await supabase
+            .from(T.ACCOUNTING_ENTRIES)
+            .select('*')
+            .order('date', { ascending: false });
+
+        if (eError) throw eError;
+
+        const ledger = [];
+        for (const entry of entries) {
+            const { data: lines, error: lError } = await supabase
+                .from(T.ACCOUNTING_LINES)
+                // Use inner join or separate fetch for account details
+                .select(`*, accounting_accounts(name, code)`)
+                .eq('asiento_id', entry.id);
+
+            if (lError) throw lError;
+
+            ledger.push({
+                ...entry,
+                lines: lines.map(l => ({
+                    ...l,
+                    account_name: l.accounting_accounts?.name,
+                    account_code: l.accounting_accounts?.code
+                }))
+            });
+        }
+        res.json(ledger);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/accounting/expenses', authenticateToken, async (req, res) => {
+    const { date, description, amount, account_origin_code, category_code } = req.body;
+
+    const result = await createAccountingEntry({
+        date,
+        description,
+        type: 'gasto',
+        userId: req.user.id,
+        lines: [
+            { account_code: category_code || '5.1.02.01', debit: amount }, // Gasto Operacional
+            { account_code: account_origin_code || '1.1.01.01', credit: amount } // Pago (Caja)
+        ]
+    });
+
+    res.json(result);
+});
+
+app.post('/api/accounting/transfers', authenticateToken, async (req, res) => {
+    const { date, description, amount, from_account_code, to_account_code } = req.body;
+
+    const result = await createAccountingEntry({
+        date,
+        description: description || 'Transferencia entre cuentas',
+        type: 'transferencia',
+        userId: req.user.id,
+        lines: [
+            { account_code: to_account_code, debit: amount },
+            { account_code: from_account_code, credit: amount }
+        ]
+    });
+
+    res.json(result);
 });
 
 app.post('/api/quotations', authenticateToken, async (req, res) => {

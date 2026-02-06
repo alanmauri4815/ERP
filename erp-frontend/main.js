@@ -9,7 +9,10 @@ import {
   formatProductionForExport
 } from './export-utils.js'
 
-const API_BASE = 'https://erp-backend-0fis.onrender.com/api';
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:3001/api'
+  : 'https://erp-backend-0fis.onrender.com/api';
+
 const mainContent = document.getElementById('main-content');
 const navItems = document.querySelectorAll('.nav-item');
 
@@ -23,19 +26,29 @@ async function apiFetch(endpoint, options = {}) {
     ...options.headers
   };
 
-  const response = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
 
-  if (response.status === 401 || response.status === 403) {
-    if (token) {
-      token = null;
-      localStorage.removeItem('erp_token');
-      localStorage.removeItem('erp_user');
-      renderView('login');
+    if (response.status === 401 || response.status === 403) {
+      if (token) {
+        token = null;
+        localStorage.removeItem('erp_token');
+        localStorage.removeItem('erp_user');
+        renderView('login');
+      }
+      return null;
     }
+
+    const data = await response.json();
+    if (!response.ok) {
+      console.error(`API Error (${endpoint}):`, data);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    console.error(`Fetch Error (${endpoint}):`, err);
     return null;
   }
-
-  return response.json();
 }
 
 let state = {
@@ -56,7 +69,16 @@ let state = {
     production: []
   },
   recipes: {},
-  users: []
+  users: [],
+  paymentMachines: [],
+  pendingTransfers: [],
+  accountingEntries: [],
+  accountingAccounts: [],
+  ledger: [],
+  ledgerFilter: {
+    type: 'venta',
+    order: 'asc'
+  }
 };
 
 async function fetchUsers() {
@@ -79,7 +101,7 @@ async function fetchData() {
   `;
 
   try {
-    const [prods, rms, hSales, hPurch, hProd, st, usrs, recipes, accs, quotes, clis] = await Promise.all([
+    const [prods, rms, hSales, hPurch, hProd, st, usrs, recipes, accs, quotes, clis, pmachines, aAccounts, aLedger] = await Promise.all([
       apiFetch('/products'),
       apiFetch('/raw-materials'),
       apiFetch('/sales'),
@@ -90,22 +112,28 @@ async function fetchData() {
       apiFetch('/recipes'),
       apiFetch('/accounts'),
       apiFetch('/quotations'),
-      apiFetch('/clients')
+      apiFetch('/clients'),
+      apiFetch('/payment-machines'),
+      apiFetch('/accounting/accounts'),
+      apiFetch('/accounting/ledger')
     ]);
 
-    if (!prods) return; // session expired
-
-    state.products = prods || [];
-    state.rawMaterials = rms || [];
-    state.history.sales = hSales || [];
-    state.history.purchases = hPurch || [];
-    state.history.production = hProd || [];
+    // Data assignments with default empty arrays/objects to prevent crashes if an endpoint fails
+    state.products = Array.isArray(prods) ? prods : [];
+    state.rawMaterials = Array.isArray(rms) ? rms : [];
+    state.history.sales = Array.isArray(hSales) ? hSales : [];
+    state.history.purchases = Array.isArray(hPurch) ? hPurch : [];
+    state.history.production = Array.isArray(hProd) ? hProd : [];
     state.stats = st || {};
-    state.users = usrs || [];
+    state.users = Array.isArray(usrs) ? usrs : [];
     state.recipes = recipes || {};
-    state.accounts = accs || [];
-    state.quotations = quotes || [];
-    state.clients = clis || [];
+    state.accounts = Array.isArray(accs) ? accs : [];
+    state.quotations = Array.isArray(quotes) ? quotes : [];
+    state.clients = Array.isArray(clis) ? clis : [];
+    state.paymentMachines = Array.isArray(pmachines) ? pmachines : [];
+    state.accountingAccounts = Array.isArray(aAccounts) ? aAccounts : [];
+    state.ledger = Array.isArray(aLedger) ? aLedger : [];
+    state.pendingTransfersLoaded = false; // Reset flag to allow reload
 
 
     const activeView = document.querySelector('.nav-item.active')?.dataset.view || 'dashboard';
@@ -186,8 +214,8 @@ const views = {
               <th>Tamaño</th>
               <th>Stock</th>
               <th>Neto</th>
-              <th>IVA</th>
-              <th>Precio Venta</th>
+              <th>IVA (19%)</th>
+              <th>P. Venta (Bruto)</th>
               <th>Acción</th>
             </tr>
           </thead>
@@ -199,9 +227,9 @@ const views = {
                 <td>${p.color || '-'}</td>
                 <td>${p.size || '-'}</td>
                 <td><span class="badge ${p.stock < 5 ? 'badge-warning' : 'badge-success'}">${p.stock}</span></td>
-                <td>$${(p.price_net || 0).toLocaleString()}</td>
-                <td style="color: var(--accent)">$${(p.iva || 0).toLocaleString()}</td>
-                <td style="font-weight: 600">$${(p.price_sale || 0).toLocaleString()}</td>
+                <td>$${(p.price_net || 0).toLocaleString('es-CL')}</td>
+                <td style="color: var(--accent)">$${(p.iva || 0).toLocaleString('es-CL')}</td>
+                <td style="font-weight: 600; color: var(--secondary)">$${(p.price_sale || 0).toLocaleString('es-CL')}</td>
                 <td><button class="btn-sm" onclick="window.editItem('product', '${p.code}')" title="Editar producto">✏️</button></td>
               </tr>
             `).join('')}
@@ -287,7 +315,9 @@ const views = {
               <th>Tamaño</th>
               <th>Stock</th>
               <th>Unidad</th>
-              <th>Costo Unit.</th>
+              <th>Neto</th>
+              <th>IVA</th>
+              <th>Costo Total</th>
               <th>Acción</th>
             </tr>
           </thead>
@@ -298,9 +328,11 @@ const views = {
                 <td>${m.name}</td>
                 <td>${m.color || '-'}</td>
                 <td>${m.size || '-'}</td>
-                <td><span class="badge ${m.stock < 2 ? 'badge-danger' : 'badge-success'}">${m.stock.toFixed(2)}</span></td>
+                <td><span class="badge ${m.stock < 2 ? 'badge-danger' : 'badge-success'}">${(m.stock || 0).toFixed(2)}</span></td>
                 <td>${m.unit}</td>
-                <td>$${(m.cost_net || 0).toLocaleString()}</td>
+                <td>$${(m.cost_net || 0).toLocaleString('es-CL')}</td>
+                <td>$${(m.iva || 0).toLocaleString('es-CL')}</td>
+                <td style="font-weight: 600">$${(m.total || 0).toLocaleString('es-CL')}</td>
                 <td><button class="btn-sm" onclick="window.editItem('rm', '${m.code}')" title="Editar insumo">✏️</button></td>
               </tr>
             `).join('')}
@@ -322,7 +354,35 @@ const views = {
           <div class="form-group"><label>Código</label><input type="text" id="nrm-code" required placeholder="MP-001"></div>
           <div class="form-group"><label>Nombre del Insumo</label><input type="text" id="nrm-name" required></div>
           <div class="form-group"><label>Unidad</label><input type="text" id="nrm-unit" required placeholder="Mts, Kg, Uni"></div>
-          <div class="form-group"><label>Costo Neto Unitario ($)</label><input type="number" id="nrm-cost" required></div>
+          
+          <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; border: 1px solid var(--success)">
+            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem">
+              <input type="checkbox" id="nrm-incluye-iva" style="width: 18px; height: 18px; cursor: pointer">
+              <label for="nrm-incluye-iva" style="cursor: pointer; font-weight: 600; color: var(--success)">El precio ingresado INCLUYE IVA (19%)</label>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.5rem">
+              <label>Costo Unitario ($)</label>
+              <input type="number" id="nrm-precio-input" required placeholder="Ingrese el costo" style="font-size: 1.1rem">
+            </div>
+            <div class="grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-top: 0.75rem; padding: 0.5rem; background: var(--surface-light); border-radius: 0.25rem">
+              <div style="text-align: center">
+                <small style="opacity: 0.7">Neto</small><br>
+                <strong id="nrm-neto-display">$0</strong>
+                <input type="hidden" id="nrm-cost" value="0">
+              </div>
+              <div style="text-align: center">
+                <small style="opacity: 0.7">IVA (19%)</small><br>
+                <strong id="nrm-iva-display" style="color: var(--accent)">$0</strong>
+                <input type="hidden" id="nrm-iva" value="0">
+              </div>
+              <div style="text-align: center">
+                <small style="opacity: 0.7">Costo Total</small><br>
+                <strong id="nrm-total-display" style="color: var(--success)">$0</strong>
+                <input type="hidden" id="nrm-total" value="0">
+              </div>
+            </div>
+          </div>
+
           <div class="grid-2">
             <div class="form-group"><label>Atributo</label><input type="text" id="nrm-color" placeholder="Ej: Sabor, Material"></div>
             <div class="form-group"><label>Tamaño</label><input type="text" id="nrm-size" placeholder="Ej: XL"></div>
@@ -469,6 +529,31 @@ const views = {
             <input type="date" id="pur-date" value="${new Date().toISOString().split('T')[0]}">
           </div>
         </div>
+        <div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
+          <div class="form-group" style="flex: 1">
+            <label>Método de Pago</label>
+            <select id="pur-payment-method">
+              <option value="transfer">Transferencia</option>
+              <option value="debit">Débito</option>
+              <option value="credit">Crédito</option>
+              <option value="cash">Efectivo</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1">
+            <label>Cuenta / Fondo</label>
+            <select id="pur-account">
+              <option value="">Sin asignar</option>
+              ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1">
+            <label>Tipo Documento</label>
+            <select id="pur-doc-type">
+              <option value="factura">Factura</option>
+              <option value="boleta">Boleta</option>
+            </select>
+          </div>
+        </div>
         
         <table class="item-table">
           <thead>
@@ -558,6 +643,40 @@ const views = {
             <label>Fecha</label>
             <input type="date" id="sale-date" value="${new Date().toISOString().split('T')[0]}">
           </div>
+          <div class="form-group" style="flex: 1">
+            <label>Evento/Feria</label>
+            <input type="text" id="sale-event-name" placeholder="Ej: Feria Navideña">
+          </div>
+        </div>
+        <div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
+          <div class="form-group" style="flex: 1">
+            <label>Método de Pago</label>
+            <select id="sale-payment-method" onchange="window.updatePaymentFields()">
+              <option value="transfer">Transferencia</option>
+              <option value="machine">Máquina (Tarjeta)</option>
+              <option value="cash">Efectivo</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1" id="machine-selector-group">
+            <label>Máquina de Pago</label>
+            <select id="sale-machine">
+              <option value="">Seleccionar máquina...</option>
+              ${state.paymentMachines?.filter(m => m.active !== false).map(m => `<option value="${m.id}" data-commission="${m.commission_percent}">${m.name} (${m.commission_percent}%)</option>`).join('') || ''}
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1">
+            <label>Cuenta Destino</label>
+            <select id="sale-account">
+              <option value="">Sin asignar</option>
+              ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
+            </select>
+          </div>
+        </div>
+        <div style="display: flex; gap: 2rem; margin-bottom: 1rem; align-items: center;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" id="sale-iva-exempt" onchange="window.recalculateSaleTotals()">
+            <span>Exento de IVA (venta sin documento tributario)</span>
+          </label>
         </div>
 
         <table class="item-table">
@@ -665,68 +784,260 @@ const views = {
     </div>
   `,
 
-  masters: () => `
-    <header class="animate-fade"><h1>Gestión de Datos</h1></header>
-    <div class="grid-2 animate-fade">
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
-          <h2>Clientes</h2>
-          <button onclick="document.getElementById('cli-modal').style.display='flex'">+ Nuevo</button>
-        </div>
-        <div class="table-container">
-          <table>
-            <thead><tr><th>ID</th><th>Nombre</th><th>Acción</th></tr></thead>
-            <tbody>
-              ${state.clients.map(c => `<tr><td>${c.id}</td><td>${c.name}</td><td><button class="btn-sm">Editar</button></td></tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
+  clients_management: () => `
+    <header class="animate-fade"><h1>Gestión de Clientes</h1></header>
+    <div class="card animate-fade">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
+        <h2>Listado de Clientes</h2>
+        <button onclick="window.openClientModal()">+ Nuevo Cliente</button>
       </div>
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
-          <h2>Proveedores</h2>
-          <button onclick="document.getElementById('prov-modal').style.display='flex'">+ Nuevo</button>
-        </div>
-        <div class="table-container">
-          <table>
-            <thead><tr><th>ID</th><th>Nombre</th><th>Acción</th></tr></thead>
-            <tbody>
-              ${state.providers.map(p => `<tr><td>${p.id}</td><td>${p.name}</td><td><button class="btn-sm">Editar</button></td></tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>RUT</th><th>Nombre</th><th>Dirección</th><th>E-mail</th><th>Teléfono</th><th>Observaciones</th></tr></thead>
+          <tbody>
+            ${state.clients.map(c => `
+              <tr>
+                <td><code style="font-size:0.8rem">${c.rut || '-'}</code></td>
+                <td><strong>${c.name}</strong></td>
+                <td><small>${c.address || '-'}</small></td>
+                <td><small>${c.email || '-'}</small></td>
+                <td><small>${c.phone || '-'}</small></td>
+                <td>
+                  <div style="display:flex; flex-direction:column; gap:0.3rem">
+                    <div style="font-size:0.75rem; font-style:italic; max-width:180px">${c.notes || '-'}</div>
+                    <div style="display:flex; gap:0.3rem">
+                      <button class="btn-sm" onclick="window.editClient('${c.id}')">✏️</button>
+                      <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteClient('${c.id}')">🗑️</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
       </div>
     </div>
 
-    <!-- Modals (Simple overlays for now) -->
+    <!-- Client Modal -->
     <div id="cli-modal" class="modal" style="display:none">
       <div class="card modal-content">
-        <h3>Nuevo Cliente</h3>
-        <form id="new-cli-form">
-          <div class="form-group"><label>Nombre</label><input type="text" id="nc-name" required></div>
-          <div class="form-group"><label>Dirección</label><input type="text" id="nc-addr"></div>
+        <h3 id="cli-modal-title">Nuevo Cliente</h3>
+        <form id="cli-form">
+          <input type="hidden" id="cli-id">
+          <div class="grid-2">
+            <div class="form-group"><label>RUT</label><input type="text" id="cli-rut" placeholder="12.345.678-9"></div>
+            <div class="form-group"><label>Nombre</label><input type="text" id="cli-name" required></div>
+          </div>
+          <div class="form-group"><label>Dirección</label><input type="text" id="cli-addr"></div>
+          <div class="grid-2">
+            <div class="form-group"><label>Email</label><input type="email" id="cli-email"></div>
+            <div class="form-group"><label>Teléfono</label><input type="text" id="cli-phone"></div>
+          </div>
+          <div class="form-group"><label>Observaciones</label><textarea id="cli-notes" rows="2" style="width:100%; border: 1px solid var(--border); border-radius:0.5rem; padding:0.5rem"></textarea></div>
           <div class="form-actions">
-            <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
-            <button type="submit">Guardar</button>
+            <button type="button" onclick="document.getElementById('cli-modal').style.display='none'">Cancelar</button>
+            <button type="submit">Guardar Cliente</button>
           </div>
         </form>
+      </div>
+    </div>
+  `,
+
+  providers_management: () => `
+    <header class="animate-fade"><h1>Gestión de Proveedores</h1></header>
+    <div class="card animate-fade">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
+        <h2>Listado de Proveedores</h2>
+        <button onclick="window.openProviderModal()">+ Nuevo Proveedor</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>RUT</th><th>Nombre Empresa</th><th>Dirección</th><th>Persona Contacto</th><th>E-mail</th><th>Teléfono</th><th>Observaciones</th></tr></thead>
+          <tbody>
+            ${state.providers.map(p => `
+              <tr>
+                <td><code style="font-size:0.8rem">${p.rut || '-'}</code></td>
+                <td><strong>${p.name}</strong></td>
+                <td><small>${p.address || '-'}</small></td>
+                <td><small>${p.contact || '-'}</small></td>
+                <td><small>${p.email || '-'}</small></td>
+                <td><small>${p.phone || '-'}</small></td>
+                <td>
+                  <div style="display:flex; flex-direction:column; gap:0.3rem">
+                    <div style="font-size:0.75rem; font-style:italic; max-width:180px">${p.notes || '-'}</div>
+                    <div style="display:flex; gap:0.3rem">
+                      <button class="btn-sm" onclick="window.editProvider('${p.id}')">✏️</button>
+                      <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteProvider('${p.id}')">🗑️</button>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
       </div>
     </div>
 
+    <!-- Provider Modal -->
     <div id="prov-modal" class="modal" style="display:none">
       <div class="card modal-content">
-        <h3>Nuevo Proveedor</h3>
-        <form id="new-prov-form">
-          <div class="form-group"><label>Nombre</label><input type="text" id="np-name" required></div>
-          <div class="form-group"><label>Contacto</label><input type="text" id="np-cont"></div>
-          <div class="form-group"><label>Teléfono</label><input type="text" id="np-tel"></div>
+        <h3 id="prov-modal-title">Nuevo Proveedor</h3>
+        <form id="prov-form">
+          <input type="hidden" id="prov-id">
+          <div class="grid-2">
+            <div class="form-group"><label>RUT</label><input type="text" id="prov-rut" placeholder="12.345.678-9"></div>
+            <div class="form-group"><label>Nombre Empresa</label><input type="text" id="prov-name" required></div>
+          </div>
+          <div class="form-group"><label>Dirección</label><input type="text" id="prov-addr"></div>
+          <div class="form-group"><label>Persona de Contacto</label><input type="text" id="prov-cont"></div>
+          <div class="grid-2">
+            <div class="form-group"><label>Email</label><input type="email" id="prov-email"></div>
+            <div class="form-group"><label>Teléfono</label><input type="text" id="prov-phone"></div>
+          </div>
+          <div class="form-group"><label>Observaciones</label><textarea id="prov-notes" rows="2" style="width:100%; border: 1px solid var(--border); border-radius:0.5rem; padding:0.5rem"></textarea></div>
           <div class="form-actions">
-            <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
-            <button type="submit">Guardar</button>
+            <button type="button" onclick="document.getElementById('prov-modal').style.display='none'">Cancelar</button>
+            <button type="submit">Guardar Proveedor</button>
           </div>
         </form>
       </div>
     </div>
+  `,
+
+  payment_machines: () => `
+    <header class="animate-fade"><h1>Máquinas de Pago</h1></header>
+    <div class="card animate-fade">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
+        <h2>Dispositivos Configurados</h2>
+        <button onclick="window.openMachineModal()">+ Nueva Máquina</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead><tr><th>Nombre</th><th>Proveedor</th><th>Comisión</th><th>Cuenta Asociada</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>
+            ${state.paymentMachines.map(m => `
+              <tr>
+                <td><strong>${m.name}</strong></td>
+                <td>${m.provider || '-'}</td>
+                <td><code>${m.commission_percent || 0}%</code></td>
+                <td>${state.accounts.find(a => a.id == m.account_id)?.name || 'Sin asignar'}</td>
+                <td><span style="color: ${m.active !== false ? 'var(--success)' : 'var(--danger)'}">${m.active !== false ? '● Activa' : '○ Inactiva'}</span></td>
+                <td>
+                  <button class="btn-sm" onclick="window.editMachine('${m.id}')">✏️</button>
+                  <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteMachine('${m.id}')">🗑️</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Machine Modal -->
+    <div id="machine-modal" class="modal" style="display:none">
+      <div class="card modal-content">
+        <h3 id="machine-modal-title">Nueva Máquina de Pago</h3>
+        <form id="machine-form">
+          <input type="hidden" id="mach-id">
+          <div class="form-group"><label>Nombre</label><input type="text" id="mach-name" required placeholder="Ej: Transbank Débito"></div>
+          <div class="grid-2">
+            <div class="form-group"><label>Proveedor</label><input type="text" id="mach-provider" placeholder="Transbank, Tenpo, etc."></div>
+            <div class="form-group"><label>Comisión (%)</label><input type="number" id="mach-commission" step="0.01" value="3.33"></div>
+          </div>
+          <div class="form-group">
+            <label>Cuenta Asociada</label>
+            <select id="mach-account">
+              <option value="">Sin asignar</option>
+              ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
+            </select>
+          </div>
+          <div class="form-group">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+              <input type="checkbox" id="mach-active" checked>
+              <span>Máquina activa</span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="button" onclick="document.getElementById('machine-modal').style.display='none'">Cancelar</button>
+            <button type="submit">Guardar Máquina</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `,
+
+  direct_sales: () => `
+    <header class="animate-fade"><h1>Ventas Directas</h1></header>
+    <div class="card animate-fade">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
+        <h2>Ventas Pendientes de Transferir</h2>
+        <button onclick="window.openTransferModal()" style="background: var(--success)">💰 Transferir Seleccionadas</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="select-all-sales" onchange="window.toggleAllSales(this)"></th>
+              <th>Fecha</th>
+              <th>Evento</th>
+              <th>Tipo Pago</th>
+              <th>Máquina</th>
+              <th>Total</th>
+              <th>IVA</th>
+              <th>Exento</th>
+            </tr>
+          </thead>
+          <tbody id="pending-sales-body">
+            ${state.pendingTransfers.map(s => `
+              <tr>
+                <td><input type="checkbox" class="sale-checkbox" data-id="${s.id}" data-total="${s.total}" data-iva="${s.iva || 0}" data-exempt="${s.is_iva_exempt}" data-machine="${s.payment_machines?.commission_percent || 0}"></td>
+                <td>${s.date}</td>
+                <td>${s.event_name || '-'}</td>
+                <td>${s.payment_method === 'cash' ? '💵 Efectivo' : s.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transf.'}</td>
+                <td>${s.payment_machines?.name || '-'}</td>
+                <td><strong>$${(s.total || 0).toLocaleString('es-CL')}</strong></td>
+                <td>$${(s.iva || 0).toLocaleString('es-CL')}</td>
+                <td>${s.is_iva_exempt ? '✅' : '❌'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div id="transfer-summary" style="margin-top: 1rem; padding: 1rem; background: var(--surface-light); border-radius: 0.5rem; display: none;">
+        <h4>Resumen de Transferencia</h4>
+        <div class="grid-4" style="margin-top: 0.5rem">
+          <div><small>Total Bruto</small><br><strong id="sum-gross">$0</strong></div>
+          <div><small>IVA a Descontar</small><br><strong id="sum-iva" style="color: var(--danger)">-$0</strong></div>
+          <div><small>Comisión Máquina</small><br><strong id="sum-commission" style="color: var(--danger)">-$0</strong></div>
+          <div><small>Neto a Transferir</small><br><strong id="sum-net" style="color: var(--success); font-size: 1.2rem">$0</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transfer Modal -->
+    <div id="transfer-modal" class="modal" style="display:none">
+      <div class="card modal-content">
+        <h3>Confirmar Transferencia</h3>
+        <div class="form-group">
+          <label>Cuenta Destino</label>
+          <select id="transfer-destination">
+            ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
+          </select>
+        </div>
+        <div style="margin: 1rem 0; padding: 1rem; background: var(--surface-light); border-radius: 0.5rem;">
+          <p><strong>Ventas seleccionadas:</strong> <span id="modal-sales-count">0</span></p>
+          <p><strong>Monto neto a transferir:</strong> <span id="modal-net-amount" style="color: var(--success); font-size: 1.2rem">$0</span></p>
+        </div>
+        <div class="form-actions">
+          <button type="button" onclick="document.getElementById('transfer-modal').style.display='none'">Cancelar</button>
+          <button onclick="window.executeBulkTransfer()" style="background: var(--success)">Confirmar Transferencia</button>
+        </div>
+      </div>
+    </div>
+  `,
+
+  masters: () => `
+    <header class="animate-fade"><h1>Gestión de Datos Insumos y Config.</h1></header>
     <div class="grid-2 animate-fade" style="margin-top: 2rem">
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
@@ -960,7 +1271,202 @@ const views = {
         Cerrar Sesión Activa
       </button>
     </div>
-  `
+  `,
+
+  accounting_ledger: () => {
+    const sortedLedger = [...state.ledger];
+
+    // Calculate balances for Mayor/Balance
+    const balances = {};
+    state.ledger.forEach(entry => {
+      entry.lines.forEach(line => {
+        if (!balances[line.account_code]) {
+          balances[line.account_code] = { name: line.account_name, debit: 0, credit: 0 };
+        }
+        balances[line.account_code].debit += (line.debit || 0);
+        balances[line.account_code].credit += (line.credit || 0);
+      });
+    });
+
+    return `
+      <header class="animate-fade">
+        <h1>Sistema Contable</h1>
+        <div style="display: flex; gap: 0.5rem">
+           <button onclick="window.openLedgerTransferModal()" style="background: var(--secondary)">🔄 Transferencia</button>
+           <button onclick="window.openLedgerExpenseModal()" style="background: var(--accent)">💸 Registrar Gasto</button>
+        </div>
+      </header>
+
+      <div class="card animate-fade" style="margin-bottom: 2rem">
+        <div class="tabs" style="display: flex; gap: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 1.5rem">
+          <button class="tab-btn active" onclick="document.querySelectorAll('.ledger-section').forEach(s => s.style.display='none'); document.getElementById('section-diario').style.display='block'; document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); this.classList.add('active');">Libro Diario</button>
+          <button class="tab-btn" onclick="document.querySelectorAll('.ledger-section').forEach(s => s.style.display='none'); document.getElementById('section-balance').style.display='block'; document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active')); this.classList.add('active');">Balance General (Saldos)</button>
+        </div>
+
+        <div id="section-diario" class="ledger-section">
+          <style>
+            .ledger-table th { background: rgba(0,0,0,0.1); }
+            .entry-header td { background: rgba(var(--primary-rgb), 0.05); border-top: 2px solid var(--primary); }
+            .ledger-table tr:hover { background: rgba(255,255,255,0.02); }
+            .filter-bar { display: flex; gap: 1rem; margin-bottom: 1rem; align-items: center; background: rgba(255,255,255,0.03); padding: 0.8rem; border-radius: 0.5rem; }
+          </style>
+          
+          <div class="filter-bar">
+            <div class="form-group" style="margin:0">
+              <label style="font-size: 0.8rem; opacity: 0.7">Filtrar por Tipo</label>
+              <select id="ledger-filter-type" onchange="window.updateLedgerFilters()" style="padding: 0.4rem">
+                <option value="all" ${state.ledgerFilter.type === 'all' ? 'selected' : ''}>Todos</option>
+                <option value="venta" ${state.ledgerFilter.type === 'venta' ? 'selected' : ''}>Ventas</option>
+                <option value="compra" ${state.ledgerFilter.type === 'compra' ? 'selected' : ''}>Compras</option>
+                <option value="gasto" ${state.ledgerFilter.type === 'gasto' ? 'selected' : ''}>Gastos</option>
+                <option value="transferencia" ${state.ledgerFilter.type === 'transferencia' ? 'selected' : ''}>Transferencias</option>
+                <option value="consumo" ${state.ledgerFilter.type === 'consumo' ? 'selected' : ''}>Producción</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label style="font-size: 0.8rem; opacity: 0.7">Orden</label>
+              <select id="ledger-filter-order" onchange="window.updateLedgerFilters()" style="padding: 0.4rem">
+                <option value="asc" ${state.ledgerFilter.order === 'asc' ? 'selected' : ''}>Cronológico (Antiguos primero)</option>
+                <option value="desc" ${state.ledgerFilter.order === 'desc' ? 'selected' : ''}>Recientes primero</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th style="width: 120px">Fecha</th>
+                  <th style="width: 150px">Código Account</th>
+                  <th>Cuenta / Glosa</th>
+                  <th style="text-align: right; width: 140px">Debe</th>
+                  <th style="text-align: right; width: 140px">Haber</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(() => {
+        let filtered = [...state.ledger];
+        if (state.ledgerFilter.type !== 'all') {
+          filtered = filtered.filter(e => e.entry_type === state.ledgerFilter.type);
+        }
+        filtered.sort((a, b) => {
+          return state.ledgerFilter.order === 'asc'
+            ? new Date(a.date) - new Date(b.date)
+            : new Date(b.date) - new Date(a.date);
+        });
+
+        if (filtered.length === 0) return '<tr><td colspan="5" style="text-align:center; padding: 2rem; opacity: 0.5;">No hay asientos que coincidan con el filtro.</td></tr>';
+
+        return filtered.map(entry => `
+                    <tr class="entry-header">
+                      <td><strong>${entry.date}</strong></td>
+                      <td colspan="4"><strong>${entry.entry_type.toUpperCase()}</strong>: ${entry.description} ${entry.document_number ? `<small style="opacity:0.7">(Doc: #${entry.document_number})</small>` : ''}</td>
+                    </tr>
+                    ${entry.lines.map(line => `
+                      <tr>
+                        <td></td>
+                        <td><small style="opacity:0.6">${line.account_code}</small></td>
+                        <td style="${line.credit > 0 ? 'padding-left: 2.5rem; font-style: italic;' : ''}">${line.account_name}</td>
+                        <td style="text-align: right; color: var(--success)">${line.debit > 0 ? `$${line.debit.toLocaleString()}` : ''}</td>
+                        <td style="text-align: right; color: var(--danger)">${line.credit > 0 ? `$${line.credit.toLocaleString()}` : ''}</td>
+                      </tr>
+                    `).join('')}
+                    <tr style="height: 12px"><td colspan="5"></td></tr>
+                  `).join('');
+      })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="section-balance" class="ledger-section" style="display: none">
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Cuenta</th>
+                  <th style="text-align: right">Total Debe</th>
+                  <th style="text-align: right">Total Haber</th>
+                  <th style="text-align: right">Saldo</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${Object.keys(balances).sort().map(code => {
+        const b = balances[code];
+        const saldo = b.debit - b.credit;
+        return `
+                    <tr>
+                      <td>${code}</td>
+                      <td><strong>${b.name}</strong></td>
+                      <td style="text-align: right">$${b.debit.toLocaleString()}</td>
+                      <td style="text-align: right">$${b.credit.toLocaleString()}</td>
+                      <td style="text-align: right; font-weight: 600; color: ${saldo >= 0 ? 'var(--success)' : 'var(--danger)'}">$${Math.abs(saldo).toLocaleString()} ${saldo >= 0 ? '(D)' : '(H)'}</td>
+                    </tr>
+                  `;
+      }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manual Expense Modal -->
+      <div id="ledger-expense-modal" class="modal" style="display:none">
+        <div class="card modal-content" style="max-width: 450px">
+          <h3>Registrar Gasto / Egreso</h3>
+          <form id="expense-form">
+            <div class="form-group"><label>Fecha</label><input type="date" id="exp-date" required></div>
+            <div class="form-group"><label>Descripción / Glosa</label><input type="text" id="exp-desc" required placeholder="Ej: Pago de luz, Arriendo..."></div>
+            <div class="form-group"><label>Monto Total ($)</label><input type="number" id="exp-amount" required></div>
+            <div class="form-group">
+              <label>Cuenta de Gasto (Categoría)</label>
+              <select id="exp-category" required>
+                ${state.accountingAccounts.filter(a => a.type === 'Gasto' && a.category !== 'Header').map(a => `<option value="${a.code}">${a.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Cuenta de Origen (Pago)</label>
+              <select id="exp-origin" required>
+                ${state.accountingAccounts.filter(a => a.category === 'Disponible').map(a => `<option value="${a.code}">${a.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-actions">
+              <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
+              <button type="submit">Guardar Gasto</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Manual Transfer Modal -->
+      <div id="ledger-transfer-modal" class="modal" style="display:none">
+        <div class="card modal-content" style="max-width: 450px">
+          <h3>Transferencia Bancaria / Caja</h3>
+          <form id="transfer-form">
+            <div class="form-group"><label>Fecha</label><input type="date" id="tra-date" required></div>
+            <div class="form-group"><label>Monto ($)</label><input type="number" id="tra-amount" required></div>
+            <div class="form-group">
+              <label>Desde Cuenta</label>
+              <select id="tra-from" required>
+                ${state.accountingAccounts.filter(a => a.category === 'Disponible').map(a => `<option value="${a.code}">${a.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Hacia Cuenta</label>
+              <select id="tra-to" required>
+                ${state.accountingAccounts.filter(a => a.category === 'Disponible').map(a => `<option value="${a.code}">${a.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-actions">
+              <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
+              <button type="submit">Ejecutar Transferencia</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  }
 };
 
 function renderHistoryTable(type) {
@@ -969,15 +1475,16 @@ function renderHistoryTable(type) {
     return `
   <div class="table-container">
     <table>
-      <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th><th>Acción</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Evento</th><th>Cliente</th><th>Pago</th><th>Total</th><th>Acción</th></tr></thead>
       <tbody>
         ${data.map(h => `
               <tr>
-                <td>${h.id}</td>
                 <td>${h.date}</td>
-                <td>${h.client_name || 'Directa'}</td>
-                <td>$${h.total.toLocaleString()}</td>
-                <td><button class="btn-sm" onclick="window.showTransactionDetails('sale', ${h.id})">Detalle</button></td>
+                <td><span style="opacity:0.8">${h.event_name || '-'}</span></td>
+                <td><strong>${h.client_name || 'Venta Directa'}</strong></td>
+                <td>${h.payment_method === 'cash' ? '💵' : h.payment_method === 'machine' ? '💳' : '🔄'} <small>${h.machine_id ? '(Maq)' : ''}</small></td>
+                <td>$${h.total.toLocaleString()} ${h.is_iva_exempt ? '<small>(Exento)</small>' : ''}</td>
+                <td><button class="btn-sm" onclick="window.showTransactionDetails('sale', ${h.id})">👁️</button></td>
               </tr>
             `).join('')}
       </tbody>
@@ -1076,10 +1583,25 @@ window.showTransactionDetails = (type, id) => {
   <div class="card modal-content modal-wide animate-fade">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem">
       <h3>Detalle de ${title} #${transaction.id}</h3>
-      <span style="color: var(--text-muted)">Fecha: ${transaction.date.split('T')[0]}</span>
+      <div style="text-align: right">
+        <span style="color: var(--text-muted); display: block">Fecha: ${transaction.date.split('T')[0]}</span>
+        ${transaction.event_name ? `<span class="badge" style="background:var(--secondary-light); color:var(--secondary)">🎡 ${transaction.event_name}</span>` : ''}
+      </div>
     </div>
       
-      ${!isProduction ? `<p style="margin-bottom: 1rem"><strong>${type === 'sale' ? 'Cliente' : 'Proveedor'}:</strong> ${transaction.client_name || transaction.provider_name || 'N/A'}</p>` : ''}
+      ${!isProduction ? `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 8px">
+          <div>
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Entidad</label>
+            <strong>${type === 'sale' ? (transaction.client_name || 'Venta Directa') : (transaction.provider_name || 'N/A')}</strong>
+          </div>
+          <div>
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Método de Pago</label>
+            <span>${transaction.payment_method === 'cash' ? '💵 Efectivo' : transaction.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transferencia'}</span>
+            ${transaction.is_iva_exempt ? ' <small style="color:var(--warning)">(Exento de IVA)</small>' : ''}
+          </div>
+        </div>
+      ` : ''}
 
 <table class="item-table">
   <thead>
@@ -1141,6 +1663,13 @@ window.editTransaction = (type, id) => {
   if (type === 'sale') {
     document.getElementById('sale-client').value = transaction.client_id || '';
     document.getElementById('sale-date').value = transaction.date;
+    document.getElementById('sale-event-name').value = transaction.event_name || '';
+    document.getElementById('sale-iva-exempt').checked = transaction.is_iva_exempt || false;
+    document.getElementById('sale-payment-method').value = transaction.payment_method || 'transfer';
+    window.updatePaymentFields();
+    if (transaction.payment_method === 'machine') {
+      document.getElementById('sale-machine').value = transaction.machine_id || '';
+    }
   } else {
     document.getElementById('pur-prov').value = transaction.provider_id || '';
     document.getElementById('pur-date').value = transaction.date;
@@ -1195,9 +1724,16 @@ window.editItem = (type, code) => {
     document.getElementById('np-code').value = p.code;
     document.getElementById('np-name').value = p.name;
     document.getElementById('np-type').value = p.type || '';
-    document.getElementById('np-pnet').value = p.price_net;
-    document.getElementById('np-psale').value = p.price_sale;
-    document.getElementById('np-cost').value = p.cost_unit;
+
+    // UI Loading for pricing
+    document.getElementById('np-precio-input').value = p.price_sale;
+    document.getElementById('np-incluye-iva').checked = true;
+
+    // Trigger calculation to update displays and hidden fields
+    const event = new Event('input');
+    document.getElementById('np-precio-input').dispatchEvent(event);
+
+    document.getElementById('np-cost').value = p.cost_unit || 0;
     document.getElementById('np-color').value = p.color || '';
     document.getElementById('np-size').value = p.size || '';
     document.getElementById('np-parent').value = p.parent_code || '';
@@ -1216,7 +1752,15 @@ window.editItem = (type, code) => {
     document.getElementById('nrm-code').value = m.code;
     document.getElementById('nrm-name').value = m.name;
     document.getElementById('nrm-unit').value = m.unit;
-    document.getElementById('nrm-cost').value = m.cost_net;
+
+    // UI Loading for pricing
+    document.getElementById('nrm-precio-input').value = m.cost_net;
+    document.getElementById('nrm-incluye-iva').checked = false;
+
+    // Trigger calculation to update displays and hidden fields
+    const event = new Event('input');
+    document.getElementById('nrm-precio-input').dispatchEvent(event);
+
     document.getElementById('nrm-color').value = m.color || '';
     document.getElementById('nrm-size').value = m.size || '';
     document.getElementById('nrm-parent').value = m.parent_code || '';
@@ -1988,6 +2532,122 @@ window.viewQuotation = async (id) => {
   modal.style.display = 'flex';
 };
 
+// --- Print Quotation Function ---
+window.printQuotation = () => {
+  const q = window.currentViewedQuote;
+  if (!q) return alert('No hay cotización cargada');
+
+  const printWindow = window.open('', '_blank', 'width=800,height=600');
+  const today = new Date().toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+      <meta charset="UTF-8">
+      <title>Cotización - ${q.name}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #333; background: #fff; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #3b82f6; }
+        .company-info h1 { font-size: 24px; color: #1e3a5f; margin-bottom: 5px; }
+        .company-info p { font-size: 12px; color: #666; }
+        .quote-info { text-align: right; }
+        .quote-info h2 { font-size: 28px; color: #3b82f6; margin-bottom: 10px; }
+        .quote-info p { font-size: 12px; color: #666; }
+        .client-section { background: #f8fafc; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+        .client-section h3 { font-size: 14px; color: #64748b; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        .client-section p { font-size: 16px; color: #1e3a5f; font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+        thead { background: #1e3a5f; color: white; }
+        th { padding: 12px 15px; text-align: left; font-weight: 600; font-size: 13px; }
+        th:last-child, th:nth-child(3), th:nth-child(4) { text-align: right; }
+        td { padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+        td:last-child, td:nth-child(3), td:nth-child(4) { text-align: right; }
+        tr:nth-child(even) { background: #f8fafc; }
+        .totals { display: flex; justify-content: flex-end; margin-bottom: 30px; }
+        .totals-box { background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%); color: white; padding: 20px 30px; border-radius: 8px; min-width: 280px; }
+        .totals-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+        .totals-row.total { font-size: 20px; font-weight: 700; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 10px; margin-top: 10px; }
+        .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+        .footer p { font-size: 11px; color: #94a3b8; margin-bottom: 5px; }
+        .validity { background: #fef3c7; padding: 10px 15px; border-radius: 6px; margin-top: 15px; font-size: 12px; color: #92400e; }
+        @media print {
+          body { padding: 20px; }
+          .no-print { display: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="company-info">
+          <h1>ERP Universal</h1>
+          <p>Sistema de Gestión Empresarial</p>
+        </div>
+        <div class="quote-info">
+          <h2>COTIZACIÓN</h2>
+          <p><strong>N°:</strong> ${q.id.split('-')[0].toUpperCase()}</p>
+          <p><strong>Fecha:</strong> ${today}</p>
+        </div>
+      </div>
+
+      <div class="client-section">
+        <h3>Cliente</h3>
+        <p>${q.clients?.name || 'Cliente General'}</p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 50%">Descripción</th>
+            <th style="width: 15%">Cantidad</th>
+            <th style="width: 17%">Precio Unit.</th>
+            <th style="width: 18%">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>${q.name}</strong></td>
+            <td style="text-align: center">${q.quantity}</td>
+            <td>$${Math.round(q.total_price_gross / q.quantity).toLocaleString('es-CL')}</td>
+            <td><strong>$${Math.round(q.total_price_gross).toLocaleString('es-CL')}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="totals">
+        <div class="totals-box">
+          <div class="totals-row">
+            <span>Subtotal Neto:</span>
+            <span>$${Math.round(q.total_price_net).toLocaleString('es-CL')}</span>
+          </div>
+          <div class="totals-row">
+            <span>IVA (19%):</span>
+            <span>$${Math.round(q.total_iva).toLocaleString('es-CL')}</span>
+          </div>
+          <div class="totals-row total">
+            <span>TOTAL:</span>
+            <span>$${Math.round(q.total_price_gross).toLocaleString('es-CL')}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>• Precios expresados en pesos chilenos (CLP), incluyen IVA.</p>
+        <p>• Esta cotización es referencial y está sujeta a disponibilidad de stock.</p>
+        <div class="validity">
+          <strong>Validez:</strong> Esta cotización tiene una validez de 15 días corridos desde la fecha de emisión.
+        </div>
+      </div>
+
+      <script>
+        window.onload = function() { window.print(); }
+      </script>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+};
 
 async function postData(endpoint, body) {
   try {
@@ -2027,9 +2687,9 @@ function renderView(viewName) {
 
     // Definimos qué puede ver cada uno
     const permissions = {
-      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'user_management', 'profile'],
-      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'profile'],
-      user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history', 'profile'],
+      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'user_management', 'quotations', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'quotations', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
+      user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history', 'quotations', 'clients_management', 'providers_management', 'direct_sales', 'profile'],
       viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
 
@@ -2114,6 +2774,30 @@ function renderView(viewName) {
     // Initialization for quotations view
   }
 
+  if (viewName === 'accounts_management') {
+    // Handler para guardar cuentas
+    document.getElementById('account-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('acc-id').value;
+      const body = {
+        name: document.getElementById('acc-name').value,
+        type: document.getElementById('acc-type').value,
+        current_balance: parseFloat(document.getElementById('acc-balance').value) || 0
+      };
+
+      if (id) {
+        // Editar
+        await putData(`/accounts/${id}`, body);
+      } else {
+        // Nueva
+        await postData('/accounts', body);
+      }
+
+      document.getElementById('account-modal').style.display = 'none';
+      fetchData();
+    });
+  }
+
 
   if (viewName === 'reports') {
     initReports();
@@ -2151,7 +2835,10 @@ function renderView(viewName) {
         items: getTableItems('purchase'),
         net: parseInt(document.getElementById('pur-net').value),
         iva: parseInt(document.getElementById('pur-iva').value),
-        total: parseInt(document.getElementById('pur-total').value)
+        total: parseInt(document.getElementById('pur-total').value),
+        payment_method: document.getElementById('pur-payment-method').value,
+        account_id: document.getElementById('pur-account').value || null,
+        document_type: document.getElementById('pur-doc-type').value
       };
 
       if (body.items.length === 0) return alert('Debe agregar al menos un ítem');
@@ -2174,9 +2861,35 @@ function renderView(viewName) {
 
   if (viewName === 'sales') {
     setupItemTable('sale');
+
+    // Helper: show/hide machine selector based on payment method
+    window.updatePaymentFields = function () {
+      const method = document.getElementById('sale-payment-method').value;
+      const machineGroup = document.getElementById('machine-selector-group');
+      const ivaExempt = document.getElementById('sale-iva-exempt');
+
+      if (method === 'machine') {
+        machineGroup.style.display = 'block';
+        ivaExempt.checked = false;
+      } else if (method === 'cash') {
+        machineGroup.style.display = 'none';
+        ivaExempt.checked = true; // Efectivo auto-marca exento
+      } else {
+        machineGroup.style.display = 'none';
+        ivaExempt.checked = false;
+      }
+      window.recalculateSaleTotals();
+    };
+
+    // Recalculate totals when IVA exempt changes
+    window.recalculateSaleTotals = function () {
+      calculateTotals('sale');
+    };
+
     document.getElementById('btn-submit-sale').addEventListener('click', async () => {
       const isEditMode = document.getElementById('sale-edit-mode').value === 'true';
       const editId = document.getElementById('sale-edit-id').value;
+      const paymentMethod = document.getElementById('sale-payment-method').value;
 
       const body = {
         clientId: document.getElementById('sale-client').value,
@@ -2184,7 +2897,12 @@ function renderView(viewName) {
         items: getTableItems('sale'),
         net: parseInt(document.getElementById('sale-net').value),
         iva: parseInt(document.getElementById('sale-iva').value),
-        total: parseInt(document.getElementById('sale-total').value)
+        total: parseInt(document.getElementById('sale-total').value),
+        payment_method: paymentMethod,
+        account_id: document.getElementById('sale-account').value || null,
+        is_iva_exempt: document.getElementById('sale-iva-exempt').checked,
+        machine_id: paymentMethod === 'machine' ? (document.getElementById('sale-machine').value || null) : null,
+        event_name: document.getElementById('sale-event-name').value || null
       };
 
       if (body.items.length === 0) return alert('Debe agregar al menos un ítem');
@@ -2275,6 +2993,35 @@ function renderView(viewName) {
   }
 
   if (viewName === 'inventory_rm') {
+    // IVA Calculation for Raw Materials
+    function calculateRawMaterialPrices() {
+      const input = parseFloat(document.getElementById('nrm-precio-input').value) || 0;
+      const incluyeIva = document.getElementById('nrm-incluye-iva').checked;
+
+      let neto, iva, total;
+
+      if (incluyeIva) {
+        total = Math.round(input);
+        neto = Math.round(input / 1.19);
+        iva = total - neto;
+      } else {
+        neto = Math.round(input);
+        iva = Math.round(neto * 0.19);
+        total = neto + iva;
+      }
+
+      document.getElementById('nrm-neto-display').textContent = '$' + neto.toLocaleString('es-CL');
+      document.getElementById('nrm-iva-display').textContent = '$' + iva.toLocaleString('es-CL');
+      document.getElementById('nrm-total-display').textContent = '$' + total.toLocaleString('es-CL');
+
+      document.getElementById('nrm-cost').value = neto; // cost_net
+      document.getElementById('nrm-iva').value = iva;
+      document.getElementById('nrm-total').value = total;
+    }
+
+    document.getElementById('nrm-precio-input')?.addEventListener('input', calculateRawMaterialPrices);
+    document.getElementById('nrm-incluye-iva')?.addEventListener('change', calculateRawMaterialPrices);
+
     document.getElementById('new-rm-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const isEditMode = document.getElementById('nrm-edit-mode').value === 'true';
@@ -2285,6 +3032,8 @@ function renderView(viewName) {
         name: document.getElementById('nrm-name').value,
         unit: document.getElementById('nrm-unit').value,
         cost_net: parseFloat(document.getElementById('nrm-cost').value),
+        iva: parseFloat(document.getElementById('nrm-iva').value),
+        total: parseFloat(document.getElementById('nrm-total').value),
         color: document.getElementById('nrm-color').value,
         size: document.getElementById('nrm-size').value,
         parent_code: document.getElementById('nrm-parent').value,
@@ -2297,37 +3046,65 @@ function renderView(viewName) {
         await postData('/raw-materials', body);
       }
 
-      // Reset form and close modal
       document.getElementById('new-rm-modal').style.display = 'none';
       document.getElementById('nrm-edit-mode').value = 'false';
       document.getElementById('nrm-original-code').value = '';
       document.getElementById('rm-modal-title').textContent = 'Nuevo Insumo / Materia Prima';
       e.target.reset();
+      fetchData();
+    });
+  }
+
+  if (viewName === 'clients_management') {
+    document.getElementById('cli-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('cli-id').value;
+      const body = {
+        rut: document.getElementById('cli-rut').value,
+        name: document.getElementById('cli-name').value,
+        address: document.getElementById('cli-addr').value,
+        email: document.getElementById('cli-email').value,
+        phone: document.getElementById('cli-phone').value,
+        notes: document.getElementById('cli-notes').value
+      };
+
+      if (id) {
+        await putData(`/clients/${id}`, body);
+      } else {
+        await postData('/clients', body);
+      }
+
+      document.getElementById('cli-modal').style.display = 'none';
+      fetchData();
+    });
+  }
+
+  if (viewName === 'providers_management') {
+    document.getElementById('prov-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('prov-id').value;
+      const body = {
+        rut: document.getElementById('prov-rut').value,
+        name: document.getElementById('prov-name').value,
+        address: document.getElementById('prov-addr').value,
+        contact: document.getElementById('prov-cont').value,
+        email: document.getElementById('prov-email').value,
+        phone: document.getElementById('prov-phone').value,
+        notes: document.getElementById('prov-notes').value
+      };
+
+      if (id) {
+        await putData(`/providers/${id}`, body);
+      } else {
+        await postData('/providers', body);
+      }
+
+      document.getElementById('prov-modal').style.display = 'none';
+      fetchData();
     });
   }
 
   if (viewName === 'masters') {
-    document.getElementById('new-cli-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const body = {
-        name: document.getElementById('nc-name').value,
-        address: document.getElementById('nc-addr').value
-      };
-      await postData('/clients', body);
-      document.getElementById('cli-modal').style.display = 'none';
-    });
-
-    document.getElementById('new-prov-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const body = {
-        name: document.getElementById('np-name').value,
-        contact: document.getElementById('np-cont').value,
-        phone: document.getElementById('np-tel').value
-      };
-      await postData('/providers', body);
-      document.getElementById('prov-modal').style.display = 'none';
-    });
-
     document.getElementById('new-mp-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const body = {
@@ -2461,6 +3238,195 @@ function renderView(viewName) {
     });
   }
 
+  if (viewName === 'payment_machines') {
+    window.openMachineModal = function (id = null) {
+      document.getElementById('mach-id').value = '';
+      document.getElementById('mach-name').value = '';
+      document.getElementById('mach-provider').value = '';
+      document.getElementById('mach-commission').value = '3.33';
+      document.getElementById('mach-account').value = '';
+      document.getElementById('mach-active').checked = true;
+      document.getElementById('machine-modal-title').textContent = 'Nueva Máquina de Pago';
+      document.getElementById('machine-modal').style.display = 'flex';
+    };
+
+    window.editMachine = async function (id) {
+      const m = state.paymentMachines.find(x => x.id == id);
+      if (!m) return;
+      document.getElementById('mach-id').value = m.id;
+      document.getElementById('mach-name').value = m.name || '';
+      document.getElementById('mach-provider').value = m.provider || '';
+      document.getElementById('mach-commission').value = m.commission_percent || 0;
+      document.getElementById('mach-account').value = m.account_id || '';
+      document.getElementById('mach-active').checked = m.active !== false;
+      document.getElementById('machine-modal-title').textContent = 'Editar Máquina';
+      document.getElementById('machine-modal').style.display = 'flex';
+    };
+
+    window.deleteMachine = async function (id) {
+      if (!confirm('¿Eliminar esta máquina de pago?')) return;
+      await apiFetch(`/payment-machines/${id}`, { method: 'DELETE' });
+      fetchData();
+    };
+
+    document.getElementById('machine-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('mach-id').value;
+      const body = {
+        name: document.getElementById('mach-name').value,
+        provider: document.getElementById('mach-provider').value,
+        commission_percent: parseFloat(document.getElementById('mach-commission').value) || 0,
+        account_id: document.getElementById('mach-account').value || null,
+        active: document.getElementById('mach-active').checked
+      };
+
+      if (id) {
+        await apiFetch(`/payment-machines/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await apiFetch('/payment-machines', { method: 'POST', body: JSON.stringify(body) });
+      }
+      document.getElementById('machine-modal').style.display = 'none';
+      fetchData();
+    });
+  }
+
+  if (viewName === 'direct_sales') {
+    // Load pending transfers only once (avoid infinite loop)
+    if (!state.pendingTransfersLoaded) {
+      state.pendingTransfersLoaded = true;
+      (async () => {
+        const pending = await apiFetch('/sales/pending-transfer');
+        state.pendingTransfers = pending || [];
+        // Re-render with loaded data
+        document.getElementById('pending-sales-body').innerHTML = state.pendingTransfers.map(s => `
+          <tr>
+            <td><input type="checkbox" class="sale-checkbox" data-id="${s.id}" data-total="${s.total}" data-iva="${s.iva || 0}" data-exempt="${s.is_iva_exempt}" data-machine="${s.payment_machines?.commission_percent || 0}"></td>
+            <td>${s.date}</td>
+            <td>${s.event_name || '-'}</td>
+            <td>${s.payment_method === 'cash' ? '💵 Efectivo' : s.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transf.'}</td>
+            <td>${s.payment_machines?.name || '-'}</td>
+            <td><strong>$${(s.total || 0).toLocaleString('es-CL')}</strong></td>
+            <td>$${(s.iva || 0).toLocaleString('es-CL')}</td>
+            <td>${s.is_iva_exempt ? '✅' : '❌'}</td>
+          </tr>
+        `).join('');
+        // Re-attach event listeners
+        document.querySelectorAll('.sale-checkbox').forEach(cb => {
+          cb.addEventListener('change', window.calculateTransferSummary);
+        });
+      })();
+    }
+
+    window.toggleAllSales = function (el) {
+      document.querySelectorAll('.sale-checkbox').forEach(cb => cb.checked = el.checked);
+      window.calculateTransferSummary();
+    };
+
+    window.calculateTransferSummary = function () {
+      let gross = 0, iva = 0, commission = 0;
+      document.querySelectorAll('.sale-checkbox:checked').forEach(cb => {
+        const total = parseFloat(cb.dataset.total) || 0;
+        const saleIva = cb.dataset.exempt === 'true' ? 0 : (parseFloat(cb.dataset.iva) || 0);
+        const comm = cb.dataset.exempt === 'true' ? 0 : Math.round(total * parseFloat(cb.dataset.machine || 0) / 100);
+        gross += total;
+        iva += saleIva;
+        commission += comm;
+      });
+      const net = gross - iva - commission;
+      document.getElementById('sum-gross').textContent = '$' + gross.toLocaleString('es-CL');
+      document.getElementById('sum-iva').textContent = '-$' + iva.toLocaleString('es-CL');
+      document.getElementById('sum-commission').textContent = '-$' + commission.toLocaleString('es-CL');
+      document.getElementById('sum-net').textContent = '$' + net.toLocaleString('es-CL');
+      document.getElementById('transfer-summary').style.display = gross > 0 ? 'block' : 'none';
+      return { gross, iva, commission, net };
+    };
+
+    document.querySelectorAll('.sale-checkbox').forEach(cb => {
+      cb.addEventListener('change', window.calculateTransferSummary);
+    });
+
+    window.openTransferModal = function () {
+      const selected = document.querySelectorAll('.sale-checkbox:checked');
+      if (selected.length === 0) return alert('Seleccione al menos una venta');
+      const { net } = window.calculateTransferSummary();
+      document.getElementById('modal-sales-count').textContent = selected.length;
+      document.getElementById('modal-net-amount').textContent = '$' + net.toLocaleString('es-CL');
+      document.getElementById('transfer-modal').style.display = 'flex';
+    };
+
+    window.executeBulkTransfer = async function () {
+      const selected = Array.from(document.querySelectorAll('.sale-checkbox:checked')).map(cb => cb.dataset.id);
+      const destAccount = document.getElementById('transfer-destination').value;
+      if (!destAccount) return alert('Seleccione una cuenta destino');
+
+      const result = await apiFetch('/sales/bulk-transfer', {
+        method: 'POST',
+        body: JSON.stringify({ sale_ids: selected, destination_account_id: destAccount })
+      });
+
+      if (result && result.success) {
+        alert(`Transferencia exitosa: $${result.summary.totalNet.toLocaleString('es-CL')} a la cuenta destino`);
+        document.getElementById('transfer-modal').style.display = 'none';
+        fetchData();
+      } else {
+        alert('Error: ' + (result?.error || 'Error desconocido'));
+      }
+    };
+  }
+
+  if (viewName === 'accounting_ledger') {
+    window.updateLedgerFilters = function () {
+      state.ledgerFilter.type = document.getElementById('ledger-filter-type').value;
+      state.ledgerFilter.order = document.getElementById('ledger-filter-order').value;
+      renderView('accounting_ledger');
+    };
+
+    window.openLedgerExpenseModal = function () {
+      document.getElementById('exp-date').value = new Date().toISOString().split('T')[0];
+      document.getElementById('ledger-expense-modal').style.display = 'flex';
+    };
+
+    window.openLedgerTransferModal = function () {
+      document.getElementById('tra-date').value = new Date().toISOString().split('T')[0];
+      document.getElementById('ledger-transfer-modal').style.display = 'flex';
+    };
+
+    document.getElementById('expense-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        date: document.getElementById('exp-date').value,
+        description: document.getElementById('exp-desc').value,
+        amount: parseFloat(document.getElementById('exp-amount').value),
+        category_code: document.getElementById('exp-category').value,
+        account_origin_code: document.getElementById('exp-origin').value
+      };
+
+      const res = await apiFetch('/accounting/expenses', { method: 'POST', body: JSON.stringify(body) });
+      if (res && res.success) {
+        alert('Gasto registrado exitosamente');
+        document.getElementById('ledger-expense-modal').style.display = 'none';
+        fetchData();
+      }
+    });
+
+    document.getElementById('transfer-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        date: document.getElementById('tra-date').value,
+        amount: parseFloat(document.getElementById('tra-amount').value),
+        from_account_code: document.getElementById('tra-from').value,
+        to_account_code: document.getElementById('tra-to').value
+      };
+
+      const res = await apiFetch('/accounting/transfers', { method: 'POST', body: JSON.stringify(body) });
+      if (res && res.success) {
+        alert('Transferencia registrada exitosamente');
+        document.getElementById('ledger-transfer-modal').style.display = 'none';
+        fetchData();
+      }
+    });
+  }
+
   if (viewName === 'masters') {
     // Load current settings
     fetch(`${API_BASE}/settings`, { headers: { 'Authorization': `Bearer ${token}` } })
@@ -2481,6 +3447,64 @@ function renderView(viewName) {
       });
   }
 }
+
+// --- Clients & Providers Management ---
+window.openClientModal = () => {
+  const modal = document.getElementById('cli-modal');
+  modal.style.display = 'flex';
+  document.getElementById('cli-modal-title').textContent = 'Nuevo Cliente';
+  document.getElementById('cli-id').value = '';
+  document.getElementById('cli-form').reset();
+};
+
+window.editClient = (id) => {
+  const c = state.clients.find(x => x.id === id);
+  if (!c) return;
+  window.openClientModal();
+  document.getElementById('cli-modal-title').textContent = 'Editar Cliente';
+  document.getElementById('cli-id').value = c.id;
+  document.getElementById('cli-rut').value = c.rut || '';
+  document.getElementById('cli-name').value = c.name;
+  document.getElementById('cli-addr').value = c.address || '';
+  document.getElementById('cli-email').value = c.email || '';
+  document.getElementById('cli-phone').value = c.phone || '';
+  document.getElementById('cli-notes').value = c.notes || '';
+};
+
+window.deleteClient = async (id) => {
+  if (!confirm('¿Seguro que desea eliminar este cliente?')) return;
+  await deleteData(`/clients/${id}`);
+  fetchData();
+};
+
+window.openProviderModal = () => {
+  const modal = document.getElementById('prov-modal');
+  modal.style.display = 'flex';
+  document.getElementById('prov-modal-title').textContent = 'Nuevo Proveedor';
+  document.getElementById('prov-id').value = '';
+  document.getElementById('prov-form').reset();
+};
+
+window.editProvider = (id) => {
+  const p = state.providers.find(x => x.id === id);
+  if (!p) return;
+  window.openProviderModal();
+  document.getElementById('prov-modal-title').textContent = 'Editar Proveedor';
+  document.getElementById('prov-id').value = p.id;
+  document.getElementById('prov-rut').value = p.rut || '';
+  document.getElementById('prov-name').value = p.name;
+  document.getElementById('prov-addr').value = p.address || '';
+  document.getElementById('prov-cont').value = p.contact || '';
+  document.getElementById('prov-email').value = p.email || '';
+  document.getElementById('prov-phone').value = p.phone || '';
+  document.getElementById('prov-notes').value = p.notes || '';
+};
+
+window.deleteProvider = async (id) => {
+  if (!confirm('¿Seguro que desea eliminar este proveedor?')) return;
+  await deleteData(`/providers/${id}`);
+  fetchData();
+};
 
 window.saveAlertSettings = async () => {
   const tkn = document.getElementById('tg-token').value;
@@ -2680,7 +3704,15 @@ function calculateTotals(prefix) {
   const body = document.getElementById(`${prefix}-items-body`);
   const subtotals = Array.from(body.querySelectorAll('.item-subtotal')).map(i => parseInt(i.value) || 0);
   const net = subtotals.reduce((a, b) => a + b, 0);
-  const iva = Math.round(net * 0.19);
+
+  let iva = Math.round(net * 0.19);
+
+  // Specific logic for sales IVA exemption
+  if (prefix === 'sale') {
+    const isExempt = document.getElementById('sale-iva-exempt')?.checked;
+    if (isExempt) iva = 0;
+  }
+
   const total = net + iva;
 
   // Update hidden inputs for form submission
@@ -2689,9 +3721,13 @@ function calculateTotals(prefix) {
   document.getElementById(`${prefix}-total`).value = total;
 
   // Update display spans for the user
-  document.getElementById(`${prefix}-net-display`).textContent = net.toLocaleString();
-  document.getElementById(`${prefix}-iva-display`).textContent = iva.toLocaleString();
-  document.getElementById(`${prefix}-total-display`).textContent = total.toLocaleString();
+  const netDisplay = document.getElementById(`${prefix}-net-display`);
+  const ivaDisplay = document.getElementById(`${prefix}-iva-display`);
+  const totalDisplay = document.getElementById(`${prefix}-total-display`);
+
+  if (netDisplay) netDisplay.textContent = net.toLocaleString();
+  if (ivaDisplay) ivaDisplay.textContent = iva.toLocaleString();
+  if (totalDisplay) totalDisplay.textContent = total.toLocaleString();
 }
 
 function getTableItems(prefix) {
@@ -2736,6 +3772,25 @@ async function putData(endpoint, body) {
     }
   } catch (error) {
     alert('Error al actualizar datos');
+  }
+}
+
+async function deleteData(endpoint) {
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    const result = await response.json();
+    if (result.success) {
+      alert('Eliminado exitosamente');
+    } else {
+      alert('Error: ' + result.error);
+    }
+  } catch (error) {
+    alert('Error al eliminar datos');
   }
 }
 
