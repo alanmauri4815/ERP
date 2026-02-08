@@ -121,6 +121,12 @@ function calculateTax(netPrice, taxRate = 0.19) {
 app.use(cors());
 app.use(express.json());
 
+// Request logger
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
+
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
 
 // Auth Middleware
@@ -227,6 +233,32 @@ app.get('/api/raw-materials', authenticateToken, async (req, res) => {
     res.json(data);
 });
 
+app.post('/api/raw-materials', authenticateToken, async (req, res) => {
+    const { code, name, unit, cost_net, iva, total, color, size, parent_code, type, batch_size } = req.body;
+    const { data, error } = await supabase.from(T.MP).insert({
+        code, name, unit, cost_net, iva, total, color, size, parent_code, type: type || 'MP',
+        batch_size: batch_size || 1
+    }).select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, data });
+});
+
+app.put('/api/raw-materials/:code', authenticateToken, async (req, res) => {
+    const { name, unit, cost_net, iva, total, color, size, parent_code, batch_size } = req.body;
+    const { error } = await supabase.from(T.MP).update({
+        name, unit, cost_net, iva, total, color, size, parent_code,
+        batch_size: batch_size || 1
+    }).eq('code', req.params.code);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+app.delete('/api/raw-materials/:code', authenticateToken, async (req, res) => {
+    const { error } = await supabase.from(T.MP).delete().eq('code', req.params.code);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
 app.get('/api/providers', authenticateToken, async (req, res) => {
     const { data, error } = await supabase.from(T.PROVIDERS).select('*').order('name');
     if (error) return res.status(500).json({ error: error.message });
@@ -331,6 +363,7 @@ app.get('/api/recipes/:productCode', authenticateToken, async (req, res) => {
                 name,
                 unit,
                 cost_net,
+                batch_size,
                 color,
                 size
             )
@@ -345,6 +378,7 @@ app.get('/api/recipes/:productCode', authenticateToken, async (req, res) => {
         mp_name: r.raw_materials?.name,
         unit: r.raw_materials?.unit,
         cost_net: r.raw_materials?.cost_net,
+        mp_batch_size: r.raw_materials?.batch_size || 1,
         color: r.raw_materials?.color,
         size: r.raw_materials?.size
     }));
@@ -363,16 +397,19 @@ app.put('/api/recipes/:productCode', authenticateToken, async (req, res) => {
         // Prepare new items
         const newItems = [];
         for (const item of items) {
-            const { data: rm } = await supabase.from(T.MP).select('cost_net').eq('code', item.mpCode).single();
-            const mpCostNet = rm ? rm.cost_net : 0;
-            const batchSize = item.batchSize || 1;
-            const unitCost = (item.quantity / batchSize) * mpCostNet;
+            const { data: rm } = await supabase.from(T.MP).select('cost_net, batch_size').eq('code', item.mpCode).single();
+            const mpCostNetTotal = rm ? rm.cost_net : 0;
+            const mpBatchSize = rm ? (rm.batch_size || 1) : 1;
+            const mpUnitPrice = mpCostNetTotal / mpBatchSize;
+
+            const recipeBatchSize = item.batchSize || 1;
+            const unitCost = (item.quantity / recipeBatchSize) * mpUnitPrice;
 
             newItems.push({
                 product_code: productCode,
                 mp_code: item.mpCode,
                 quantity: item.quantity,
-                batch_size: batchSize,
+                batch_size: recipeBatchSize,
                 unit_cost: unitCost
             });
         }
@@ -540,8 +577,79 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
     }
 });
 
+// ========== UPDATE PURCHASE (with accounting recalculation) ==========
+app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
+    const purchaseId = req.params.id;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type } = req.body;
+
+    try {
+        // 1. Get current purchase date for accounting
+        const { data: existingPurchase } = await supabase.from(T.PURCHASES).select('date').eq('id', purchaseId).single();
+        const date = existingPurchase?.date || new Date().toISOString().split('T')[0];
+
+        // 2. Update purchase record
+        const { error: updateError } = await supabase.from(T.PURCHASES).update({
+            provider_id: providerId || null,
+            net, iva, total,
+            payment_method: payment_method || null,
+            account_id: account_id || null,
+            document_type: document_type || 'factura'
+        }).eq('id', purchaseId);
+
+        if (updateError) throw updateError;
+
+        // 3. Delete existing purchase items and insert new ones
+        await supabase.from(T.PURCHASE_ITEMS).delete().eq('purchase_id', purchaseId);
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.mpCode && item.quantity > 0) {
+                await supabase.from(T.PURCHASE_ITEMS).insert({
+                    purchase_id: purchaseId,
+                    item_number: i + 1,
+                    mp_code: item.mpCode,
+                    quantity: item.quantity,
+                    unit_price: item.unitPrice,
+                    subtotal: item.subtotal
+                });
+            }
+        }
+
+        // 4. DELETE old accounting entry for this purchase
+        const { data: oldEntries } = await supabase
+            .from(T.ACCOUNTING_ENTRIES)
+            .select('id')
+            .eq('document_number', purchaseId.toString())
+            .eq('entry_type', 'compra');
+
+        if (oldEntries && oldEntries.length > 0) {
+            const entryIds = oldEntries.map(e => e.id);
+            await supabase.from(T.ACCOUNTING_LINES).delete().in('asiento_id', entryIds);
+            await supabase.from(T.ACCOUNTING_ENTRIES).delete().in('id', entryIds);
+        }
+
+        // 5. CREATE new accounting entry with updated values
+        await createAccountingEntry({
+            date,
+            description: `Compra a proveedor (Factura #${purchaseId})`,
+            type: 'compra',
+            document_number: purchaseId.toString(),
+            userId: req.user.id,
+            lines: [
+                { account_code: '1.1.02.01', debit: net },         // Inventario MP (Neto)
+                { account_code: '1.1.03.01', debit: iva },         // IVA Crédito Fiscal
+                { account_code: '1.1.01.01', credit: total }       // Pago desde Caja/Banco (Total)
+            ]
+        });
+
+        res.json({ success: true, message: 'Compra actualizada y contabilidad recalculada exitosamente.' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 app.post('/api/sales', authenticateToken, async (req, res) => {
-    const { clientId, items, net, iva, total, payment_method, account_id, is_iva_exempt, machine_id, event_name } = req.body;
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name } = req.body;
     const date = new Date().toISOString().split('T')[0];
 
     try {
@@ -551,6 +659,8 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
                 date,
                 client_id: clientId || null,
                 net, iva, total,
+                discount: discount || 0,
+                commission: commission || 0,
                 payment_method: payment_method || null,
                 account_id: account_id || null,
                 is_iva_exempt: is_iva_exempt || false,
@@ -582,30 +692,24 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 
         // Create Accounting Entry
         let paymentAccount = '1.1.01.01'; // Default: Caja
-        let commissionAmount = 0;
+        const commissionAmount = commission || 0;
+        const discountAmount = discount || 0;
 
-        if (payment_method === 'machine') {
-            paymentAccount = '1.1.01.03'; // Fondos por Recaudar
-            if (machine_id) {
-                const { data: machine } = await supabase.from(T.PAYMENT_MACHINES).select('commission_percent').eq('id', machine_id).single();
-                if (machine && machine.commission_percent) {
-                    commissionAmount = Math.round(total * machine.commission_percent / 100);
-                }
-            }
-        } else if (payment_method === 'transfer') {
-            paymentAccount = '1.1.01.02'; // Banco
+        if (payment_method === 'machine' || payment_method === 'transfer') {
+            paymentAccount = '1.1.01.03'; // Tarjeta Débito Privada (Socio)
         }
 
         const journalLines = [
             { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Venta #${sale.id} (${payment_method})` },
-            { account_code: '4.1.01.01', credit: net, glosa: `Ingreso neto venta #${sale.id}` }
+            { account_code: '4.1.01.01', credit: net - discountAmount, glosa: `Ingreso neto venta #${sale.id}` }
         ];
 
         if (commissionAmount > 0) {
             journalLines.push({ account_code: '5.1.02.02', debit: commissionAmount, glosa: `Comisión máquina venta #${sale.id}` });
         }
 
-        if (!is_iva_exempt && iva > 0) {
+        // Only include IVA in ledger if NOT cash (as per user: cash doesn't go to ledger accounts)
+        if (payment_method !== 'cash' && !is_iva_exempt && iva > 0) {
             journalLines.push({ account_code: '2.1.02.01', credit: iva, glosa: `IVA Débito venta #${sale.id}` });
         }
 
@@ -619,6 +723,98 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
         });
 
         res.json({ success: true, message: 'Venta registrada exitosamente.' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ========== UPDATE SALE (with accounting recalculation) ==========
+app.put('/api/sales/:id', authenticateToken, async (req, res) => {
+    const saleId = req.params.id;
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name } = req.body;
+
+    try {
+        // 1. Get current sale date for accounting
+        const { data: existingSale } = await supabase.from(T.SALES).select('date').eq('id', saleId).single();
+        const date = existingSale?.date || new Date().toISOString().split('T')[0];
+
+        // 2. Update sale record
+        const { error: updateError } = await supabase.from(T.SALES).update({
+            client_id: clientId || null,
+            net, iva, total,
+            discount: discount || 0,
+            commission: commission || 0,
+            payment_method: payment_method || null,
+            account_id: account_id || null,
+            is_iva_exempt: is_iva_exempt || false,
+            machine_id: machine_id || null,
+            event_name: event_name || null
+        }).eq('id', saleId);
+
+        if (updateError) throw updateError;
+
+        // 3. Delete existing sale items and insert new ones
+        await supabase.from(T.SALE_ITEMS).delete().eq('sale_id', saleId);
+
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.productCode && item.quantity > 0) {
+                await supabase.from(T.SALE_ITEMS).insert({
+                    sale_id: saleId,
+                    item_number: i + 1,
+                    product_code: item.productCode,
+                    quantity: item.quantity,
+                    unit_price: item.unitPrice,
+                    subtotal: item.subtotal
+                });
+            }
+        }
+
+        // 4. DELETE old accounting entry for this sale
+        const { data: oldEntries } = await supabase
+            .from(T.ACCOUNTING_ENTRIES)
+            .select('id')
+            .eq('document_number', saleId.toString())
+            .eq('entry_type', 'venta');
+
+        if (oldEntries && oldEntries.length > 0) {
+            const entryIds = oldEntries.map(e => e.id);
+            await supabase.from(T.ACCOUNTING_LINES).delete().in('asiento_id', entryIds);
+            await supabase.from(T.ACCOUNTING_ENTRIES).delete().in('id', entryIds);
+        }
+
+        // 5. CREATE new accounting entry with updated values
+        let paymentAccount = '1.1.01.01'; // Default: Caja
+        const commissionAmount = commission || 0;
+        const discountAmount = discount || 0;
+
+        if (payment_method === 'machine' || payment_method === 'transfer') {
+            paymentAccount = '1.1.01.03'; // Tarjeta Débito Privada (Socio)
+        }
+
+        const journalLines = [
+            { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Ingreso líquido Venta #${saleId} (${payment_method})` },
+            { account_code: '4.1.01.01', credit: net - discountAmount, glosa: `Ingreso neto Venta #${saleId}` }
+        ];
+
+        if (commissionAmount > 0) {
+            journalLines.push({ account_code: '5.1.02.02', debit: commissionAmount, glosa: `Comisión máquina Venta #${saleId}` });
+        }
+
+        if (payment_method !== 'cash' && !is_iva_exempt && (iva || 0) > 0) {
+            journalLines.push({ account_code: '2.1.02.01', credit: iva, glosa: `IVA Débito Venta #${saleId}` });
+        }
+
+        await createAccountingEntry({
+            date,
+            description: `Venta de productos (${event_name || 'General'})`,
+            type: 'venta',
+            document_number: saleId.toString(),
+            userId: req.user.id,
+            lines: journalLines
+        });
+
+        res.json({ success: true, message: 'Venta actualizada y contabilidad recalculada exitosamente.' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -731,13 +927,13 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                 await supabase.from(T.PRODUCTS).update({ stock: (p?.stock || 0) + item.quantity }).eq('code', item.productCode);
 
                 // Update MP stock based on recipe
-                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', item.productCode);
+                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', item.productCode);
                 for (const r of recipe) {
-                    const { data: rm } = await supabase.from(T.MP).select('stock, cost_net').eq('code', r.mp_code).single();
                     const consumptionQty = (r.quantity * item.quantity);
-                    const consumptionCost = consumptionQty * (rm?.cost_net || 0);
+                    const consumptionCost = r.unit_cost ? (r.unit_cost * item.quantity) : (consumptionQty * 0); // Fallback if unit_cost is missing
                     totalProductionCost += consumptionCost;
 
+                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).single();
                     const newStock = (rm?.stock || 0) - consumptionQty;
                     await supabase.from(T.MP).update({ stock: newStock }).eq('code', r.mp_code);
 
@@ -797,6 +993,33 @@ app.put('/api/products/:code', authenticateToken, async (req, res) => {
     const { error } = await supabase.from(T.PRODUCTS).update({ name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total }).eq('code', req.params.code);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Producto actualizado.' });
+});
+
+app.post('/api/products/recalculate-all-costs', authenticateToken, async (req, res) => {
+    try {
+        const { data: products } = await supabase.from(T.PRODUCTS).select('code');
+        for (const p of products) {
+            const { data: recipe } = await supabase.from(T.RECIPES).select('*').eq('product_code', p.code);
+
+            // Si no hay receta, no sobreescribimos el costo manual (si existe)
+            if (!recipe || recipe.length === 0) continue;
+
+            let totalCost = 0;
+            for (const r of recipe) {
+                const { data: rm } = await supabase.from(T.MP).select('cost_net, batch_size').eq('code', r.mp_code).single();
+                const mpCostNet = rm ? rm.cost_net : 0;
+                const mpBatchSize = rm ? (rm.batch_size || 1) : 1;
+                const unitCost = (r.quantity / (r.batch_size || 1)) * (mpCostNet / mpBatchSize);
+
+                await supabase.from(T.RECIPES).update({ unit_cost: unitCost }).eq('product_code', p.code).eq('mp_code', r.mp_code);
+                totalCost += unitCost;
+            }
+            await supabase.from(T.PRODUCTS).update({ cost_unit: Math.round(totalCost) }).eq('code', p.code);
+        }
+        res.json({ success: true, message: 'Costos recalculados exitosamente.' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.get('/api/reports/monthly', authenticateToken, async (req, res) => {

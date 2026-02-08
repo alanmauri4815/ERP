@@ -213,6 +213,7 @@ const views = {
               <th>Atributo</th>
               <th>Tamaño</th>
               <th>Stock</th>
+              <th>Costo Unit.</th>
               <th>Neto</th>
               <th>IVA (19%)</th>
               <th>P. Venta (Bruto)</th>
@@ -227,6 +228,7 @@ const views = {
                 <td>${p.color || '-'}</td>
                 <td>${p.size || '-'}</td>
                 <td><span class="badge ${p.stock < 5 ? 'badge-warning' : 'badge-success'}">${p.stock}</span></td>
+                <td style="font-weight: 600; color: var(--accent)">$${(p.cost_unit || 0).toLocaleString('es-CL')}</td>
                 <td>$${(p.price_net || 0).toLocaleString('es-CL')}</td>
                 <td style="color: var(--accent)">$${(p.iva || 0).toLocaleString('es-CL')}</td>
                 <td style="font-weight: 600; color: var(--secondary)">$${(p.price_sale || 0).toLocaleString('es-CL')}</td>
@@ -314,10 +316,10 @@ const views = {
               <th>Atributo</th>
               <th>Tamaño</th>
               <th>Stock</th>
+              <th style="text-align: center">Lote</th>
               <th>Unidad</th>
               <th>Neto</th>
-              <th>IVA</th>
-              <th>Costo Total</th>
+              <th>Precio Unit.</th>
               <th>Acción</th>
             </tr>
           </thead>
@@ -328,11 +330,11 @@ const views = {
                 <td>${m.name}</td>
                 <td>${m.color || '-'}</td>
                 <td>${m.size || '-'}</td>
-                <td><span class="badge ${m.stock < 2 ? 'badge-danger' : 'badge-success'}">${(m.stock || 0).toFixed(2)}</span></td>
+                <td><span class="badge ${m.stock < 1 ? 'badge-danger' : 'badge-success'}">${(m.stock || 0).toFixed(2)}</span></td>
+                <td style="text-align: center">${m.batch_size || 1}</td>
                 <td>${m.unit}</td>
                 <td>$${(m.cost_net || 0).toLocaleString('es-CL')}</td>
-                <td>$${(m.iva || 0).toLocaleString('es-CL')}</td>
-                <td style="font-weight: 600">$${(m.total || 0).toLocaleString('es-CL')}</td>
+                <td style="font-weight: 600; color: var(--accent)">$${Math.round((m.cost_net || 0) / (m.batch_size || 1)).toLocaleString('es-CL')}</td>
                 <td><button class="btn-sm" onclick="window.editItem('rm', '${m.code}')" title="Editar insumo">✏️</button></td>
               </tr>
             `).join('')}
@@ -353,7 +355,10 @@ const views = {
           <input type="hidden" id="nrm-original-code" value="">
           <div class="form-group"><label>Código</label><input type="text" id="nrm-code" required placeholder="MP-001"></div>
           <div class="form-group"><label>Nombre del Insumo</label><input type="text" id="nrm-name" required></div>
-          <div class="form-group"><label>Unidad</label><input type="text" id="nrm-unit" required placeholder="Mts, Kg, Uni"></div>
+          <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 1rem">
+            <div class="form-group"><label>Lote (Cant. Precio)</label><input type="number" id="nrm-batch-size" value="1" step="0.001" required></div>
+            <div class="form-group"><label>Unidad de Medida</label><input type="text" id="nrm-unit" required placeholder="Mts, Kg, Uni"></div>
+          </div>
           
           <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; border: 1px solid var(--success)">
             <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem">
@@ -366,19 +371,19 @@ const views = {
             </div>
             <div class="grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-top: 0.75rem; padding: 0.5rem; background: var(--surface-light); border-radius: 0.25rem">
               <div style="text-align: center">
+                <small style="opacity: 0.7">Precio Unitario</small><br>
+                <strong id="nrm-unit-price-display" style="color: var(--accent); font-size: 1.1rem">$0</strong>
+              </div>
+              <div style="text-align: center">
                 <small style="opacity: 0.7">Neto</small><br>
                 <strong id="nrm-neto-display">$0</strong>
                 <input type="hidden" id="nrm-cost" value="0">
               </div>
               <div style="text-align: center">
-                <small style="opacity: 0.7">IVA (19%)</small><br>
-                <strong id="nrm-iva-display" style="color: var(--accent)">$0</strong>
-                <input type="hidden" id="nrm-iva" value="0">
-              </div>
-              <div style="text-align: center">
-                <small style="opacity: 0.7">Costo Total</small><br>
+                <small style="opacity: 0.7">Costo Total (c/IVA)</small><br>
                 <strong id="nrm-total-display" style="color: var(--success)">$0</strong>
                 <input type="hidden" id="nrm-total" value="0">
+                <input type="hidden" id="nrm-iva" value="0">
               </div>
             </div>
           </div>
@@ -697,7 +702,7 @@ const views = {
                   <select class="item-code" data-index="${i}">
                     <option value="">Seleccione...</option>
                     ${state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
-                      <option value="${p.code}" data-price="${p.price_sale || 0}">
+                      <option value="${p.code}" data-price="${p.price_net || 0}">
                         ${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}
                       </option>`).join('')}
                   </select>
@@ -712,12 +717,41 @@ const views = {
 
         <div class="summary-section">
           <table class="summary-table">
-            <tr><td>Neto</td><td style="text-align: right; padding-right: 1rem;">$ <span id="sale-net-display">0</span></td></tr>
-            <tr><td>IVA (19%)</td><td style="text-align: right; padding-right: 1rem;">$ <span id="sale-iva-display">0</span></td></tr>
-            <tr style="font-size: 1.1rem; color: var(--secondary)"><td style="background: var(--secondary); color: white">Total</td><td style="text-align: right; padding-right: 1rem;"><strong>$ <span id="sale-total-display">0</span></strong></td></tr>
+            <tr><td>Sub Total (Detalle)</td><td style="text-align: right; padding-right: 1rem;">$ <span id="sale-net-display">0</span></td></tr>
+            <tr>
+              <td>Dcto. ($)</td>
+              <td style="text-align: right; padding-right: 1rem;">
+                <input type="number" id="sale-discount-input" value="0" step="1" oninput="window.recalculateSaleTotals()" style="width: 100px; text-align: right; border: 1px solid var(--border); border-radius: 4px; padding: 2px 5px;">
+              </td>
+            </tr>
+            <tr style="border-top: 2px solid var(--border); font-weight: 600;">
+              <td>Neto (Base Imponible)</td>
+              <td style="text-align: right; padding-right: 1rem;">$ <span id="sale-adjusted-net-display">0</span></td>
+            </tr>
+            <tr>
+              <td>
+                IVA (19%) 
+                <span id="sale-iva-ledger-note" style="display: none; font-size: 0.75rem; color: var(--warning); margin-left: 0.5rem;">(No contabilizado en Libro Diario)</span>
+              </td>
+              <td style="text-align: right; padding-right: 1rem;">$ <span id="sale-iva-display">0</span></td>
+            </tr>
+            <tr style="font-size: 1.1rem; color: var(--secondary)">
+              <td style="background: var(--secondary); color: white">TOTAL</td>
+              <td style="text-align: right; padding-right: 1rem;"><strong>$ <span id="sale-total-display">0</span></strong></td>
+            </tr>
+            <tr id="sale-commission-row" style="display: none; color: var(--danger)">
+              <td>Comisión Máquina</td>
+              <td style="text-align: right; padding-right: 1rem;">-$ <span id="sale-commission-display">0</span></td>
+            </tr>
+            <tr id="sale-real-income-row" style="border-top: 1px dashed var(--border); font-weight: 600;">
+              <td>Ingreso Real</td>
+              <td style="text-align: right; padding-right: 1rem;">$ <span id="sale-real-income-display">0</span></td>
+            </tr>
           </table>
           <input type="hidden" id="sale-net" value="0">
           <input type="hidden" id="sale-iva" value="0">
+          <input type="hidden" id="sale-discount" value="0">
+          <input type="hidden" id="sale-commission" value="0">
           <input type="hidden" id="sale-total" value="0">
         </div>
 
@@ -1475,16 +1509,27 @@ function renderHistoryTable(type) {
     return `
   <div class="table-container">
     <table>
-      <thead><tr><th>Fecha</th><th>Evento</th><th>Cliente</th><th>Pago</th><th>Total</th><th>Acción</th></tr></thead>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Fecha</th>
+          <th>Cliente</th>
+          <th>Método Pago</th>
+          <th>Total Bruto</th>
+          <th style="text-align: center">Acción</th>
+        </tr>
+      </thead>
       <tbody>
         ${data.map(h => `
               <tr>
-                <td>${h.date}</td>
-                <td><span style="opacity:0.8">${h.event_name || '-'}</span></td>
+                <td><strong>#${h.id}</strong></td>
+                <td>${h.date ? h.date.split('T')[0] : '-'}</td>
                 <td><strong>${h.client_name || 'Venta Directa'}</strong></td>
-                <td>${h.payment_method === 'cash' ? '💵' : h.payment_method === 'machine' ? '💳' : '🔄'} <small>${h.machine_id ? '(Maq)' : ''}</small></td>
-                <td>$${h.total.toLocaleString()} ${h.is_iva_exempt ? '<small>(Exento)</small>' : ''}</td>
-                <td><button class="btn-sm" onclick="window.showTransactionDetails('sale', ${h.id})">👁️</button></td>
+                <td>${h.payment_method === 'cash' ? '💵 Efectivo' : h.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transferencia'}</td>
+                <td>$${(h.total || 0).toLocaleString()} ${h.is_iva_exempt ? '<small style="color:var(--warning)">(Exento)</small>' : ''}</td>
+                <td style="text-align: center">
+                  <button class="btn-sm" onclick="window.showTransactionDetails('sale', ${h.id})" title="Ver detalle de productos">👁️ Detalle</button>
+                </td>
               </tr>
             `).join('')}
       </tbody>
@@ -1607,34 +1652,80 @@ window.showTransactionDetails = (type, id) => {
   <thead>
     <tr>
       <th style="width: 50px">Ítem</th>
-      <th>${type === 'purchase' ? 'Insumo' : 'Producto'}</th>
-      ${!isProduction ? `<th style="width: 120px">Precio Unit</th>` : ''}
-      <th style="width: 100px">Cantidad</th>
-      ${!isProduction ? `<th style="width: 150px">Sub Tot</th>` : ''}
+      <th>Código</th>
+      <th>Nombre</th>
+      <th style="width: 80px; text-align: center">Cant</th>
+      ${!isProduction ? `<th style="width: 110px; text-align: right">Precio</th>` : ''}
+      ${!isProduction ? `<th style="width: 130px; text-align: right">Subtotal</th>` : ''}
     </tr>
   </thead>
   <tbody>
-    ${transaction.items.map(item => `
+    ${transaction.items.map(item => {
+    // User wants NET values in the rows. 
+    // For old sales where gross was stored in subtotal, we calculate net display.
+    // If the item subtotal matches the total part of the transaction, it was likely gross.
+    let displayUnitPrice = item.unit_price || 0;
+    let displaySubtotal = item.subtotal || 0;
+
+    if (type === 'sale' && !transaction.is_iva_exempt) {
+      // Check if stored values were gross (common in Venta #4)
+      // If transaction.net is roughly 1/1.19 of transaction.total, then items were likely gross
+      const isStoredAsGross = Math.abs((transaction.net * 1.19) - transaction.total) < 10;
+      if (isStoredAsGross || displaySubtotal > transaction.net) {
+        displayUnitPrice = Math.round(displayUnitPrice / 1.19);
+        displaySubtotal = Math.round(displaySubtotal / 1.19);
+      }
+    }
+
+    return `
             <tr>
               <td style="text-align: center">${item.item_number}</td>
+              <td><code>${item.product_code || item.mp_code}</code></td>
               <td>${item.product_name || item.mp_name}${item.color ? ' (' + item.color + ')' : ''}${item.size ? ' [' + item.size + ']' : ''}</td>
-              ${!isProduction ? `<td style="text-align: right">$${(item.unit_price || 0).toLocaleString()}</td>` : ''}
               <td style="text-align: center">${item.quantity}</td>
-              ${!isProduction ? `<td style="text-align: right">$${(item.subtotal || 0).toLocaleString()}</td>` : ''}
+              ${!isProduction ? `<td style="text-align: right">$${(displayUnitPrice).toLocaleString()}</td>` : ''}
+              ${!isProduction ? `<td style="text-align: right; font-weight: 600">$${(displaySubtotal).toLocaleString()}</td>` : ''}
             </tr>
-          `).join('')}
+          `;
+  }).join('')}
   </tbody>
 </table>
 
       ${!isProduction ? `
       <div class="summary-section">
         <table class="summary-table">
-          <tr><td>Neto</td><td style="text-align: right">$${(transaction.net || 0).toLocaleString()}</td></tr>
-          <tr><td>IVA (19%)</td><td style="text-align: right">$${(transaction.iva || 0).toLocaleString()}</td></tr>
-          <tr><td>Total</td><td style="text-align: right"><strong>$${(transaction.total || 0).toLocaleString()}</strong></td></tr>
+          <tr><td>Sub Total (Detalle)</td><td style="text-align: right">$${(transaction.net || 0).toLocaleString()}</td></tr>
+          <tr><td>Dcto.</td><td style="text-align: right; color: var(--danger)">-$${(transaction.discount || 0).toLocaleString()}</td></tr>
+          <tr style="border-top: 1px solid var(--border); font-weight: 600">
+            <td>Neto (Base)</td>
+            <td style="text-align: right">$${((transaction.net || 0) - (transaction.discount || 0)).toLocaleString()}</td>
+          </tr>
+          <tr>
+            <td>
+              IVA (19%) 
+              ${transaction.payment_method === 'cash' ? '<span style="font-size:0.75rem; color:var(--warning); margin-left:0.5rem">(No contabilizado)</span>' : ''}
+            </td>
+            <td style="text-align: right">$${(transaction.iva || 0).toLocaleString()}</td>
+          </tr>
+          <tr style="font-size: 1.1rem; border-top: 2px solid var(--border); color: var(--success)">
+             <td>TOTAL</td>
+             <td style="text-align: right"><strong>$${(transaction.total || 0).toLocaleString()}</strong></td>
+          </tr>
+          ${transaction.payment_method === 'machine' ? `
+            <tr style="color: var(--danger); font-size: 0.9rem">
+              <td>Comisión Máquina (3,33%)</td>
+              <td style="text-align: right">-$${(transaction.commission || Math.round(transaction.total * 0.0333)).toLocaleString()}</td>
+            </tr>
+          ` : ''}
+          ${type === 'sale' ? `
+            <tr style="font-size: 1rem; border-top: 2px solid var(--border); background: rgba(var(--success-rgb), 0.1)">
+              <td style="padding: 0.75rem 0.5rem"><strong>Ingreso Real (Monto Líquido)</strong></td>
+              <td style="text-align: right; padding: 0.75rem 0.5rem"><strong>$${(transaction.total - (transaction.commission || (transaction.payment_method === 'machine' ? Math.round(transaction.total * 0.0333) : 0))).toLocaleString()}</strong></td>
+            </tr>
+          ` : ''}
         </table>
       </div>
-      ` : ''
+      ` : ''}
     }
 
 <div class="form-actions">
@@ -1654,10 +1745,10 @@ window.editTransaction = (type, id) => {
   const modalId = type === 'sale' ? 'sale-modal' : 'buy-modal';
 
   // Set edit mode
-  document.getElementById(`${prefix} -edit - mode`).value = 'true';
-  document.getElementById(`${prefix} -edit - id`).value = transaction.id;
-  document.getElementById(`${prefix} -modal - title`).textContent = `Editar ${type === 'sale' ? 'Venta' : 'Compra'} #${transaction.id} `;
-  document.getElementById(`btn - submit - ${type === 'sale' ? 'sale' : 'purchase'} `).textContent = 'Guardar Cambios';
+  document.getElementById(`${prefix}-edit-mode`).value = 'true';
+  document.getElementById(`${prefix}-edit-id`).value = transaction.id;
+  document.getElementById(`${prefix}-modal-title`).textContent = `Editar ${type === 'sale' ? 'Venta' : 'Compra'} #${transaction.id}`;
+  document.getElementById(`btn-submit-${type === 'sale' ? 'sale' : 'purchase'}`).textContent = 'Guardar Cambios';
 
   // Fill main fields
   if (type === 'sale') {
@@ -1666,6 +1757,7 @@ window.editTransaction = (type, id) => {
     document.getElementById('sale-event-name').value = transaction.event_name || '';
     document.getElementById('sale-iva-exempt').checked = transaction.is_iva_exempt || false;
     document.getElementById('sale-payment-method').value = transaction.payment_method || 'transfer';
+    document.getElementById('sale-discount-input').value = transaction.discount || 0;
     window.updatePaymentFields();
     if (transaction.payment_method === 'machine') {
       document.getElementById('sale-machine').value = transaction.machine_id || '';
@@ -1677,7 +1769,7 @@ window.editTransaction = (type, id) => {
 
   // Clear rows first
   const bodyId = type === 'sale' ? 'sale-items-body' : 'purchase-items-body';
-  const rows = document.querySelectorAll(`#${bodyId} .item - row`);
+  const rows = document.querySelectorAll(`#${bodyId} .item-row`);
   rows.forEach(row => {
     row.querySelector('.item-code').value = '';
     row.querySelector('.item-price').value = 0;
@@ -1698,12 +1790,16 @@ window.editTransaction = (type, id) => {
   });
 
   // Update summary
-  document.getElementById(`${prefix} -net`).value = transaction.net;
-  document.getElementById(`${prefix} -iva`).value = transaction.iva;
-  document.getElementById(`${prefix} -total`).value = transaction.total;
-  document.getElementById(`${prefix} -net - display`).textContent = (transaction.net || 0).toLocaleString();
-  document.getElementById(`${prefix} -iva - display`).textContent = (transaction.iva || 0).toLocaleString();
-  document.getElementById(`${prefix} -total - display`).textContent = (transaction.total || 0).toLocaleString();
+  document.getElementById(`${prefix}-net`).value = transaction.net;
+  document.getElementById(`${prefix}-iva`).value = transaction.iva;
+  if (type === 'sale') {
+    document.getElementById('sale-discount').value = transaction.discount || 0;
+    document.getElementById('sale-commission').value = transaction.commission || 0;
+  }
+  document.getElementById(`${prefix}-total`).value = transaction.total;
+  document.getElementById(`${prefix}-net-display`).textContent = (transaction.net || 0).toLocaleString();
+  document.getElementById(`${prefix}-iva-display`).textContent = (transaction.iva || 0).toLocaleString();
+  document.getElementById(`${prefix}-total-display`).textContent = (transaction.total || 0).toLocaleString();
 
   // Close details modal and open edit modal
   document.getElementById('details-modal').style.display = 'none';
@@ -1751,6 +1847,7 @@ window.editItem = (type, code) => {
     // Load data
     document.getElementById('nrm-code').value = m.code;
     document.getElementById('nrm-name').value = m.name;
+    document.getElementById('nrm-batch-size').value = m.batch_size || 1;
     document.getElementById('nrm-unit').value = m.unit;
 
     // UI Loading for pricing
@@ -1773,16 +1870,14 @@ window.recalculateAllCosts = async () => {
   if (!confirm('¿Deseas recalcular los costos de todos los productos basados en sus recetas?')) return;
 
   try {
-    const response = await fetch(`${API_BASE} /products/recalculate - all - costs`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+    const result = await apiFetch('/products/recalculate-all-costs', {
+      method: 'POST'
     });
-    const result = await response.json();
-    if (result.success) {
+    if (result && result.success) {
       alert(result.message);
       fetchData();
     } else {
-      alert('Error: ' + result.error);
+      alert('Error: ' + (result?.error || 'Error desconocido'));
     }
   } catch (e) {
     alert('Error al recalcular costos');
@@ -1796,27 +1891,27 @@ window.recipeState = {
 };
 
 window.editRecipeRow = (index) => {
-  const row = document.querySelector(`.recipe - row[data - index="${index}"]`);
+  const row = document.querySelector(`.recipe-row[data-index="${index}"]`);
   if (!row) return;
 
   const item = window.recipeState.items[index];
   row.innerHTML = `
-  < td >
-  <select class="edit-mp-code" onchange="window.updateRecipeRowMP(${index}, this.value)">
-    <option value="">Seleccione...</option>
-    ${state.rawMaterials.map(m => `<option value="${m.code}" ${m.code === item.mp_code ? 'selected' : ''}>${m.name}${m.color ? ' (' + m.color + ')' : ''}</option>`).join('')}
-  </select>
-    </td >
-    <td><input type="number" step="any" class="edit-qty" value="${item.quantity}" oninput="window.updateRecipeRowData(${index})"></td>
-    <td class="row-unit">${item.unit || '-'}</td>
-    <td class="row-net-cost">$${(item.cost_net || 0).toLocaleString()}</td>
-    <td><input type="number" step="1" class="edit-batch" value="${item.batch_size || 1}" oninput="window.updateRecipeRowData(${index})"></td>
-    <td class="row-unit-cost" style="font-weight: 600">$${(item.unit_cost || 0).toLocaleString()}</td>
+    <td>
+      <select class="edit-mp-code" onchange="window.updateRecipeRowMP(${index}, this.value)" style="width: 100%">
+        <option value="">Seleccione...</option>
+        ${state.rawMaterials.map(m => `<option value="${m.code}" ${m.code === item.mp_code ? 'selected' : ''}>${m.name}${m.color ? ' (' + m.color + ')' : ''}</option>`).join('')}
+      </select>
+    </td>
+    <td><input type="number" step="any" class="edit-qty" value="${item.quantity}" oninput="window.updateRecipeRowData(${index})" style="width: 80px; text-align: center"></td>
+    <td style="text-align: center"><input type="number" step="1" class="edit-batch" value="${item.batch_size || 1}" oninput="window.updateRecipeRowData(${index})" style="width: 60px; text-align: center"></td>
+    <td class="row-consumption" style="text-align: center; font-weight: 600; color: var(--primary)">${((item.quantity || 0) / (item.batch_size || 1)).toFixed(4)}</td>
+    <td class="row-unit-price-mp" style="text-align: right">$${Math.round((item.cost_net || 0) / (item.mp_batch_size || 1)).toLocaleString()}</td>
+    <td class="row-unit-cost" style="font-weight: 700; color: var(--accent); text-align: right">$${(item.unit_cost || 0).toLocaleString()}</td>
     <td style="text-align: center">
       <button class="btn-sm" onclick="window.saveRecipeRow(${index})" style="background: var(--success); margin-right: 0.5rem">✔️</button>
       <button class="btn-sm" onclick="window.refreshRecipeView()" style="background: var(--surface-light)">❌</button>
     </td>
-`;
+  `;
 };
 
 window.updateRecipeRowMP = (index, code) => {
@@ -1826,25 +1921,28 @@ window.updateRecipeRowMP = (index, code) => {
   item.mp_code = code;
   item.mp_name = mp.name;
   item.unit = mp.unit;
-  item.cost_net = mp.cost_net;
+  item.cost_net = mp.cost_net; // Total neto del MP
+  item.mp_batch_size = mp.batch_size || 1; // Lote del MP
   window.updateRecipeRowData(index);
 };
 
 window.updateRecipeRowData = (index) => {
-  const row = document.querySelector(`.recipe - row[data - index="${index}"]`);
+  const row = document.querySelector(`.recipe-row[data-index="${index}"]`);
   const item = window.recipeState.items[index];
 
   const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
-  const batch = parseInt(row.querySelector('.edit-batch').value) || 1;
-  const unitCost = (qty / batch) * (item.cost_net || 0);
+  const batch = parseFloat(row.querySelector('.edit-batch').value) || 1;
+  const mpUnitPrice = (item.cost_net || 0) / (item.mp_batch_size || 1);
+  const consumption = qty / batch;
+  const unitCost = consumption * mpUnitPrice;
 
   item.quantity = qty;
   item.batch_size = batch;
   item.unit_cost = unitCost;
 
-  row.querySelector('.row-unit').textContent = item.unit || '-';
-  row.querySelector('.row-net-cost').textContent = `$${(item.cost_net || 0).toLocaleString()} `;
-  row.querySelector('.row-unit-cost').textContent = `$${unitCost.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })} `;
+  row.querySelector('.row-consumption').textContent = consumption.toFixed(4);
+  row.querySelector('.row-unit-price-mp').textContent = `$${Math.round(mpUnitPrice).toLocaleString()} `;
+  row.querySelector('.row-unit-cost').textContent = `$${Math.round(unitCost).toLocaleString()} `;
 
   window.calculateRecipeTotal();
 };
@@ -1868,7 +1966,8 @@ window.addRecipeRow = () => {
     batch_size: 1,
     unit_cost: 0,
     unit: '-',
-    cost_net: 0
+    cost_net: 0,
+    mp_batch_size: 1
   });
   window.refreshRecipeView();
   window.editRecipeRow(window.recipeState.items.length - 1);
@@ -1991,23 +2090,33 @@ window.refreshRecipeView = () => {
   const container = document.getElementById('recipe-items-body');
   if (!container) return;
 
-  container.innerHTML = window.recipeState.items.map((r, i) => `
+  container.innerHTML = window.recipeState.items.map((r, i) => {
+    // Calculamos el costo unitario sobre la marcha si es necesario
+    const mpUnitPrice = (r.cost_net || 0) / (r.mp_batch_size || 1);
+    const consumption = (r.quantity || 0) / (r.batch_size || 1);
+    const calculatedUnitCost = consumption * mpUnitPrice;
+
+    // Actualizamos el objeto para que el total se calcule bien
+    r.unit_cost = calculatedUnitCost;
+
+    return `
     <tr class="recipe-row" data-index="${i}">
       <td>
         <strong>${r.mp_name}</strong>
         ${r.color || r.size ? `<br><small style="opacity:0.7">${r.color || ''} ${r.size ? '| ' + r.size : ''}</small>` : ''}
       </td>
       <td style="text-align: center">${r.quantity}</td>
-      <td>${r.unit || ''}</td>
-      <td>$${(r.cost_net || 0).toLocaleString()}</td>
       <td style="text-align: center">${r.batch_size || 1}</td>
-      <td style="font-weight: 600">$${(r.unit_cost || 0).toLocaleString()}</td>
+      <td style="text-align: center; font-weight: 600; color: var(--primary)">${consumption.toFixed(4)} ${r.unit || ''}</td>
+      <td style="text-align: right; font-weight: 700">$${Math.round(calculatedUnitCost || 0).toLocaleString()}</td>
       <td style="text-align: center">
         <button class="btn-sm" onclick="window.editRecipeRow(${i})" title="Modificar">✏️</button>
         <button class="btn-sm" onclick="window.deleteRecipeRow(${i})" style="background: var(--danger)" title="Eliminar">🗑️</button>
       </td>
     </tr>
-  `).join('');
+    `;
+  }).join('');
+
   window.calculateRecipeTotal();
 };
 
@@ -2018,8 +2127,6 @@ async function showRecipe(pid) {
 
   window.recipeState.currentPid = pid;
   window.recipeState.items = JSON.parse(JSON.stringify(recipe)); // Deep copy
-
-  const totalCost = window.recipeState.items.reduce((sum, r) => sum + (r.unit_cost || 0), 0);
 
   container.innerHTML = `
     <div class="animate-fade">
@@ -2032,7 +2139,7 @@ async function showRecipe(pid) {
         <div></div>
         <div style="background: var(--surface-light); padding: 1rem; border-radius: 0.5rem">
           <div style="font-size: 0.875rem; color: var(--text-muted)">Costo Calculado:</div>
-          <div id="display-total-cost" style="font-size: 1.5rem; font-weight: 700; color: var(--accent)">$${Math.round(totalCost).toLocaleString()}</div>
+          <div id="display-total-cost" style="font-size: 1.5rem; font-weight: 700; color: var(--accent)">$0</div>
           <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem">Costo en BD: $${(product.cost_unit || 0).toLocaleString()}</div>
         </div>
       </div>
@@ -2042,11 +2149,10 @@ async function showRecipe(pid) {
           <thead>
             <tr>
               <th>Insumo</th>
-              <th style="width: 100px; text-align: center">Cant MP</th>
-              <th>Unidad</th>
-              <th>Costo Neto</th>
-              <th style="width: 80px; text-align: center">Lote</th>
-              <th>Costo Unit.</th>
+              <th style="width: 80px; text-align: center">Cant MP</th>
+              <th style="width: 80px; text-align: center">Lote Prod</th>
+              <th style="width: 120px; text-align: center">Consumo Unit.</th>
+              <th style="text-align: right">Costo Unit.</th>
               <th style="width: 100px; text-align: center">Acciones</th>
             </tr>
           </thead>
@@ -2055,23 +2161,59 @@ async function showRecipe(pid) {
           </tbody>
         </table>
       </div>
-      
-`;
+
+      <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem">
+        <button id="btn-save-recipe" style="background: var(--success); padding: 0.75rem 2rem">💾 Guardar Receta</button>
+      </div>
+    </div>
+  `;
+
   window.refreshRecipeView();
 
-  // Save recipe
-  document.getElementById('btn-save-recipe').addEventListener('click', async () => {
+  // Guardamos la receta en window para poder llamarla desde el onclick
+  window.saveCurrentRecipe = async () => {
     const items = window.recipeState.items.filter(item => item.mp_code && item.quantity > 0).map(item => ({
       mpCode: item.mp_code,
       quantity: item.quantity,
       batchSize: item.batch_size
     }));
 
-    await putData(`/recipes/${pid}`, { items });
-    state.products = await fetch(`${API_BASE}/products`).then(r => r.json());
-    state.recipes[pid] = null; // Clear cache
-    showRecipe(pid);
-  });
+    if (items.length === 0) {
+      if (!confirm('La receta está vacía. ¿Deseas borrar todos los insumos de este producto?')) return;
+    }
+
+    const btn = document.getElementById('btn-save-recipe');
+    if (!btn) return;
+
+    btn.textContent = 'Guardando...';
+    btn.disabled = true;
+
+    try {
+      const res = await putData(`/recipes/${pid}`, { items }, true); // true = silent
+      if (res && res.success) {
+        alert('✅ Receta guardada exitosamente');
+        // Recargar productos para ver el nuevo costo
+        const prods = await apiFetch('/products');
+        if (prods) state.products = prods;
+        state.recipes[pid] = null; // Limpiar cache
+        showRecipe(pid);
+      } else {
+        alert('❌ Error al guardar: ' + (res?.error || 'Error desconocido'));
+        btn.textContent = '💾 Guardar Receta';
+        btn.disabled = false;
+      }
+    } catch (err) {
+      console.error('Save Recipe Error:', err);
+      alert('❌ Error crítico al guardar la receta');
+      btn.textContent = '💾 Guardar Receta';
+      btn.disabled = false;
+    }
+  };
+
+  const btn = document.getElementById('btn-save-recipe');
+  if (btn) {
+    btn.onclick = window.saveCurrentRecipe;
+  }
 }
 
 // --- Accounts State & View ---
@@ -2900,6 +3042,8 @@ function renderView(viewName) {
         items: getTableItems('sale'),
         net: parseInt(document.getElementById('sale-net').value),
         iva: parseInt(document.getElementById('sale-iva').value),
+        discount: parseInt(document.getElementById('sale-discount').value) || 0,
+        commission: parseInt(document.getElementById('sale-commission').value) || 0,
         total: parseInt(document.getElementById('sale-total').value),
         payment_method: paymentMethod,
         account_id: document.getElementById('sale-account').value || null,
@@ -2999,6 +3143,7 @@ function renderView(viewName) {
     // IVA Calculation for Raw Materials
     function calculateRawMaterialPrices() {
       const input = parseFloat(document.getElementById('nrm-precio-input').value) || 0;
+      const batchSize = parseFloat(document.getElementById('nrm-batch-size').value) || 1;
       const incluyeIva = document.getElementById('nrm-incluye-iva').checked;
 
       let neto, iva, total;
@@ -3013,8 +3158,10 @@ function renderView(viewName) {
         total = neto + iva;
       }
 
+      const unitPrice = neto / batchSize;
+
       document.getElementById('nrm-neto-display').textContent = '$' + neto.toLocaleString('es-CL');
-      document.getElementById('nrm-iva-display').textContent = '$' + iva.toLocaleString('es-CL');
+      document.getElementById('nrm-unit-price-display').textContent = '$' + Math.round(unitPrice).toLocaleString('es-CL');
       document.getElementById('nrm-total-display').textContent = '$' + total.toLocaleString('es-CL');
 
       document.getElementById('nrm-cost').value = neto; // cost_net
@@ -3023,6 +3170,7 @@ function renderView(viewName) {
     }
 
     document.getElementById('nrm-precio-input')?.addEventListener('input', calculateRawMaterialPrices);
+    document.getElementById('nrm-batch-size')?.addEventListener('input', calculateRawMaterialPrices);
     document.getElementById('nrm-incluye-iva')?.addEventListener('change', calculateRawMaterialPrices);
 
     document.getElementById('new-rm-form').addEventListener('submit', async (e) => {
@@ -3034,6 +3182,7 @@ function renderView(viewName) {
         code: document.getElementById('nrm-code').value,
         name: document.getElementById('nrm-name').value,
         unit: document.getElementById('nrm-unit').value,
+        batch_size: parseFloat(document.getElementById('nrm-batch-size').value) || 1,
         cost_net: parseFloat(document.getElementById('nrm-cost').value),
         iva: parseFloat(document.getElementById('nrm-iva').value),
         total: parseFloat(document.getElementById('nrm-total').value),
@@ -3128,21 +3277,6 @@ function renderView(viewName) {
   if (viewName === 'design') {
     document.querySelectorAll('.recipe-item').forEach(item => {
       item.addEventListener('click', () => showRecipe(item.dataset.pid));
-    });
-
-    document.getElementById('btn-save-recipe')?.addEventListener('click', async () => {
-      const pid = window.recipeState.currentPid;
-      if (!pid) return;
-      const items = window.recipeState.items.filter(item => item.mp_code && item.quantity > 0).map(item => ({
-        mpCode: item.mp_code,
-        quantity: item.quantity,
-        batchSize: item.batch_size
-      }));
-
-      await putData(`/recipes/${pid}`, { items });
-      state.products = await fetch(`${API_BASE}/products`).then(r => r.json());
-      state.recipes[pid] = null; // Clear cache
-      showRecipe(pid);
     });
   }
 
@@ -3708,22 +3842,78 @@ function calculateTotals(prefix) {
   const subtotals = Array.from(body.querySelectorAll('.item-subtotal')).map(i => parseInt(i.value) || 0);
   const net = subtotals.reduce((a, b) => a + b, 0);
 
-  let iva = Math.round(net * 0.19);
+  let iva = 0;
+  let total = net;
+  let discount = 0;
+  let commission = 0;
+  let adjustedNet = net;
 
-  // Specific logic for sales IVA exemption
   if (prefix === 'sale') {
+    discount = parseInt(document.getElementById('sale-discount-input')?.value) || 0;
     const isExempt = document.getElementById('sale-iva-exempt')?.checked;
-    if (isExempt) iva = 0;
+    const paymentMethod = document.getElementById('sale-payment-method').value;
+    const machineSelect = document.getElementById('sale-machine');
+    const commissionRow = document.getElementById('sale-commission-row');
+    const ivaLedgerNote = document.getElementById('sale-iva-ledger-note');
+
+    // 1. Calculate Neto (Base) after Discount
+    adjustedNet = net - discount;
+    if (adjustedNet < 0) adjustedNet = 0;
+
+    // 2. Calculate IVA on Adjusted Net
+    if (!isExempt) {
+      iva = Math.round(adjustedNet * 0.19);
+    }
+
+    // 3. Calculate Final TOTAL
+    total = adjustedNet + iva;
+
+    // 4. Calculate Machine Commission (Default 3.33% if not specified)
+    if (paymentMethod === 'machine') {
+      let commPercent = 3.33;
+      if (machineSelect && machineSelect.value) {
+        const selectedOption = machineSelect.options[machineSelect.selectedIndex];
+        if (selectedOption.dataset.commission) {
+          commPercent = parseFloat(selectedOption.dataset.commission);
+        }
+      }
+      commission = Math.round(total * commPercent / 100);
+      if (commissionRow) commissionRow.style.display = 'table-row';
+    } else {
+      if (commissionRow) commissionRow.style.display = 'none';
+      commission = 0;
+    }
+
+    // 5. Handle Cash Note (not in ledger)
+    if (ivaLedgerNote) {
+      ivaLedgerNote.style.display = (paymentMethod === 'cash') ? 'inline' : 'none';
+    }
+
+    // Update displays for Adjusted Net
+    const adjNetDisplay = document.getElementById('sale-adjusted-net-display');
+    if (adjNetDisplay) adjNetDisplay.textContent = adjustedNet.toLocaleString();
+
+    // Update hidden inputs
+    document.getElementById('sale-discount').value = discount;
+    document.getElementById('sale-commission').value = commission;
+    const commDisplay = document.getElementById('sale-commission-display');
+    if (commDisplay) commDisplay.textContent = commission.toLocaleString();
+
+    // Update Ingreso Real
+    const realIncome = total - commission;
+    const realIncomeDisplay = document.getElementById('sale-real-income-display');
+    if (realIncomeDisplay) realIncomeDisplay.textContent = realIncome.toLocaleString();
+  } else {
+    // For purchases
+    iva = Math.round(net * 0.19);
+    total = net + iva;
   }
 
-  const total = net + iva;
-
-  // Update hidden inputs for form submission
+  // Common updates (using original 'net' which is subtotal of rows)
   document.getElementById(`${prefix}-net`).value = net;
   document.getElementById(`${prefix}-iva`).value = iva;
   document.getElementById(`${prefix}-total`).value = total;
 
-  // Update display spans for the user
   const netDisplay = document.getElementById(`${prefix}-net-display`);
   const ivaDisplay = document.getElementById(`${prefix}-iva-display`);
   const totalDisplay = document.getElementById(`${prefix}-total-display`);
@@ -3756,7 +3946,7 @@ function getTableItems(prefix) {
   return items;
 }
 
-async function putData(endpoint, body) {
+async function putData(endpoint, body, silent = false) {
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'PUT',
@@ -3766,15 +3956,22 @@ async function putData(endpoint, body) {
       },
       body: JSON.stringify(body)
     });
+
     const result = await response.json();
-    if (result.success) {
-      alert(result.message);
-      fetchData(); // Refresh data
-    } else {
-      alert('Error: ' + result.error);
+
+    if (!silent) {
+      if (result.success) {
+        alert(result.message || 'Actualizado correctamente');
+        fetchData();
+      } else {
+        alert('Error: ' + result.error);
+      }
     }
+    return result;
   } catch (error) {
-    alert('Error al actualizar datos');
+    console.error(`Error en PUT ${endpoint}:`, error);
+    if (!silent) alert('Error al actualizar datos');
+    return { success: false, error: error.message };
   }
 }
 
