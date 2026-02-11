@@ -440,6 +440,8 @@ app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, asyn
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS quotation_id int8 REFERENCES quotations(id);
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS project_ref text;
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS purchase_category text DEFAULT 'general';
+            ALTER TABLE production ADD COLUMN IF NOT EXISTS production_category text DEFAULT 'push';
+            ALTER TABLE production ADD COLUMN IF NOT EXISTS quotation_id int8 REFERENCES quotations(id);
         `;
         const { error } = await supabase.rpc('exec_sql', { sql });
         if (error) throw error;
@@ -538,6 +540,11 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 
     if (error) return res.status(500).json({ error: error.message });
 
+    // Build quotation lookup for project names
+    const { data: quotes } = await supabase.from(T.QUOTATIONS).select('id, name').limit(1000);
+    const quoteMap = {};
+    quotes?.forEach(q => quoteMap[q.id] = q.name);
+
     const fullHistory = [];
     for (const p of history) {
         const { data: items } = await supabase
@@ -547,6 +554,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 
         fullHistory.push({
             ...p,
+            project_name: quoteMap[p.quotation_id] || null,
             items: items.map(i => ({
                 ...i,
                 product_name: i.products?.name,
@@ -1023,17 +1031,32 @@ app.get('/api/accounting-entries', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/production', authenticateToken, async (req, res) => {
-    const { items, date } = req.body;
+    const { items, date, production_category, quotation_id } = req.body;
     const productionDate = date || new Date().toISOString();
 
     try {
-        const { data: prod, error: pError } = await supabase
+        const insertData = { date: productionDate };
+        if (production_category) insertData.production_category = production_category;
+        if (quotation_id && !isNaN(quotation_id)) insertData.quotation_id = parseInt(quotation_id);
+
+        let result = await supabase
             .from(T.PRODUCTION)
-            .insert({ date: productionDate })
+            .insert(insertData)
             .select()
             .single();
 
-        if (pError) throw pError;
+        // Fallback if new columns don't exist yet
+        if (result.error && result.error.message.includes('column')) {
+            console.warn('Retrying production insert without new columns...', result.error.message);
+            result = await supabase
+                .from(T.PRODUCTION)
+                .insert({ date: productionDate })
+                .select()
+                .single();
+        }
+
+        if (result.error) throw result.error;
+        const prod = result.data;
 
         let totalProductionCost = 0;
         for (let i = 0; i < items.length; i++) {

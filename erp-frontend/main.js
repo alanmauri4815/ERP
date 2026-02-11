@@ -462,6 +462,26 @@ const views = {
           <label>Fecha</label>
           <input type="date" id="prod-date" value="${new Date().toISOString().split('T')[0]}">
         </div>
+
+        <div style="background: rgba(var(--primary-rgb), 0.05); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px dashed var(--primary)">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem">
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600">Método de Producción</label>
+              <select id="prod-category" onchange="window.toggleProdCategory()" style="font-size: 1.1rem; padding: 0.5rem">
+                <option value="push">🚀 Push (fabricar para vender)</option>
+                <option value="pull">🔄 Pull (de cotización ganada)</option>
+              </select>
+            </div>
+            <div class="form-group" id="prod-project-group" style="margin:0; display:none">
+              <label style="font-weight: 600; color: var(--secondary)">📁 Cotización Asociada</label>
+              <select id="prod-quotation" style="border: 1px solid var(--secondary)">
+                <option value="">Sin asociar</option>
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} — $${Math.round(q.total_price_gross || 0).toLocaleString()}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>
+
         <table class="item-table">
           <thead>
             <tr>
@@ -1731,6 +1751,8 @@ function renderHistoryTable(type) {
   `;
   }
   if (type === 'production') {
+    const PROD_CAT_LABELS = { push: '🚀 Push', pull: '🔄 Pull' };
+    const PROD_CAT_COLORS = { push: '#f59e0b', pull: '#3b82f6' };
     const flatItems = [];
     data.forEach(p => {
       if (p.items) {
@@ -1738,6 +1760,8 @@ function renderHistoryTable(type) {
           flatItems.push({
             transId: p.id,
             date: p.date.split('T')[0],
+            production_category: p.production_category || 'push',
+            project_name: p.project_name || null,
             ...it
           });
         });
@@ -1752,6 +1776,7 @@ function renderHistoryTable(type) {
           <th>ID</th>
           <th>Ítem</th>
           <th>Fecha</th>
+          <th>Método</th>
           <th>Producto</th>
           <th>Nombre P</th>
           <th>Cant</th>
@@ -1761,11 +1786,19 @@ function renderHistoryTable(type) {
         </tr>
       </thead>
       <tbody>
-        ${flatItems.reverse().map(it => `
+        ${flatItems.reverse().map(it => {
+      const pcat = it.production_category || 'push';
+      return `
               <tr>
                 <td><strong>#${it.transId}</strong></td>
                 <td>${it.item_number}</td>
                 <td>${it.date}</td>
+                <td>
+                  <span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.72rem; font-weight:700; background:${PROD_CAT_COLORS[pcat] || '#6b7280'}22; color:${PROD_CAT_COLORS[pcat] || '#6b7280'}; border:1px solid ${PROD_CAT_COLORS[pcat] || '#6b7280'}44">
+                    ${PROD_CAT_LABELS[pcat] || pcat}
+                  </span>
+                  ${it.project_name ? '<br><small>📁 ' + it.project_name + '</small>' : ''}
+                </td>
                 <td>${it.product_code}</td>
                 <td>${it.product_name} <small>(${it.color || '-'})</small></td>
                 <td style="text-align: center">${it.quantity}</td>
@@ -1773,7 +1806,8 @@ function renderHistoryTable(type) {
                 <td style="text-align: right">$${((it.mo_cost || 0) * it.quantity).toLocaleString()}</td>
                 <td style="text-align: center"><button class="btn-sm" onclick="window.editProduction(${it.transId})">✏️ Editar</button></td>
               </tr>
-            `).join('')}
+            `;
+    }).join('')}
       </tbody>
     </table>
       </div>
@@ -4374,6 +4408,22 @@ function renderView(viewName) {
   }
 
   if (viewName === 'production') {
+    window.toggleProdCategory = function () {
+      const cat = document.getElementById('prod-category')?.value;
+      const projectGroup = document.getElementById('prod-project-group');
+      if (projectGroup) {
+        if (cat === 'pull') {
+          projectGroup.style.display = 'block';
+          projectGroup.style.border = '2px solid var(--secondary)';
+          projectGroup.style.padding = '0.5rem';
+          projectGroup.style.borderRadius = '8px';
+          projectGroup.style.background = 'rgba(234, 179, 8, 0.05)';
+        } else {
+          projectGroup.style.display = 'none';
+        }
+      }
+    };
+
     document.getElementById('btn-submit-production').addEventListener('click', async () => {
       const isEditMode = document.getElementById('prod-edit-mode').value === 'true';
       const editId = document.getElementById('prod-edit-id').value;
@@ -4393,7 +4443,9 @@ function renderView(viewName) {
 
       const body = {
         date: document.getElementById('prod-date').value,
-        items
+        items,
+        production_category: document.getElementById('prod-category')?.value || 'push',
+        quotation_id: document.getElementById('prod-quotation')?.value || null
       };
 
       if (isEditMode) {
@@ -4407,6 +4459,11 @@ function renderView(viewName) {
       document.getElementById('prod-edit-id').value = '';
       document.getElementById('prod-modal-title').textContent = 'Nueva Orden de Producción';
       document.getElementById('btn-prod-text').textContent = 'Iniciar Producción';
+      // Reset category
+      const catSel = document.getElementById('prod-category');
+      if (catSel) catSel.value = 'push';
+      const projGroup = document.getElementById('prod-project-group');
+      if (projGroup) projGroup.style.display = 'none';
       fetchData();
     });
   }
