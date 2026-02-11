@@ -1,3 +1,4 @@
+console.log('ERP Universal v1.1.0 - Quotation IDs Updated');
 import './style.css'
 import Chart from 'chart.js/auto'
 import {
@@ -476,7 +477,7 @@ const views = {
               <label style="font-weight: 600; color: var(--secondary)">📁 Cotización Asociada</label>
               <select id="prod-quotation" style="border: 1px solid var(--secondary)">
                 <option value="">Sin asociar</option>
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} — $${Math.round(q.total_price_gross || 0).toLocaleString()}</option>`).join('')}
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — $${Math.round(q.total_price_gross || 0).toLocaleString()}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -583,7 +584,7 @@ const views = {
             <select id="pur-project" style="border: 1px solid var(--secondary)">
               <option value="">Gasto General (Sin Proyecto)</option>
               <optgroup label="Cotizaciones Aprobadas / En Producción">
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)}</option>`).join('')}
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''}</option>`).join('')}
               </optgroup>
               <optgroup label="Ventas Realizadas">
                 ${state.history.sales.slice(0, 10).map(s => `<option value="S-${s.id}">💰 Venta #${s.id} - ${s.client_name || 'Vta Directa'}</option>`).join('')}
@@ -1764,6 +1765,7 @@ function renderHistoryTable(type) {
             date: p.date.split('T')[0],
             production_category: p.production_category || 'push',
             project_name: p.project_name || null,
+            purchase_order_id: p.purchase_order_id || null,
             ...it
           });
         });
@@ -1779,6 +1781,7 @@ function renderHistoryTable(type) {
           <th>Ítem</th>
           <th>Fecha</th>
           <th>Método</th>
+          <th>Ref / OC</th>
           <th>Producto</th>
           <th>Nombre P</th>
           <th>Cant</th>
@@ -1801,6 +1804,7 @@ function renderHistoryTable(type) {
                   </span>
                   ${it.project_name ? '<br><small>📁 ' + it.project_name + '</small>' : ''}
                 </td>
+                <td><small style="font-weight:700; color:var(--secondary)">${it.purchase_order_id || '-'}</small></td>
                 <td>${it.product_code}</td>
                 <td>${it.product_name} <small>(${it.color || '-'})</small></td>
                 <td style="text-align: center">${it.quantity}</td>
@@ -1821,7 +1825,7 @@ function renderHistoryTable(type) {
     return `
   <div class="table-container">
     <table>
-      <thead><tr><th>ID</th><th>Fecha</th><th>Tipo/Proyecto</th><th>Categoría</th><th>Proveedor/Glosa</th><th>Total</th><th>Acción</th></tr></thead>
+      <thead><tr><th>ID</th><th>Fecha</th><th>Tipo/Proyecto</th><th>Categoría</th><th>Ref / OC</th><th>Proveedor/Glosa</th><th>Total</th><th>Acción</th></tr></thead>
       <tbody>
         ${data.map(h => {
       const cat = h.purchase_category || 'general';
@@ -1840,6 +1844,7 @@ function renderHistoryTable(type) {
                     ${CAT_LABELS[cat] || cat}
                   </span>
                 </td>
+                <td><small style="font-weight:700; color:var(--secondary)">${h.purchase_order_id || '-'}</small></td>
                 <td>
                   <strong>${h.type === 'expense' ? (h.description || 'Gasto General') : (h.provider_name || 'Sin Proveedor')}</strong>
                 </td>
@@ -2807,6 +2812,14 @@ views.quotations = () => {
           </select>
         </div>
         <div class="form-group" style="grid-column: span 2">
+          <label style="color:var(--secondary); font-weight:700">ID Cotización (Municipalidad/Cliente)</label>
+          <input type="text" id="quote-external-id" placeholder="Ej: 1216088-250-COT25" style="border:1px solid var(--secondary)">
+        </div>
+        <div class="form-group" style="grid-column: span 2">
+          <label style="color:var(--secondary); font-weight:700">Orden de Compra (OC)</label>
+          <input type="text" id="quote-purchase-order" placeholder="Ej: 1216088-295-AG25" style="border:1px solid var(--secondary)">
+        </div>
+        <div class="form-group" style="grid-column: span 2">
           <label>RUT Cliente</label>
           <input type="text" id="quote-rut" placeholder="Ej: 76.123.456-7">
         </div>
@@ -2946,6 +2959,8 @@ window.openQuotationModal = () => {
   document.getElementById('quote-description-proposal').value = '';
   document.getElementById('quote-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('quote-delivery-time').value = '';
+  document.getElementById('quote-external-id').value = '';
+  document.getElementById('quote-purchase-order').value = '';
   document.getElementById('quote-utility').value = '30';
   document.getElementById('quote-budget').value = '0';
   document.getElementById('quote-probability').textContent = '-%';
@@ -2982,6 +2997,8 @@ window.editQuotation = async (id) => {
   document.getElementById('quote-description-proposal').value = q.description_proposal || '';
   document.getElementById('quote-date').value = q.quote_date ? q.quote_date.split('T')[0] : '';
   document.getElementById('quote-delivery-time').value = q.delivery_time || '';
+  document.getElementById('quote-external-id').value = q.external_quote_id || '';
+  document.getElementById('quote-purchase-order').value = q.purchase_order_id || '';
   document.getElementById('quote-utility').value = q.utility_percentage || 0;
   document.getElementById('quote-budget').value = q.budget || 0;
 
@@ -3299,6 +3316,8 @@ window.saveQuotation = async () => {
   const descProposal = document.getElementById('quote-description-proposal').value;
   const quoteDate = document.getElementById('quote-date').value;
   const deliveryTime = document.getElementById('quote-delivery-time').value;
+  const externalQuoteId = document.getElementById('quote-external-id').value;
+  const purchaseOrderId = document.getElementById('quote-purchase-order').value;
 
   if (!clientId || !name) return alert('Por favor complete Cliente y Nombre');
 
@@ -3317,6 +3336,8 @@ window.saveQuotation = async () => {
     images: window.quotationImages,
     quote_date: quoteDate,
     delivery_time: deliveryTime,
+    external_quote_id: externalQuoteId,
+    purchase_order_id: purchaseOrderId,
     quantity: window.quotationProducts.reduce((sum, p) => sum + (p.quantity || 0), 0),
     utility_percentage: parseFloat(document.getElementById('quote-utility').value),
     products_list: window.quotationProducts,
@@ -3733,7 +3754,8 @@ window.printQuotation = () => {
           </div>
         </div>
         <div class="quote-meta">
-          <p>COTIZACIÓN: ${quoteDisplayId}</p>
+          <p>COTIZACIÓN: ${q.external_quote_id || quoteDisplayId}</p>
+          ${q.purchase_order_id ? `<p>ORDEN DE COMPRA: ${q.purchase_order_id}</p>` : ''}
           <p>Fecha documento: ${q.quote_date ? q.quote_date.split('-').reverse().join('-') : today}</p>
           <p>Página 1 de 2</p>
         </div>
@@ -3750,6 +3772,7 @@ window.printQuotation = () => {
           <span class="info-label">Estado Cotización:</span><span class="info-value">VIGENTE</span>
         </div>
         <div class="info-row"><span class="info-label">Dirección:</span><span class="info-value">${displayAddress}</span></div>
+        <div class="info-row"><span class="info-label">Orden de Compra:</span><span class="info-value"><strong>${q.purchase_order_id || '-'}</strong></span></div>
         <div class="info-row"><span class="info-label">Descripción:</span><span class="info-value">${q.description_proposal || '-'}</span></div>
       </div>
 
@@ -3797,7 +3820,7 @@ window.printQuotation = () => {
           <div class="company-details"><h2>ROSS Confecciones</h2></div>
         </div>
         <div class="quote-meta">
-          <p>COTIZACIÓN: ${quoteDisplayId}</p>
+          <p>COTIZACIÓN: ${q.external_quote_id || quoteDisplayId}</p>
           <p>Página 2 de 2</p>
         </div>
       </div>

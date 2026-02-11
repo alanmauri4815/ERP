@@ -443,6 +443,8 @@ app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, asyn
             ALTER TABLE production ADD COLUMN IF NOT EXISTS production_category text DEFAULT 'push';
             ALTER TABLE production ADD COLUMN IF NOT EXISTS quotation_id int8 REFERENCES quotations(id);
             ALTER TABLE purchase_items ADD COLUMN IF NOT EXISTS custom_name text;
+            ALTER TABLE quotations ADD COLUMN IF NOT EXISTS external_quote_id text;
+            ALTER TABLE quotations ADD COLUMN IF NOT EXISTS purchase_order_id text;
         `;
         const { error } = await supabase.rpc('exec_sql', { sql });
         if (error) throw error;
@@ -500,12 +502,12 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
         const [provs, accs, quotes] = await Promise.all([
             supabase.from(T.PROVIDERS).select('id, name'),
             supabase.from(T.ACCOUNTS).select('id, name'),
-            supabase.from(T.QUOTATIONS).select('id, name').limit(1000)
+            supabase.from(T.QUOTATIONS).select('id, name, purchase_order_id').limit(1000)
         ]);
 
         const provMap = {}; provs.data?.forEach(p => provMap[p.id] = p.name);
         const accMap = {}; accs.data?.forEach(a => accMap[a.id] = a.name);
-        const quoteMap = {}; quotes.data?.forEach(q => quoteMap[q.id] = q.name);
+        const quoteMap = {}; quotes.data?.forEach(q => quoteMap[q.id] = { name: q.name, oc: q.purchase_order_id });
 
         const fullHistory = [];
         for (const p of history) {
@@ -528,7 +530,8 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
                 ...p,
                 provider_name: provMap[p.provider_id] || 'Sin Proveedor',
                 account_name: accMap[p.account_id] || 'N/A',
-                project_name: quoteMap[p.quotation_id] || p.project_ref || 'N/A',
+                project_name: quoteMap[p.quotation_id]?.name || p.project_ref || 'N/A',
+                purchase_order_id: quoteMap[p.quotation_id]?.oc || null,
                 items: items
             });
         }
@@ -577,9 +580,9 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
     if (error) return res.status(500).json({ error: error.message });
 
     // Build quotation lookup for project names
-    const { data: quotes } = await supabase.from(T.QUOTATIONS).select('id, name').limit(1000);
+    const { data: quotes } = await supabase.from(T.QUOTATIONS).select('id, name, purchase_order_id').limit(1000);
     const quoteMap = {};
-    quotes?.forEach(q => quoteMap[q.id] = q.name);
+    quotes?.forEach(q => quoteMap[q.id] = { name: q.name, oc: q.purchase_order_id });
 
     const fullHistory = [];
     for (const p of history) {
@@ -590,7 +593,8 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 
         fullHistory.push({
             ...p,
-            project_name: quoteMap[p.quotation_id] || null,
+            project_name: quoteMap[p.quotation_id]?.name || null,
+            purchase_order_id: quoteMap[p.quotation_id]?.oc || null,
             items: items.map(i => ({
                 ...i,
                 product_name: i.products?.name,
@@ -1531,7 +1535,8 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
         client_id, name, quantity, utility_percentage,
         total_net_cost, total_price_net, total_iva, total_price_gross,
         budget, success_probability, products_list,
-        items, rut, address, description_proposal, images
+        items, rut, address, description_proposal, images,
+        external_quote_id, purchase_order_id
     } = req.body;
 
     console.log('--- CREATE QUOTATION ---');
@@ -1545,6 +1550,7 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
             total_net_cost, total_price_net, total_iva, total_price_gross,
             budget, success_probability, products_list,
             rut, address, description_proposal, images,
+            external_quote_id, purchase_order_id,
             status: 'draft'
         }).select().single();
 
@@ -1583,7 +1589,8 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
         client_id, name, quantity, utility_percentage,
         total_net_cost, total_price_net, total_iva, total_price_gross,
         budget, success_probability, products_list,
-        items, rut, address, description_proposal, images
+        items, rut, address, description_proposal, images,
+        external_quote_id, purchase_order_id
     } = req.body;
 
     try {
@@ -1592,7 +1599,8 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
             client_id, name, quantity, utility_percentage,
             total_net_cost, total_price_net, total_iva, total_price_gross,
             budget, success_probability, products_list,
-            rut, address, description_proposal, images
+            rut, address, description_proposal, images,
+            external_quote_id, purchase_order_id
         }).eq('id', id);
 
         if (qError) {
