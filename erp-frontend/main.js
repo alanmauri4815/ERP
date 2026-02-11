@@ -1053,7 +1053,7 @@ const views = {
           <div class="form-group"><label>Nombre</label><input type="text" id="mach-name" required placeholder="Ej: Transbank Débito"></div>
           <div class="grid-2">
             <div class="form-group"><label>Proveedor</label><input type="text" id="mach-provider" placeholder="Transbank, Tenpo, etc."></div>
-            <div class="form-group"><label>Comisión (%)</label><input type="number" id="mach-commission" step="0.01" value="3.33"></div>
+            <div class="form-group"><label>Comisión (%)</label><input type="number" id="mach-commission" step="0.01" value="3.45"></div>
           </div>
           <div class="form-group">
             <label>Cuenta Asociada</label>
@@ -4570,7 +4570,7 @@ function renderView(viewName) {
       document.getElementById('mach-id').value = '';
       document.getElementById('mach-name').value = '';
       document.getElementById('mach-provider').value = '';
-      document.getElementById('mach-commission').value = '3.33';
+      document.getElementById('mach-commission').value = '3.45';
       document.getElementById('mach-account').value = '';
       document.getElementById('mach-active').checked = true;
       document.getElementById('machine-modal-title').textContent = 'Nueva Máquina de Pago';
@@ -5079,9 +5079,9 @@ function calculateTotals(prefix) {
     // 3. Calculate Final TOTAL
     total = adjustedNet + iva;
 
-    // 4. Calculate Machine Commission (Default 3.33% if not specified)
+    // 4. Calculate Machine Commission (Default 3.45% if not specified)
     if (paymentMethod === 'machine') {
-      let commPercent = 3.33;
+      let commPercent = 3.45;
       if (machineSelect && machineSelect.value) {
         const selectedOption = machineSelect.options[machineSelect.selectedIndex];
         if (selectedOption.dataset.commission) {

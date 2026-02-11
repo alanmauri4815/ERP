@@ -1,4 +1,5 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
@@ -9,7 +10,7 @@ const T = {
     ACCOUNTING_LINES: 'accounting_lines'
 };
 
-const COMMISSION_RATE = 0.0333; // 3.33%
+const COMMISSION_RATE = 0.0345; // 3.45%
 
 async function createAccountingEntry({ date, description, type, document_number, lines, userId }) {
     try {
@@ -85,7 +86,7 @@ async function fullSalesCleanAndSync() {
 
         const discountAmount = discount || 0;
 
-        // CALCULATE commission for machine sales (use stored value OR calculate at 3.33%)
+        // CALCULATE commission for machine sales (use stored value OR calculate at 3.45%)
         let commissionAmount = 0;
         if (payment_method === 'machine') {
             commissionAmount = commission || Math.round(total * COMMISSION_RATE);
