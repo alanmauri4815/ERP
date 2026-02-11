@@ -1549,6 +1549,58 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
     }
 });
 
+// ========== QUOTATION STATUS WORKFLOW ==========
+const QUOTE_TRANSITIONS = {
+    draft: ['sent', 'cancelled'],
+    sent: ['approved', 'rejected', 'cancelled'],
+    approved: ['production', 'cancelled'],
+    rejected: [],
+    production: ['cancelled'],
+    cancelled: []
+};
+
+app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { status: newStatus } = req.body;
+
+    if (!newStatus || !QUOTE_TRANSITIONS[newStatus] && !Object.keys(QUOTE_TRANSITIONS).includes(newStatus)) {
+        return res.status(400).json({ error: `Estado inválido: ${newStatus}` });
+    }
+
+    try {
+        // Get current status
+        const { data: quote, error: fetchErr } = await supabase
+            .from(T.QUOTATIONS)
+            .select('id, status')
+            .eq('id', id)
+            .single();
+
+        if (fetchErr || !quote) {
+            return res.status(404).json({ error: 'Cotización no encontrada' });
+        }
+
+        const currentStatus = quote.status || 'draft';
+        const allowed = QUOTE_TRANSITIONS[currentStatus] || [];
+
+        if (!allowed.includes(newStatus)) {
+            return res.status(400).json({
+                error: `Transición no permitida: ${currentStatus} → ${newStatus}. Permitidas: ${allowed.join(', ') || 'ninguna (estado terminal)'}`
+            });
+        }
+
+        const { error: updateErr } = await supabase
+            .from(T.QUOTATIONS)
+            .update({ status: newStatus })
+            .eq('id', id);
+
+        if (updateErr) throw updateErr;
+
+        res.json({ success: true, message: `Estado actualizado a: ${newStatus}`, newStatus });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`ERP Backend running on port ${PORT} (Connected to Supabase)`);

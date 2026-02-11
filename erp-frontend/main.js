@@ -1548,6 +1548,143 @@ const views = {
   }
 };
 
+// ========== PIPELINE VIEW ==========
+const PIPELINE_STAGES = [
+  { key: 'draft', label: '📝 Borrador', color: '#6b7280' },
+  { key: 'sent', label: '📤 Enviada', color: '#3b82f6' },
+  { key: 'approved', label: '✅ Aprobada', color: '#10b981' },
+  { key: 'production', label: '🏭 Producción', color: '#f59e0b' },
+  { key: 'rejected', label: '❌ Rechazada', color: '#ef4444' },
+  { key: 'cancelled', label: '🚫 Anulada', color: '#991b1b' }
+];
+
+views.pipeline = () => {
+  // Group quotations by status
+  const groups = {};
+  PIPELINE_STAGES.forEach(s => groups[s.key] = []);
+  state.quotations.forEach(q => {
+    const s = q.status || 'draft';
+    if (groups[s]) groups[s].push(q);
+  });
+
+  // Active pipeline (non-terminal) for the flow visualization
+  const activeStages = PIPELINE_STAGES.filter(s => !['rejected', 'cancelled'].includes(s.key));
+  const terminalStages = PIPELINE_STAGES.filter(s => ['rejected', 'cancelled'].includes(s.key));
+
+  // KPIs
+  const totalQuotes = state.quotations.length;
+  const activeQuotes = state.quotations.filter(q => !['rejected', 'cancelled'].includes(q.status || 'draft')).length;
+  const totalValue = state.quotations.reduce((sum, q) => sum + (q.total_price_gross || 0), 0);
+  const approvedValue = state.quotations.filter(q => q.status === 'approved' || q.status === 'production').reduce((sum, q) => sum + (q.total_price_gross || 0), 0);
+
+  return `
+  <header class="animate-fade">
+    <div style="display:flex; align-items:center; gap:1rem">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="4 7 4 4 20 4 20 7"></polyline>
+        <line x1="9" y1="20" x2="15" y2="20"></line>
+        <line x1="12" y1="4" x2="12" y2="20"></line>
+      </svg>
+      <div>
+        <h1 style="margin:0">Pipeline de Proyectos</h1>
+        <div class="date-display" style="font-size:0.8rem; opacity:0.7">Cadena de Valor — Método Pull</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- KPI Cards -->
+  <div class="grid-2 animate-fade" style="grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem">
+    <div class="card" style="text-align:center; padding:1rem">
+      <div style="font-size:0.8rem; color:var(--text-muted)">Total Cotizaciones</div>
+      <div style="font-size:1.8rem; font-weight:700; color:var(--primary)">${totalQuotes}</div>
+    </div>
+    <div class="card" style="text-align:center; padding:1rem">
+      <div style="font-size:0.8rem; color:var(--text-muted)">Activas (en proceso)</div>
+      <div style="font-size:1.8rem; font-weight:700; color:#10b981">${activeQuotes}</div>
+    </div>
+    <div class="card" style="text-align:center; padding:1rem">
+      <div style="font-size:0.8rem; color:var(--text-muted)">Valor Total Pipeline</div>
+      <div style="font-size:1.5rem; font-weight:700; color:var(--primary)">$${Math.round(totalValue).toLocaleString()}</div>
+    </div>
+    <div class="card" style="text-align:center; padding:1rem">
+      <div style="font-size:0.8rem; color:var(--text-muted)">Valor Ganado (Aprobadas+Prod)</div>
+      <div style="font-size:1.5rem; font-weight:700; color:#10b981">$${Math.round(approvedValue).toLocaleString()}</div>
+    </div>
+  </div>
+
+  <!-- Flow Diagram -->
+  <div class="card animate-fade" style="padding:1rem 1.5rem; margin-bottom:1.5rem">
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.8rem">
+      <strong style="color:var(--primary)">🔄 Flujo Pull:</strong>
+      <span style="font-size:0.85rem; color:var(--text-muted)">Cotización → Enviada → Aprobada → Orden de Producción → Compra MP → Producción → Venta → Entrega → Pago</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:0; overflow-x:auto; padding:0.5rem 0">
+      ${activeStages.map((stage, idx) => {
+    const count = groups[stage.key].length;
+    const value = groups[stage.key].reduce((s, q) => s + (q.total_price_gross || 0), 0);
+    return `
+          ${idx > 0 ? '<div style="color:var(--text-muted); font-size:1.2rem; padding:0 0.3rem">→</div>' : ''}
+          <div style="text-align:center; padding:0.5rem 0.8rem; border-radius:8px; background:${stage.color}15; border:1px solid ${stage.color}33; min-width:100px; flex-shrink:0">
+            <div style="font-size:0.75rem; font-weight:700; color:${stage.color}">${stage.label}</div>
+            <div style="font-size:1.3rem; font-weight:800; color:${stage.color}">${count}</div>
+            <div style="font-size:0.7rem; color:var(--text-muted)">$${Math.round(value).toLocaleString()}</div>
+          </div>
+        `;
+  }).join('')}
+    </div>
+  </div>
+
+  <!-- Kanban Board -->
+  <div class="animate-fade" style="display:grid; grid-template-columns: repeat(${activeStages.length}, 1fr); gap:0.8rem; overflow-x:auto; min-height:300px">
+    ${activeStages.map(stage => {
+    const items = groups[stage.key];
+    return `
+        <div style="background:var(--surface); border-radius:12px; border-top:3px solid ${stage.color}; padding:0.8rem; display:flex; flex-direction:column; gap:0.6rem; min-width:180px">
+          <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:0.5rem; border-bottom:1px solid var(--border)">
+            <span style="font-size:0.82rem; font-weight:700; color:${stage.color}">${stage.label}</span>
+            <span style="background:${stage.color}22; color:${stage.color}; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.75rem; font-weight:700">${items.length}</span>
+          </div>
+          ${items.length === 0 ? '<div style="text-align:center; padding:2rem 0.5rem; opacity:0.3; font-size:0.8rem">Sin cotizaciones</div>' :
+        items.map(q => `
+            <div onclick="window.viewQuotation('${q.id}')" style="background:var(--surface-light); border-radius:8px; padding:0.7rem; cursor:pointer; border:1px solid var(--border); transition:all 0.2s; border-left:3px solid ${stage.color}"
+              onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'"
+              onmouseout="this.style.transform=''; this.style.boxShadow=''">
+              <div style="font-weight:600; font-size:0.82rem; margin-bottom:0.3rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${q.name || 'Sin nombre'}</div>
+              <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:0.3rem">${q.clients?.name || 'Varios'}</div>
+              <div style="font-size:0.85rem; font-weight:700; color:var(--primary)">$${Math.round(q.total_price_gross || 0).toLocaleString()}</div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+  }).join('')}
+  </div>
+
+  <!-- Terminal States (collapsed) -->
+  ${(groups.rejected.length + groups.cancelled.length) > 0 ? `
+    <div class="card animate-fade" style="margin-top:1.5rem; opacity:0.7">
+      <h3 style="margin:0 0 0.8rem">Cotizaciones Cerradas</h3>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem">
+        ${terminalStages.map(stage => {
+    const items = groups[stage.key];
+    if (items.length === 0) return '';
+    return `
+            <div>
+              <div style="font-size:0.85rem; font-weight:700; color:${stage.color}; margin-bottom:0.5rem">${stage.label} (${items.length})</div>
+              ${items.map(q => `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:0.4rem 0; border-bottom:1px solid var(--border); font-size:0.82rem">
+                  <span style="cursor:pointer; text-decoration:underline" onclick="window.viewQuotation('${q.id}')">${q.name || 'Sin nombre'}</span>
+                  <span style="color:var(--text-muted)">$${Math.round(q.total_price_gross || 0).toLocaleString()}</span>
+                </div>
+              `).join('')}
+            </div>
+          `;
+  }).join('')}
+      </div>
+    </div>
+  ` : ''}
+`;
+};
+
 function renderHistoryTable(type) {
   const data = state.history[type];
   if (type === 'sales') {
@@ -2417,9 +2554,62 @@ window.editAccount = (id) => {
 
 // --- Quotations State & View ---
 state.quotations = [];
+state.quoteStatusFilter = 'all';
 window.quotationItems = []; // Temporary items for current editing quote
 
-views.quotations = () => `
+const QUOTE_STATUS_LABELS = {
+  draft: '📝 Borrador', sent: '📤 Enviada', approved: '✅ Aprobada',
+  rejected: '❌ Rechazada', production: '🏭 Producción', cancelled: '🚫 Anulada'
+};
+const QUOTE_STATUS_COLORS = {
+  draft: '#6b7280', sent: '#3b82f6', approved: '#10b981',
+  rejected: '#ef4444', production: '#f59e0b', cancelled: '#991b1b'
+};
+const QUOTE_TRANSITIONS = {
+  draft: ['sent', 'cancelled'],
+  sent: ['approved', 'rejected', 'cancelled'],
+  approved: ['production', 'cancelled'],
+  rejected: [],
+  production: ['cancelled'],
+  cancelled: []
+};
+
+window.changeQuoteStatus = async (id, newStatus) => {
+  const label = QUOTE_STATUS_LABELS[newStatus] || newStatus;
+  if (!confirm(`¿Cambiar estado a "${label}"?`)) return;
+  try {
+    const res = await apiFetch(`/quotations/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: newStatus })
+    });
+    if (res && res.success) {
+      alert(`✅ ${res.message}`);
+      fetchData();
+    } else {
+      alert('Error: ' + (res?.error || 'Error desconocido'));
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+};
+
+window.filterQuoteStatus = (status) => {
+  state.quoteStatusFilter = status;
+  renderView('quotations');
+};
+
+views.quotations = () => {
+  const filtered = state.quoteStatusFilter === 'all'
+    ? state.quotations
+    : state.quotations.filter(q => q.status === state.quoteStatusFilter);
+
+  const statusCounts = {};
+  state.quotations.forEach(q => {
+    const s = q.status || 'draft';
+    statusCounts[s] = (statusCounts[s] || 0) + 1;
+  });
+
+  return `
   <header class="animate-fade">
     <div style="display:flex; align-items:center; gap:1rem">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2433,7 +2623,22 @@ views.quotations = () => `
     </div>
     <button onclick="window.openQuotationModal()">+ Nueva Cotización</button>
   </header>
-  
+
+  <!-- Status Filter Tabs -->
+  <div class="card animate-fade" style="padding: 0.8rem 1.2rem; margin-bottom: 1rem; display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center">
+    <button onclick="window.filterQuoteStatus('all')" style="padding:0.4rem 0.9rem; border-radius:20px; font-size:0.82rem; font-weight:600; border:none; cursor:pointer; transition:all 0.2s; ${state.quoteStatusFilter === 'all' ? 'background:var(--primary); color:white' : 'background:var(--surface-light); color:var(--text-muted)'}">
+      Todos (${state.quotations.length})
+    </button>
+    ${Object.entries(QUOTE_STATUS_LABELS).map(([key, label]) => {
+    const count = statusCounts[key] || 0;
+    if (count === 0 && key !== state.quoteStatusFilter) return '';
+    const isActive = state.quoteStatusFilter === key;
+    return `<button onclick="window.filterQuoteStatus('${key}')" style="padding:0.4rem 0.9rem; border-radius:20px; font-size:0.82rem; font-weight:600; border:none; cursor:pointer; transition:all 0.2s; ${isActive ? `background:${QUOTE_STATUS_COLORS[key]}; color:white` : `background:var(--surface-light); color:${QUOTE_STATUS_COLORS[key]}`}">
+        ${label} (${count})
+      </button>`;
+  }).join('')}
+  </div>
+
   <div class="card animate-fade">
     <div class="table-container">
       <table>
@@ -2450,8 +2655,11 @@ views.quotations = () => `
           </tr>
         </thead>
         <tbody>
-          ${state.quotations.length === 0 ? '<tr><td colspan="7" style="text-align:center; padding:3rem; opacity:0.5">No hay cotizaciones registradas</td></tr>' :
-    state.quotations.map(q => `
+          ${filtered.length === 0 ? '<tr><td colspan="8" style="text-align:center; padding:3rem; opacity:0.5">No hay cotizaciones en este filtro</td></tr>' :
+      filtered.map(q => {
+        const status = q.status || 'draft';
+        const transitions = QUOTE_TRANSITIONS[status] || [];
+        return `
               <tr>
                 <td>${q.created_at ? new Date(q.created_at).toLocaleDateString() : '-'}</td>
                 <td>${q.clients?.name || 'Varios'}</td>
@@ -2461,15 +2669,26 @@ views.quotations = () => `
                 <td style="text-align:center">
                   ${q.success_probability ? `<span style="font-weight:bold; color:${q.success_probability > 50 ? '#10b981' : (q.success_probability > 20 ? '#f59e0b' : '#ef4444')}">${Math.round(q.success_probability)}%</span>` : '-'}
                 </td>
-                <td style="text-align:center"><span class="badge ${q.status}">${q.status === 'draft' ? 'Borrador' : (q.status === 'approved' ? 'Aprobada' : q.status)}</span></td>
                 <td style="text-align:center">
-                  <div style="display:flex; gap:0.3rem; justify-content:center">
+                  <span style="display:inline-block; padding:0.25rem 0.7rem; border-radius:12px; font-size:0.78rem; font-weight:700; background:${QUOTE_STATUS_COLORS[status]}22; color:${QUOTE_STATUS_COLORS[status]}; border:1px solid ${QUOTE_STATUS_COLORS[status]}44">
+                    ${QUOTE_STATUS_LABELS[status] || status}
+                  </span>
+                </td>
+                <td style="text-align:center">
+                  <div style="display:flex; gap:0.3rem; justify-content:center; flex-wrap:wrap">
                     <button class="btn-sm" onclick="window.viewQuotation('${q.id}')">👁️ Ver</button>
-                    <button class="btn-sm" style="background:var(--accent)" onclick="window.editQuotation('${q.id}')">✏️ Editar</button>
+                    ${status !== 'rejected' && status !== 'cancelled' ? `<button class="btn-sm" style="background:var(--accent)" onclick="window.editQuotation('${q.id}')">✏️</button>` : ''}
+                    ${transitions.length > 0 ? `
+                      <select onchange="if(this.value) window.changeQuoteStatus('${q.id}', this.value); this.value='';" style="padding:0.25rem 0.4rem; font-size:0.78rem; border-radius:6px; border:1px solid var(--border); background:var(--surface-light); color:var(--text); cursor:pointer; max-width:120px">
+                        <option value="">⚡ Estado...</option>
+                        ${transitions.map(t => `<option value="${t}">${QUOTE_STATUS_LABELS[t]}</option>`).join('')}
+                      </select>
+                    ` : ''}
                   </div>
                 </td>
               </tr>
-            `).join('')}
+            `;
+      }).join('')}
         </tbody>
       </table>
     </div>
@@ -2619,6 +2838,7 @@ views.quotations = () => `
     ${state.rawMaterials.map(rm => `<option value="${rm.name}">${rm.code}</option>`).join('')}
   </datalist>
 `;
+}
 
 window.openQuotationModal = () => {
   document.getElementById('quotation-modal').style.display = 'flex';
@@ -3583,9 +3803,9 @@ function renderView(viewName) {
 
     // Definimos qué puede ver cada uno
     const permissions = {
-      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'user_management', 'quotations', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
-      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'quotations', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
-      user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history', 'quotations', 'clients_management', 'providers_management', 'direct_sales', 'profile'],
+      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
+      user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history', 'quotations', 'pipeline', 'clients_management', 'providers_management', 'direct_sales', 'profile'],
       viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
 
