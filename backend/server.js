@@ -837,7 +837,7 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/sales', authenticateToken, async (req, res) => {
-    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name } = req.body;
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category } = req.body;
     const date = new Date().toISOString().split('T')[0];
 
     try {
@@ -903,8 +903,8 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 
         await createAccountingEntry({
             date,
-            description: `Venta de productos (${event_name || 'General'})`, // Reverted to original as the provided change was syntactically incorrect.
-            type: 'venta',
+            description: `Venta de productos (${event_name || 'General'})`,
+            type: 'venta_' + (category || 'push'),
             document_number: sale.id.toString(),
             userId: req.user.id,
             lines: journalLines
@@ -919,7 +919,7 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 // ========== UPDATE SALE (with accounting recalculation) ==========
 app.put('/api/sales/:id', authenticateToken, async (req, res) => {
     const saleId = req.params.id;
-    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name } = req.body;
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category } = req.body;
 
     try {
         // 1. Get current sale date for accounting
@@ -963,7 +963,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             .from(T.ACCOUNTING_ENTRIES)
             .select('id')
             .eq('document_number', saleId.toString())
-            .eq('entry_type', 'venta');
+            .in('entry_type', ['venta', 'venta_push', 'venta_pull']);
 
         if (oldEntries && oldEntries.length > 0) {
             const entryIds = oldEntries.map(e => e.id);
@@ -996,7 +996,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
         await createAccountingEntry({
             date,
             description: `Venta de productos (${event_name || 'General'})`,
-            type: 'venta',
+            type: 'venta_' + (category || 'push'),
             document_number: saleId.toString(),
             userId: req.user.id,
             lines: journalLines

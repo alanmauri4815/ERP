@@ -732,6 +732,13 @@ const views = {
             <label>Evento/Feria</label>
             <input type="text" id="sale-event-name" placeholder="Ej: Feria Navideña">
           </div>
+          <div class="form-group" style="flex: 1">
+            <label>Categoría (PUSH/PULL)</label>
+            <select id="sale-category">
+              <option value="push">PUSH (Venta Directa/Stock)</option>
+              <option value="pull">PULL (Cotización/Encargo)</option>
+            </select>
+          </div>
         </div>
         <div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
           <div class="form-group" style="flex: 1">
@@ -1431,7 +1438,9 @@ const views = {
               <label style="font-size: 0.8rem; opacity: 0.7">Filtrar por Tipo</label>
               <select id="ledger-filter-type" onchange="window.updateLedgerFilters()" style="padding: 0.4rem">
                 <option value="all" ${state.ledgerFilter.type === 'all' ? 'selected' : ''}>Todos</option>
-                <option value="venta" ${state.ledgerFilter.type === 'venta' ? 'selected' : ''}>Ventas</option>
+                <option value="venta" ${state.ledgerFilter.type === 'venta' ? 'selected' : ''}>Ventas (Todas)</option>
+                <option value="venta_push" ${state.ledgerFilter.type === 'venta_push' ? 'selected' : ''}>Ventas PUSH</option>
+                <option value="venta_pull" ${state.ledgerFilter.type === 'venta_pull' ? 'selected' : ''}>Ventas PULL</option>
                 <option value="compra" ${state.ledgerFilter.type === 'compra' ? 'selected' : ''}>Compras</option>
                 <option value="gasto" ${state.ledgerFilter.type === 'gasto' ? 'selected' : ''}>Gastos</option>
                 <option value="transferencia" ${state.ledgerFilter.type === 'transferencia' ? 'selected' : ''}>Transferencias</option>
@@ -1462,7 +1471,11 @@ const views = {
                 ${(() => {
         let filtered = [...state.ledger];
         if (state.ledgerFilter.type !== 'all') {
-          filtered = filtered.filter(e => e.entry_type === state.ledgerFilter.type);
+          if (state.ledgerFilter.type === 'venta') {
+            filtered = filtered.filter(e => e.entry_type.startsWith('venta'));
+          } else {
+            filtered = filtered.filter(e => e.entry_type === state.ledgerFilter.type);
+          }
         }
         filtered.sort((a, b) => {
           return state.ledgerFilter.order === 'asc'
@@ -4251,7 +4264,8 @@ function renderView(viewName) {
         account_id: document.getElementById('sale-account').value || null,
         is_iva_exempt: document.getElementById('sale-iva-exempt').checked,
         machine_id: paymentMethod === 'machine' ? (document.getElementById('sale-machine').value || null) : null,
-        event_name: document.getElementById('sale-event-name').value || null
+        event_name: document.getElementById('sale-event-name').value || null,
+        category: document.getElementById('sale-category')?.value || 'push'
       };
 
       if (body.items.length === 0) return alert('Debe agregar al menos un ítem');
@@ -5320,7 +5334,11 @@ window.exportPurchases = function () {
 window.exportLedger = function () {
   let filtered = [...state.ledger];
   if (state.ledgerFilter.type !== 'all') {
-    filtered = filtered.filter(e => e.entry_type === state.ledgerFilter.type);
+    if (state.ledgerFilter.type === 'venta') {
+      filtered = filtered.filter(e => e.entry_type.startsWith('venta'));
+    } else {
+      filtered = filtered.filter(e => e.entry_type === state.ledgerFilter.type);
+    }
   }
   filtered.sort((a, b) => {
     return state.ledgerFilter.order === 'asc'
