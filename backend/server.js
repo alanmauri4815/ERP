@@ -439,6 +439,7 @@ app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, asyn
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS type text DEFAULT 'mp';
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS quotation_id int8 REFERENCES quotations(id);
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS project_ref text;
+            ALTER TABLE compras ADD COLUMN IF NOT EXISTS purchase_category text DEFAULT 'general';
         `;
         const { error } = await supabase.rpc('exec_sql', { sql });
         if (error) throw error;
@@ -559,7 +560,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 });
 
 app.post('/api/purchases', authenticateToken, async (req, res) => {
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -579,14 +580,15 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             type: type || 'mp',
             description: description || null,
             quotation_id: (quotation_id && !isNaN(quotation_id)) ? quotation_id : null,
-            project_ref: project_ref || null
+            project_ref: project_ref || null,
+            purchase_category: purchase_category || 'general'
         };
 
         let result = await supabase.from(T.PURCHASES).insert(fullData).select().single();
 
         if (result.error && result.error.message.includes('column')) {
-            console.warn("Retrying purchase insert without project_ref...", result.error.message);
-            const { project_ref: _, ...fallbackData } = fullData;
+            console.warn("Retrying purchase insert without new columns...", result.error.message);
+            const { project_ref: _p, purchase_category: _c, ...fallbackData } = fullData;
             result = await supabase.from(T.PURCHASES).insert(fallbackData).select().single();
         }
 
@@ -655,7 +657,7 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
 // ========== UPDATE PURCHASE (with accounting recalculation) ==========
 app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     const purchaseId = req.params.id;
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -684,14 +686,15 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             type: type || 'mp',
             description: description || null,
             quotation_id: (quotation_id && !isNaN(quotation_id)) ? quotation_id : null,
-            project_ref: project_ref || null
+            project_ref: project_ref || null,
+            purchase_category: purchase_category || 'general'
         };
 
         let result = await supabase.from(T.PURCHASES).update(fullUpdate).eq('id', purchaseId);
 
         if (result.error && result.error.message.includes('column')) {
-            console.warn("Retrying purchase update without project_ref...");
-            const { project_ref: _, ...fallbackUpdate } = fullUpdate;
+            console.warn("Retrying purchase update without new columns...");
+            const { project_ref: _p, purchase_category: _c, ...fallbackUpdate } = fullUpdate;
             result = await supabase.from(T.PURCHASES).update(fallbackUpdate).eq('id', purchaseId);
         }
         if (result.error) throw result.error;

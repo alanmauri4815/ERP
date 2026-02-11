@@ -526,12 +526,23 @@ const views = {
         <input type="hidden" id="pur-edit-id" value="">
 
         <div style="background: rgba(var(--primary-rgb), 0.05); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px dashed var(--primary)">
-          <div class="form-group" style="margin:0">
-            <label style="font-weight: 600">Tipo de Registro</label>
-            <select id="pur-type" onchange="window.togglePurType()" style="font-size: 1.1rem; padding: 0.5rem">
-              <option value="mp">Compra de Insumos (Inventariable)</option>
-              <option value="expense">Informe de Gasto / Caja Chica (Gasto Operacional)</option>
-            </select>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem">
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600">Tipo de Registro</label>
+              <select id="pur-type" onchange="window.togglePurType()" style="font-size: 1.1rem; padding: 0.5rem">
+                <option value="mp">Compra de Insumos (Inventariable)</option>
+                <option value="expense">Informe de Gasto / Caja Chica (Gasto Operacional)</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600">Categoría de Compra</label>
+              <select id="pur-category" onchange="window.togglePurCategory()" style="font-size: 1.1rem; padding: 0.5rem">
+                <option value="general">📦 General (sin producción específica)</option>
+                <option value="pull">🔄 Pull (de cotización ganada)</option>
+                <option value="push">🚀 Push (para fabricar y vender)</option>
+                <option value="comercializacion">🏪 Comercialización (reventa)</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -551,8 +562,8 @@ const views = {
             <label style="font-weight: 600; color: var(--secondary)">📁 Asociar a Proyecto (ABC)</label>
             <select id="pur-project" style="border: 1px solid var(--secondary)">
               <option value="">Gasto General (Sin Proyecto)</option>
-              <optgroup label="Cotizaciones Ganadas / Aprobadas">
-                ${state.quotations.filter(q => q.status === 'won' || q.status === 'approved').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)}</option>`).join('')}
+              <optgroup label="Cotizaciones Aprobadas / En Producción">
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)}</option>`).join('')}
               </optgroup>
               <optgroup label="Ventas Realizadas">
                 ${state.history.sales.slice(0, 10).map(s => `<option value="S-${s.id}">💰 Venta #${s.id} - ${s.client_name || 'Vta Directa'}</option>`).join('')}
@@ -1769,12 +1780,16 @@ function renderHistoryTable(type) {
   `;
   }
   if (type === 'purchases') {
+    const CAT_LABELS = { general: '📦 General', pull: '🔄 Pull', push: '🚀 Push', comercializacion: '🏪 Comerc.' };
+    const CAT_COLORS = { general: '#6b7280', pull: '#3b82f6', push: '#f59e0b', comercializacion: '#8b5cf6' };
     return `
   <div class="table-container">
     <table>
-      <thead><tr><th>ID</th><th>Fecha</th><th>Tipo/Proyecto</th><th>Proveedor/Glosa</th><th>Total</th><th>Acción</th></tr></thead>
+      <thead><tr><th>ID</th><th>Fecha</th><th>Tipo/Proyecto</th><th>Categoría</th><th>Proveedor/Glosa</th><th>Total</th><th>Acción</th></tr></thead>
       <tbody>
-        ${data.map(h => `
+        ${data.map(h => {
+      const cat = h.purchase_category || 'general';
+      return `
               <tr style="${h.type === 'expense' ? 'background: rgba(var(--accent-rgb), 0.05)' : ''}">
                 <td>${h.id}</td>
                 <td>${h.date ? h.date.split('T')[0] : '-'}</td>
@@ -1785,15 +1800,21 @@ function renderHistoryTable(type) {
                   <small>${h.project_name ? '🏗️ ' + h.project_name : 'General'}</small>
                 </td>
                 <td>
+                  <span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.72rem; font-weight:700; background:${CAT_COLORS[cat]}22; color:${CAT_COLORS[cat]}; border:1px solid ${CAT_COLORS[cat]}44">
+                    ${CAT_LABELS[cat] || cat}
+                  </span>
+                </td>
+                <td>
                   <strong>${h.type === 'expense' ? (h.description || 'Gasto General') : (h.provider_name || 'Sin Proveedor')}</strong>
                 </td>
                 <td style="font-weight: 600">$${(h.total || 0).toLocaleString()}</td>
                 <td><button class="btn-sm" onclick="window.showTransactionDetails('purchase', '${h.id}')">👁️ Ver</button></td>
               </tr>
-            `).join('')}
+            `;
+    }).join('')}
       </tbody>
     </table>
-      </div >
+      </div>
   `;
   }
 }
@@ -3971,6 +3992,26 @@ function renderView(viewName) {
       }
     };
 
+    window.togglePurCategory = function () {
+      const cat = document.getElementById('pur-category')?.value;
+      const projectGroup = document.getElementById('pur-project-group');
+
+      if (projectGroup) {
+        if (cat === 'pull') {
+          projectGroup.style.display = 'block';
+          projectGroup.style.border = '2px solid var(--secondary)';
+          projectGroup.style.padding = '0.5rem';
+          projectGroup.style.borderRadius = '8px';
+          projectGroup.style.background = 'rgba(234, 179, 8, 0.05)';
+        } else {
+          projectGroup.style.display = 'block';
+          projectGroup.style.border = 'none';
+          projectGroup.style.padding = '0';
+          projectGroup.style.background = 'none';
+        }
+      }
+    };
+
     window.openPurchaseModal = function () {
       const modal = document.getElementById('buy-modal');
       if (modal) modal.style.display = 'flex';
@@ -3983,11 +4024,13 @@ function renderView(viewName) {
       setVal('pur-edit-mode', 'false');
       setVal('pur-edit-id', '');
       setVal('pur-type', 'mp');
+      setVal('pur-category', 'general');
       setVal('pur-description', '');
       setVal('pur-project', '');
       setVal('pur-expense-total', 0);
 
       window.togglePurType();
+      window.togglePurCategory();
     };
 
     window.runMigration = async function () {
@@ -4008,6 +4051,7 @@ function renderView(viewName) {
       const projectVal = document.getElementById('pur-project')?.value || null;
       const body = {
         type: type,
+        purchase_category: document.getElementById('pur-category')?.value || 'general',
         date: document.getElementById('pur-date')?.value,
         payment_method: document.getElementById('pur-payment-method')?.value,
         account_id: document.getElementById('pur-account')?.value || null,
