@@ -6,7 +6,8 @@ import {
   formatMaterialsForExport,
   formatSalesForExport,
   formatPurchasesForExport,
-  formatProductionForExport
+  formatProductionForExport,
+  formatLedgerForExport
 } from './export-utils.js'
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -101,9 +102,10 @@ async function fetchData() {
   `;
 
   try {
-    const [prods, rms, hSales, hPurch, hProd, st, usrs, recipes, accs, quotes, clis, pmachines, aAccounts, aLedger] = await Promise.all([
+    const [prods, rms, provs, hSales, hPurch, hProd, st, usrs, recipes, accs, quotes, clis, pmachines, aAccounts, aLedger] = await Promise.all([
       apiFetch('/products'),
       apiFetch('/raw-materials'),
+      apiFetch('/providers'),
       apiFetch('/sales'),
       apiFetch('/purchases'),
       apiFetch('/production'),
@@ -121,6 +123,7 @@ async function fetchData() {
     // Data assignments with default empty arrays/objects to prevent crashes if an endpoint fails
     state.products = Array.isArray(prods) ? prods : [];
     state.rawMaterials = Array.isArray(rms) ? rms : [];
+    state.providers = Array.isArray(provs) ? provs : [];
     state.history.sales = Array.isArray(hSales) ? hSales : [];
     state.history.purchases = Array.isArray(hPurch) ? hPurch : [];
     state.history.production = Array.isArray(hProd) ? hProd : [];
@@ -496,15 +499,16 @@ const views = {
 
   purchases: () => `
     <header class="animate-fade">
-      <h1>Compras (Entrada MP)</h1>
+      <h1>Compras e Informes de Gastos</h1>
       <div style="display: flex; gap: 0.5rem">
+        <button onclick="window.runMigration()" style="background: var(--danger); font-size: 0.7rem; padding: 2px 5px">🔧 Migrar DB</button>
         <button onclick="window.exportPurchases()" style="background: var(--accent)">📊 Exportar a Excel</button>
-        <button onclick="document.getElementById('buy-modal').style.display='flex'">+ Registrar Compra</button>
+        <button onclick="window.openPurchaseModal()" style="background: var(--secondary)">+ Registrar Compra / Gasto</button>
       </div>
     </header>
 
     <div class="card animate-fade">
-      <h2>Historial de Compras</h2>
+      <h2>Historial de Movimientos</h2>
       <div id="purchases-history-content">
         ${renderHistoryTable('purchases')}
       </div>
@@ -514,40 +518,63 @@ const views = {
     <div id="buy-modal" class="modal" style="display:none">
       <div class="card modal-content modal-wide">
         <header>
-          <h3 id="buy-modal-title">Nueva Compra de Insumos</h3>
+          <h3 id="buy-modal-title">Nueva Compra / Gasto</h3>
           <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted)">✕</button>
         </header>
 
         <input type="hidden" id="pur-edit-mode" value="false">
         <input type="hidden" id="pur-edit-id" value="">
 
-        <div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
-           <div class="form-group" style="flex: 1">
+        <div style="background: rgba(var(--primary-rgb), 0.05); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px dashed var(--primary)">
+          <div class="form-group" style="margin:0">
+            <label style="font-weight: 600">Tipo de Registro</label>
+            <select id="pur-type" onchange="window.togglePurType()" style="font-size: 1.1rem; padding: 0.5rem">
+              <option value="mp">Compra de Insumos (Inventariable)</option>
+              <option value="expense">Informe de Gasto / Caja Chica (Gasto Operacional)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap">
+          <div class="form-group" style="flex: 1; min-width: 200px" id="pur-prov-group">
             <label>Proveedor</label>
             <select id="pur-prov">
-              <option value="">Consumidor Final / Sin Proveedor</option>
+              <option value="">Sin Proveedor / Boleta</option>
               ${state.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
             </select>
           </div>
-          <div class="form-group" style="flex: 1">
+          <div class="form-group" style="flex: 1; min-width: 200px">
             <label>Fecha</label>
             <input type="date" id="pur-date" value="${new Date().toISOString().split('T')[0]}">
           </div>
+          <div class="form-group" style="flex: 1; min-width: 200px" id="pur-project-group">
+            <label>Asociar a Proyecto (Opcional)</label>
+            <select id="pur-project">
+              <option value="">Gasto General</option>
+              ${state.quotations.filter(q => q.status === 'won' || q.status === 'approved').map(q => `<option value="${q.id}">PROY: ${q.name || q.id}</option>`).join('')}
+            </select>
+          </div>
         </div>
-        <div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
+
+        <div class="form-group" id="pur-desc-group" style="display:none; margin-bottom: 1rem">
+          <label>Descripción del Gasto</label>
+          <input type="text" id="pur-description" placeholder="Ej: Compra de hilos en Cordonería Central, Almuerzo terreno, etc.">
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
           <div class="form-group" style="flex: 1">
             <label>Método de Pago</label>
             <select id="pur-payment-method">
               <option value="transfer">Transferencia</option>
               <option value="debit">Débito</option>
               <option value="credit">Crédito</option>
-              <option value="cash">Efectivo</option>
+              <option value="cash">Efectivo / Caja Chica</option>
             </select>
           </div>
           <div class="form-group" style="flex: 1">
-            <label>Cuenta / Fondo</label>
+            <label>Cuenta / Fondo de Origen</label>
             <select id="pur-account">
-              <option value="">Sin asignar</option>
+              <option value="">Seleccionar cuenta...</option>
               ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
             </select>
           </div>
@@ -555,42 +582,53 @@ const views = {
             <label>Tipo Documento</label>
             <select id="pur-doc-type">
               <option value="factura">Factura</option>
-              <option value="boleta">Boleta</option>
+              <option value="boleta">Boleta / Comprobante</option>
+              <option value="n/a">Sin Documento</option>
             </select>
           </div>
         </div>
         
-        <table class="item-table">
-          <thead>
-            <tr>
-              <th style="width: 50px">Ítem</th>
-              <th>Insumo (Seleccionar)</th>
-              <th style="width: 130px">Precio Unit (Neto)</th>
-              <th style="width: 100px">Cantidad</th>
-              <th style="width: 150px">Sub Tot</th>
-            </tr>
-          </thead>
-          <tbody id="purchase-items-body">
-            ${Array.from({ length: 10 }).map((_, i) => `
-              <tr class="item-row">
-                <td style="text-align: center; color: var(--text-muted)">${i + 1}</td>
-                <td>
-                  <select class="item-code" data-index="${i}">
-                    <option value="">Seleccione...</option>
-                    ${state.rawMaterials.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(m => `
-                      <option value="${m.code}" data-price="${m.cost_net}">${m.code} | ${m.name}</option>
-                    `).join('')}
-                  </select>
-                </td>
-                <td><input type="number" class="item-price" step="0.01" value="0"></td>
-                <td><input type="number" class="item-qty" step="0.01" value="0" placeholder="0.00"></td>
-                <td><input type="number" class="item-subtotal" readonly value="0" style="font-weight: 600; text-align: right"></td>
+        <div id="pur-items-container">
+          <table class="item-table">
+            <thead>
+              <tr>
+                <th style="width: 50px">Ítem</th>
+                <th>Insumo</th>
+                <th style="width: 130px">Neto Unit</th>
+                <th style="width: 100px">Cant</th>
+                <th style="width: 150px">Sub Tot</th>
               </tr>
-            `).join('')}
-          </tbody>
-        </table>
+            </thead>
+            <tbody id="pur-items-body">
+              ${Array.from({ length: 8 }).map((_, i) => `
+                <tr class="item-row">
+                  <td style="text-align: center; color: var(--text-muted)">${i + 1}</td>
+                  <td>
+                    <select class="item-code" data-index="${i}">
+                      <option value="">Seleccione...</option>
+                      ${state.rawMaterials.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(m => `
+                        <option value="${m.code}" data-price="${m.cost_net}">${m.code} | ${m.name}</option>
+                      `).join('')}
+                    </select>
+                  </td>
+                  <td><input type="number" class="item-price" step="0.01" value="0"></td>
+                  <td><input type="number" class="item-qty" step="0.01" value="0"></td>
+                  <td><input type="number" class="item-subtotal" readonly value="0" style="font-weight: 600; text-align: right"></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
 
-        <div class="summary-section">
+        <div id="pur-expense-amount-container" style="display: none; background: var(--surface-light); padding: 1.5rem; border-radius: 0.5rem; border: 1px solid var(--border)">
+           <div class="form-group" style="max-width: 300px; margin: 0 auto">
+             <label style="font-size: 1.1rem; text-align: center; display: block">Monto Total del Gasto ($)</label>
+             <input type="number" id="pur-expense-total" value="0" style="font-size: 1.5rem; text-align: center; font-weight: 700; color: var(--primary)">
+             <p style="font-size: 0.8rem; opacity: 0.6; text-align: center; margin-top: 0.5rem">Se contabilizará como Gasto Operacional neto.</p>
+           </div>
+        </div>
+
+        <div class="summary-section" id="pur-summary-section">
           <table class="summary-table">
             <tr><td>Neto</td><td style="text-align: right; padding-right: 1rem;">$ <span id="pur-net-display">0</span></td></tr>
             <tr><td>IVA (19%)</td><td style="text-align: right; padding-right: 1rem;">$ <span id="pur-iva-display">0</span></td></tr>
@@ -603,7 +641,7 @@ const views = {
 
         <div class="form-actions">
           <button type="button" onclick="this.closest('.modal').style.display='none'" style="background: var(--surface-light)">Cancelar</button>
-          <button id="btn-submit-purchase">Registrar Compra</button>
+          <button id="btn-submit-purchase" style="background: var(--primary); padding: 0.8rem 2rem; font-weight: 700">Registrar Registro</button>
         </div>
       </div>
     </div>
@@ -1326,6 +1364,7 @@ const views = {
       <header class="animate-fade">
         <h1>Sistema Contable</h1>
         <div style="display: flex; gap: 0.5rem">
+           <button onclick="window.exportLedger()" style="background: var(--primary)">📥 Exportar Excel</button>
            <button onclick="window.openLedgerTransferModal()" style="background: var(--secondary)">🔄 Transferencia</button>
            <button onclick="window.openLedgerExpenseModal()" style="background: var(--accent)">💸 Registrar Gasto</button>
         </div>
@@ -1528,7 +1567,7 @@ function renderHistoryTable(type) {
                 <td>${h.payment_method === 'cash' ? '💵 Efectivo' : h.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transferencia'}</td>
                 <td>$${(h.total || 0).toLocaleString()} ${h.is_iva_exempt ? '<small style="color:var(--warning)">(Exento)</small>' : ''}</td>
                 <td style="text-align: center">
-                  <button class="btn-sm" onclick="window.showTransactionDetails('sale', ${h.id})" title="Ver detalle de productos">👁️ Detalle</button>
+                  <button class="btn-sm" onclick="window.showTransactionDetails('sale', '${h.id}')" title="Ver detalle de productos">👁️ Detalle</button>
                 </td>
               </tr>
             `).join('')}
@@ -1590,15 +1629,23 @@ function renderHistoryTable(type) {
     return `
   <div class="table-container">
     <table>
-      <thead><tr><th>ID</th><th>Fecha</th><th>Proveedor</th><th>Total</th><th>Acción</th></tr></thead>
+      <thead><tr><th>ID</th><th>Fecha</th><th>Tipo/Proyecto</th><th>Proveedor/Glosa</th><th>Total</th><th>Acción</th></tr></thead>
       <tbody>
         ${data.map(h => `
-              <tr>
+              <tr style="${h.type === 'expense' ? 'background: rgba(var(--accent-rgb), 0.05)' : ''}">
                 <td>${h.id}</td>
-                <td>${h.date}</td>
-                <td>${h.provider_name || '-'}</td>
-                <td>$${h.total.toLocaleString()}</td>
-                <td><button class="btn-sm" onclick="window.showTransactionDetails('purchase', ${h.id})">Detalle</button></td>
+                <td>${h.date ? h.date.split('T')[0] : '-'}</td>
+                <td>
+                  <span class="badge ${h.type === 'expense' ? 'badge-warning' : 'badge-info'}" style="font-size: 0.7rem">
+                    ${h.type === 'expense' ? 'GASTO' : 'INSUMO'}
+                  </span><br>
+                  <small>${h.project_name ? '🏗️ ' + h.project_name : 'General'}</small>
+                </td>
+                <td>
+                  <strong>${h.type === 'expense' ? (h.description || 'Gasto General') : (h.provider_name || 'Sin Proveedor')}</strong>
+                </td>
+                <td style="font-weight: 600">$${(h.total || 0).toLocaleString()}</td>
+                <td><button class="btn-sm" onclick="window.showTransactionDetails('purchase', '${h.id}')">👁️ Ver</button></td>
               </tr>
             `).join('')}
       </tbody>
@@ -1609,7 +1656,7 @@ function renderHistoryTable(type) {
 }
 
 window.showTransactionDetails = (type, id) => {
-  const transaction = state.history[type === 'sale' ? 'sales' : (type === 'production' ? 'production' : 'purchases')].find(t => t.id === id);
+  const transaction = state.history[type === 'sale' ? 'sales' : (type === 'production' ? 'production' : 'purchases')].find(t => String(t.id) === String(id));
   if (!transaction) return;
 
   const modalId = 'details-modal';
@@ -1635,14 +1682,20 @@ window.showTransactionDetails = (type, id) => {
     </div>
       
       ${!isProduction ? `
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 8px">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; padding: 1rem; background: rgba(255,255,255,0.03); border-radius: 8px">
           <div>
-            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Entidad</label>
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">${type === 'sale' ? 'Cliente' : 'Proveedor'}</label>
             <strong>${type === 'sale' ? (transaction.client_name || 'Venta Directa') : (transaction.provider_name || 'N/A')}</strong>
           </div>
+          ${type === 'purchase' && transaction.account_name ? `
+          <div>
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Cuenta / Fondo</label>
+            <strong style="color:var(--secondary)">🏦 ${transaction.account_name}</strong>
+          </div>
+          ` : ''}
           <div>
             <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Método de Pago</label>
-            <span>${transaction.payment_method === 'cash' ? '💵 Efectivo' : transaction.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transferencia'}</span>
+            <span>${transaction.payment_method === 'cash' ? '💵 Efectivo' : transaction.payment_method === 'machine' ? '💳 Máquina' : transaction.payment_method === 'credit' ? '💳 Crédito' : '🔄 Transferencia'}</span>
             ${transaction.is_iva_exempt ? ' <small style="color:var(--warning)">(Exento de IVA)</small>' : ''}
           </div>
         </div>
@@ -1724,86 +1777,154 @@ window.showTransactionDetails = (type, id) => {
             </tr>
           ` : ''}
         </table>
-      </div>
+        </div>
       ` : ''}
-    }
-
-<div class="form-actions">
-  ${!isProduction ? `<button class="btn-warning" onclick="window.editTransaction('${type}', ${transaction.id})">✏️ Editar</button>` : ''}
-  <button onclick="document.getElementById('${modalId}').style.display='none'">Cerrar</button>
-</div>
-    </div >
+      
+      <div class="form-actions">
+        ${!isProduction ? `<button style="background: var(--accent)" onclick="window.editTransaction('${type}', '${transaction.id}')">✏️ Editar</button>` : ''}
+        <button onclick="document.getElementById('${modalId}').style.display='none'">Cerrar</button>
+      </div>
+    </div>
   `;
   modal.style.display = 'flex';
 };
 
 window.editTransaction = (type, id) => {
-  const transaction = state.history[type === 'sale' ? 'sales' : 'purchases'].find(t => t.id === id);
-  if (!transaction) return;
+  const transaction = state.history[type === 'sale' ? 'sales' : 'purchases'].find(t => String(t.id) === String(id));
+  if (!transaction) {
+    console.error(`Transaction not found: ${type} #${id}`);
+    return;
+  }
 
   const prefix = type === 'sale' ? 'sale' : 'pur';
   const modalId = type === 'sale' ? 'sale-modal' : 'buy-modal';
+  const modalElement = document.getElementById(modalId);
 
-  // Set edit mode
-  document.getElementById(`${prefix}-edit-mode`).value = 'true';
-  document.getElementById(`${prefix}-edit-id`).value = transaction.id;
-  document.getElementById(`${prefix}-modal-title`).textContent = `Editar ${type === 'sale' ? 'Venta' : 'Compra'} #${transaction.id}`;
-  document.getElementById(`btn-submit-${type === 'sale' ? 'sale' : 'purchase'}`).textContent = 'Guardar Cambios';
-
-  // Fill main fields
-  if (type === 'sale') {
-    document.getElementById('sale-client').value = transaction.client_id || '';
-    document.getElementById('sale-date').value = transaction.date;
-    document.getElementById('sale-event-name').value = transaction.event_name || '';
-    document.getElementById('sale-iva-exempt').checked = transaction.is_iva_exempt || false;
-    document.getElementById('sale-payment-method').value = transaction.payment_method || 'transfer';
-    document.getElementById('sale-discount-input').value = transaction.discount || 0;
-    window.updatePaymentFields();
-    if (transaction.payment_method === 'machine') {
-      document.getElementById('sale-machine').value = transaction.machine_id || '';
-    }
-  } else {
-    document.getElementById('pur-prov').value = transaction.provider_id || '';
-    document.getElementById('pur-date').value = transaction.date;
+  // If the target modal doesn't exist in the current view (e.g., we are in History)
+  if (!modalElement) {
+    const targetView = type === 'sale' ? 'sales' : 'purchases';
+    renderView(targetView);
+    // Important: Wait for DOM to be ready after renderView replaces innerHTML
+    setTimeout(() => window.editTransaction(type, id), 200);
+    return;
   }
 
-  // Clear rows first
-  const bodyId = type === 'sale' ? 'sale-items-body' : 'purchase-items-body';
-  const rows = document.querySelectorAll(`#${bodyId} .item-row`);
-  rows.forEach(row => {
-    row.querySelector('.item-code').value = '';
-    row.querySelector('.item-price').value = 0;
-    row.querySelector('.item-qty').value = 0;
-    row.querySelector('.item-subtotal').value = 0;
-  });
+  // Close details modal if open
+  const detailsModal = document.getElementById('details-modal');
+  if (detailsModal) detailsModal.style.display = 'none';
 
-  // Fill items
-  transaction.items.forEach((item, i) => {
-    if (i < 10) {
-      const row = rows[i];
-      const select = row.querySelector('.item-code');
-      select.value = type === 'sale' ? item.product_code : item.mp_code;
-      row.querySelector('.item-price').value = item.unit_price;
-      row.querySelector('.item-qty').value = item.quantity;
-      row.querySelector('.item-subtotal').value = item.subtotal;
+  try {
+    // Set edit mode fields
+    const modeEl = document.getElementById(`${prefix}-edit-mode`);
+    const idEl = document.getElementById(`${prefix}-edit-id`);
+    const titleEl = document.getElementById(`${prefix}-modal-title`);
+    const submitBtn = document.getElementById(`btn-submit-${type === 'sale' ? 'sale' : 'purchase'}`);
+
+    if (modeEl) modeEl.value = 'true';
+    if (idEl) idEl.value = transaction.id;
+    if (titleEl) titleEl.textContent = `Editar ${type === 'sale' ? 'Venta' : 'Compra'} #${transaction.id}`;
+    if (submitBtn) submitBtn.textContent = 'Guardar Cambios';
+
+    // Fill main headers
+    if (type === 'sale') {
+      const clientEl = document.getElementById('sale-client');
+      const dateEl = document.getElementById('sale-date');
+      const eventEl = document.getElementById('sale-event-name');
+      const ivaExemptEl = document.getElementById('sale-iva-exempt');
+      const paymentEl = document.getElementById('sale-payment-method');
+      const discountInput = document.getElementById('sale-discount-input');
+
+      if (clientEl) clientEl.value = transaction.client_id || '';
+      if (dateEl) dateEl.value = transaction.date;
+      if (eventEl) eventEl.value = transaction.event_name || '';
+      if (ivaExemptEl) ivaExemptEl.checked = transaction.is_iva_exempt || false;
+      if (paymentEl) {
+        paymentEl.value = transaction.payment_method || 'transfer';
+        if (typeof window.updatePaymentFields === 'function') window.updatePaymentFields();
+      }
+      if (discountInput) discountInput.value = transaction.discount || 0;
+
+      if (transaction.payment_method === 'machine') {
+        const machineEl = document.getElementById('sale-machine');
+        if (machineEl) machineEl.value = transaction.machine_id || '';
+      }
+    } else {
+      const provEl = document.getElementById('pur-prov');
+      const dateEl = document.getElementById('pur-date');
+      const paymentEl = document.getElementById('pur-payment-method');
+      const accEl = document.getElementById('pur-account');
+      const docEl = document.getElementById('pur-doc-type');
+
+      if (provEl) provEl.value = transaction.provider_id || '';
+      if (dateEl) dateEl.value = transaction.date;
+      if (paymentEl) paymentEl.value = transaction.payment_method || 'transfer';
+      if (accEl) accEl.value = transaction.account_id || '';
+      if (docEl) docEl.value = transaction.document_type || 'factura';
     }
-  });
 
-  // Update summary
-  document.getElementById(`${prefix}-net`).value = transaction.net;
-  document.getElementById(`${prefix}-iva`).value = transaction.iva;
-  if (type === 'sale') {
-    document.getElementById('sale-discount').value = transaction.discount || 0;
-    document.getElementById('sale-commission').value = transaction.commission || 0;
+    // Fill Items Table
+    const bodyId = type === 'sale' ? 'sale-items-body' : 'pur-items-body';
+    const rows = document.querySelectorAll(`#${bodyId} .item-row`);
+
+    // Clear all rows first
+    rows.forEach(row => {
+      const codeSel = row.querySelector('.item-code');
+      const priceInp = row.querySelector('.item-price');
+      const qtyInp = row.querySelector('.item-qty');
+      const subInp = row.querySelector('.item-subtotal');
+      if (codeSel) codeSel.value = '';
+      if (priceInp) priceInp.value = 0;
+      if (qtyInp) qtyInp.value = 0;
+      if (subInp) subInp.value = 0;
+    });
+
+    // Populate with transaction items
+    if (transaction.items && Array.isArray(transaction.items)) {
+      transaction.items.forEach((item, i) => {
+        if (i < rows.length) {
+          const row = rows[i];
+          const codeSel = row.querySelector('.item-code');
+          const priceInp = row.querySelector('.item-price');
+          const qtyInp = row.querySelector('.item-qty');
+          const subInp = row.querySelector('.item-subtotal');
+
+          if (codeSel) codeSel.value = type === 'sale' ? item.product_code : item.mp_code;
+          if (priceInp) priceInp.value = item.unit_price || 0;
+          if (qtyInp) qtyInp.value = item.quantity || 0;
+          if (subInp) subInp.value = item.subtotal || 0;
+        }
+      });
+    }
+
+    // Update Totals/Summary
+    const netH = document.getElementById(`${prefix}-net`);
+    const ivaH = document.getElementById(`${prefix}-iva`);
+    const totalH = document.getElementById(`${prefix}-total`);
+    const netD = document.getElementById(`${prefix}-net-display`);
+    const ivaD = document.getElementById(`${prefix}-iva-display`);
+    const totalD = document.getElementById(`${prefix}-total-display`);
+
+    if (netH) netH.value = transaction.net;
+    if (ivaH) ivaH.value = transaction.iva;
+    if (totalH) totalH.value = transaction.total;
+    if (netD) netD.textContent = (transaction.net || 0).toLocaleString();
+    if (ivaD) ivaD.textContent = (transaction.iva || 0).toLocaleString();
+    if (totalD) totalD.textContent = (transaction.total || 0).toLocaleString();
+
+    if (type === 'sale') {
+      const discH = document.getElementById('sale-discount');
+      const commH = document.getElementById('sale-commission');
+      if (discH) discH.value = transaction.discount || 0;
+      if (commH) commH.value = transaction.commission || 0;
+    }
+
+    // Finally show the modal
+    modalElement.style.display = 'flex';
+
+  } catch (err) {
+    console.error('Error populating edit modal:', err);
+    alert('No se pudo abrir el editor correctamente.');
   }
-  document.getElementById(`${prefix}-total`).value = transaction.total;
-  document.getElementById(`${prefix}-net-display`).textContent = (transaction.net || 0).toLocaleString();
-  document.getElementById(`${prefix}-iva-display`).textContent = (transaction.iva || 0).toLocaleString();
-  document.getElementById(`${prefix}-total-display`).textContent = (transaction.total || 0).toLocaleString();
-
-  // Close details modal and open edit modal
-  document.getElementById('details-modal').style.display = 'none';
-  document.getElementById(modalId).style.display = 'flex';
 };
 
 window.editItem = (type, code) => {
@@ -2317,6 +2438,7 @@ views.quotations = () => `
             <th>Nombre Proyecto</th>
             <th style="text-align:right">Costo Interno</th>
             <th style="text-align:right">Precio Venta (IVA Inc)</th>
+            <th style="text-align:center">Prob. Éxito</th>
             <th style="text-align:center">Estado</th>
             <th style="text-align:center">Acciones</th>
           </tr>
@@ -2325,14 +2447,20 @@ views.quotations = () => `
           ${state.quotations.length === 0 ? '<tr><td colspan="7" style="text-align:center; padding:3rem; opacity:0.5">No hay cotizaciones registradas</td></tr>' :
     state.quotations.map(q => `
               <tr>
-                <td>${q.date}</td>
+                <td>${q.created_at ? new Date(q.created_at).toLocaleDateString() : '-'}</td>
                 <td>${q.clients?.name || 'Varios'}</td>
                 <td><strong>${q.name || '-'}</strong></td>
                 <td style="text-align:right">$${Math.round(q.total_net_cost || 0).toLocaleString()}</td>
                 <td style="text-align:right; font-weight:bold; color:var(--primary)">$${Math.round(q.total_price_gross || 0).toLocaleString()}</td>
+                <td style="text-align:center">
+                  ${q.success_probability ? `<span style="font-weight:bold; color:${q.success_probability > 50 ? '#10b981' : (q.success_probability > 20 ? '#f59e0b' : '#ef4444')}">${Math.round(q.success_probability)}%</span>` : '-'}
+                </td>
                 <td style="text-align:center"><span class="badge ${q.status}">${q.status === 'draft' ? 'Borrador' : (q.status === 'approved' ? 'Aprobada' : q.status)}</span></td>
                 <td style="text-align:center">
-                  <button class="btn-sm" onclick="window.viewQuotation('${q.id}')">👁️ Ver</button>
+                  <div style="display:flex; gap:0.3rem; justify-content:center">
+                    <button class="btn-sm" onclick="window.viewQuotation('${q.id}')">👁️ Ver</button>
+                    <button class="btn-sm" style="background:var(--accent)" onclick="window.editQuotation('${q.id}')">✏️ Editar</button>
+                  </div>
                 </td>
               </tr>
             `).join('')}
@@ -2346,36 +2474,84 @@ views.quotations = () => `
     <div class="card modal-content modal-wide animate-fade">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem">
         <h3 id="quote-modal-title">Nueva Cotización</h3>
+        <input type="hidden" id="quote-id">
         <button class="btn-sm" style="background:none; color:var(--text-muted); font-size:1.5rem" onclick="document.getElementById('quotation-modal').style.display='none'">✕</button>
       </div>
 
-      <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1.5rem">
-        <div class="form-group">
+      <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem">
+        <div class="form-group" style="grid-column: span 2">
           <label>Cliente</label>
-          <select id="quote-client">
+          <select id="quote-client" onchange="window.onQuoteClientChange(this.value)">
             <option value="">Seleccione...</option>
             ${state.clients?.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group" style="flex:2">
-          <label>Nombre del Proyecto / Descripción</label>
-          <input type="text" id="quote-name" placeholder="Ej: Pedido 50 Poleras Estampadas">
+        <div class="form-group" style="grid-column: span 2">
+          <label>RUT Cliente</label>
+          <input type="text" id="quote-rut" placeholder="Ej: 76.123.456-7">
         </div>
-        <div class="form-group" style="width:120px">
-          <label>Cant. Total</label>
-          <input type="number" id="quote-qty" value="1" min="1" oninput="window.calculateQuotation()">
+        <div class="form-group" style="grid-column: span 2">
+          <label>Dirección Cliente</label>
+          <input type="text" id="quote-address" placeholder="Ej: Av. Vitacura 1234, Oficina 501">
         </div>
-        <div class="form-group" style="width:120px">
+        <div class="form-group" style="grid-column: span 4">
+          <label>Descripción de la Propuesta (Aparece en PDF)</label>
+          <textarea id="quote-description-proposal" rows="2" style="width:100%; padding:0.5rem; border:1px solid var(--border); border-radius:8px" placeholder="Ej: PROPUESTA PARA ADQUISICIÓN DE 22 MANTELES..."></textarea>
+        </div>
+        
+        <div class="form-group" style="grid-column: span 4; margin-bottom: 1rem">
+          <label>🖼️ Referencias Fotográficas (Arrastra imágenes aquí)</label>
+          <div id="quote-dropzone" 
+            style="border: 2px dashed var(--border); border-radius: 12px; padding: 1.5rem; text-align: center; background: rgba(255,255,255,0.02); cursor: pointer; transition: all 0.3s"
+            onclick="document.getElementById('quote-file-input').click()"
+            ondragover="event.preventDefault(); this.style.borderColor='var(--primary)'; this.style.background='rgba(59, 130, 246, 0.05)'"
+            ondragleave="this.style.borderColor='var(--border)'; this.style.background='rgba(255,255,255,0.02)'"
+            ondrop="window.handleQuoteDrop(event)">
+            <p id="dropzone-text" style="margin:0; opacity:0.6">📸 Haz clic o arrastra fotos aquí (Máx. 4 fotos, tamaño pequeño)</p>
+            <input type="file" id="quote-file-input" multiple accept="image/*" style="display:none" onchange="window.handleQuoteFiles(this.files)">
+            <div id="quote-images-preview" style="display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem; justify-content: center"></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Nombre Interno</label>
+          <input type="text" id="quote-name" placeholder="Ej: Evento Municipalidad">
+        </div>
+        <div class="form-group">
+          <label>Fecha Emisión</label>
+          <input type="date" id="quote-date">
+        </div>
+        <div class="form-group">
+          <label>Plazo Entrega</label>
+          <input type="text" id="quote-delivery-time" placeholder="Ej: 8 días corridos">
+        </div>
+        <div class="form-group">
           <label>% Utilidad</label>
-          <input type="number" id="quote-utility" value="80" min="0" oninput="window.calculateQuotation()">
+          <input type="number" id="quote-utility" value="30" min="0" oninput="window.calculateQuotation()">
         </div>
+        <div class="form-group">
+          <label>Presupuesto (P)</label>
+          <input type="number" id="quote-budget" value="0" min="0" oninput="window.calculateQuotation()">
+        </div>
+        <div class="form-group">
+          <label>% Éxito</label>
+          <div id="quote-probability" style="font-size: 1.1rem; font-weight: bold; padding-top: 0.5rem; color: var(--primary)">-%</div>
+        </div>
+      </div>
+
+      <!-- Nueva Sección de Productos -->
+      <div style="margin-top: 1.5rem; background: rgba(59, 130, 246, 0.05); padding: 1.2rem; border-radius: 12px; border: 1px dashed var(--primary)">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
+          <h4 style="margin:0; color:var(--primary)">📦 1. Definir Productos a Vender</h4>
+          <button class="btn-sm btn-primary" onclick="window.addQuotationProduct()">+ Añadir Producto</button>
+        </div>
+        <div id="quote-products-list" style="display:flex; flex-direction:column; gap:0.5rem"></div>
       </div>
 
       <div style="margin-top: 2rem">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
           <h4 style="margin:0; display:flex; align-items:center; gap:0.5rem">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7h-9m9 4h-9m9 4h-9M4 7h2m-2 4h2m-2 4h2"></path></svg>
-            Desglose de Costos Internos
+            2. Desglose de Costos de Insumos y Servicios
           </h4>
           <button class="btn-sm btn-primary" onclick="window.addQuotationItem()">+ Agregar Ítem</button>
         </div>
@@ -2383,11 +2559,14 @@ views.quotations = () => `
           <table class="item-table" style="width:100%">
             <thead style="position:sticky; top:0; background:var(--surface); z-index:10">
               <tr>
-                <th style="width:120px">Tipo</th>
+                <th style="width:110px">Vincular a</th>
+                <th style="width:110px">Tipo</th>
+                <th style="width:90px">Cálculo</th>
                 <th>Descripción / Insumo</th>
                 <th style="width:100px">Doc.</th>
-                <th style="width:140px">Costo Unit Neto</th>
+                <th style="width:140px">Costo Neto</th>
                 <th style="width:80px">Cant</th>
+                <th style="width:130px; text-align:right">SubTot Unit</th>
                 <th style="width:140px; text-align:right">Subtotal</th>
                 <th style="width:40px"></th>
               </tr>
@@ -2426,27 +2605,92 @@ views.quotations = () => `
 
       <div class="form-actions" style="margin-top: 2rem; border-top:none">
         <button onclick="document.getElementById('quotation-modal').style.display='none'" style="background:var(--surface-light)">Cancelar</button>
-        <button class="btn-primary" style="padding: 0.8rem 2rem; font-weight:600" onclick="window.saveQuotation()">💾 Guardar y Finalizar</button>
+        <button id="btn-save-quote" class="btn-primary" style="padding: 0.8rem 2rem; font-weight:600" onclick="window.saveQuotation()">💾 Guardar y Finalizar</button>
       </div>
     </div>
   </div>
+  <datalist id="raw-materials-list">
+    ${state.rawMaterials.map(rm => `<option value="${rm.name}">${rm.code}</option>`).join('')}
+  </datalist>
 `;
 
 window.openQuotationModal = () => {
-  window.quotationItems = [];
   document.getElementById('quotation-modal').style.display = 'flex';
   document.getElementById('quote-modal-title').textContent = 'Nueva Cotización';
+  document.getElementById('quote-id').value = '';
   document.getElementById('quote-name').value = '';
   document.getElementById('quote-client').value = '';
-  document.getElementById('quote-qty').value = '1';
-  document.getElementById('quote-utility').value = '80';
-  window.addQuotationItem(); // Start with one row
+  document.getElementById('quote-rut').value = '';
+  document.getElementById('quote-address').value = '';
+  document.getElementById('quote-description-proposal').value = '';
+  document.getElementById('quote-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('quote-delivery-time').value = '';
+  document.getElementById('quote-utility').value = '30';
+  document.getElementById('quote-budget').value = '0';
+  document.getElementById('quote-probability').textContent = '-%';
+  document.getElementById('btn-save-quote').disabled = false;
+  document.getElementById('btn-save-quote').textContent = '💾 Guardar Cotización';
+
+  window.quotationItems = [];
+  window.quotationProducts = [
+    { id: 'p' + Date.now(), name: '', quantity: 1 }
+  ];
+  window.quotationImages = [];
+  window.renderQuoteImagePreviews();
+
+  window.renderQuotationProducts();
+  if (window.quotationItems.length === 0) {
+    window.addQuotationItem();
+  } else {
+    window.renderQuotationItems();
+  }
+  window.calculateQuotation();
+};
+
+window.editQuotation = async (id) => {
+  const q = await apiFetch(`/quotations/${id}`);
+  if (!q) return;
+
+  window.openQuotationModal();
+  document.getElementById('quote-modal-title').textContent = 'Editar Cotización';
+  document.getElementById('quote-id').value = q.id;
+  document.getElementById('quote-name').value = q.name || '';
+  document.getElementById('quote-client').value = q.client_id || '';
+  document.getElementById('quote-rut').value = q.rut || '';
+  document.getElementById('quote-address').value = q.address || '';
+  document.getElementById('quote-description-proposal').value = q.description_proposal || '';
+  document.getElementById('quote-date').value = q.quote_date ? q.quote_date.split('T')[0] : '';
+  document.getElementById('quote-delivery-time').value = q.delivery_time || '';
+  document.getElementById('quote-utility').value = q.utility_percentage || 0;
+  document.getElementById('quote-budget').value = q.budget || 0;
+
+  window.quotationProducts = q.products_list || [
+    { id: 'p' + Date.now(), name: q.name, quantity: q.quantity || 1 }
+  ];
+
+  window.quotationItems = q.items.map(it => ({
+    type: it.item_type || 'material',
+    calculation_type: it.calculation_type || 'unit',
+    linked_to: it.linked_to || 'general',
+    description: it.description,
+    document_type: it.document_type || 'factura',
+    unit_value_net: it.unit_cost,
+    quantity: it.quantity
+  }));
+
+  window.quotationImages = q.images || [];
+  window.renderQuoteImagePreviews();
+
+  window.renderQuotationProducts();
+  window.renderQuotationItems();
   window.calculateQuotation();
 };
 
 window.addQuotationItem = () => {
   window.quotationItems.push({
     type: 'material',
+    calculation_type: 'unit', // 'unit' o 'fixed'
+    linked_to: 'general', // ID de producto o 'general'
     description: '',
     document_type: 'factura',
     unit_value_net: 0,
@@ -2462,6 +2706,12 @@ window.renderQuotationItems = () => {
   tbody.innerHTML = window.quotationItems.map((item, index) => `
     <tr>
       <td>
+        <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'linked_to', this.value)">
+          <option value="general" ${item.linked_to === 'general' ? 'selected' : ''}>General</option>
+          ${window.quotationProducts.map(p => `<option value="${p.id}" ${item.linked_to === p.id ? 'selected' : ''}>${p.name || 'Sin nombre'}</option>`).join('')}
+        </select>
+      </td>
+      <td>
         <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'type', this.value)">
           <option value="material" ${item.type === 'material' ? 'selected' : ''}>Material</option>
           <option value="service" ${item.type === 'service' ? 'selected' : ''}>Servicio</option>
@@ -2470,7 +2720,13 @@ window.renderQuotationItems = () => {
         </select>
       </td>
       <td>
-        <input type="text" class="form-input-sm" value="${item.description}" placeholder="Descripción ítem..." oninput="window.updateQuoteItem(${index}, 'description', this.value)">
+        <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'calculation_type', this.value)">
+          <option value="unit" ${item.calculation_type === 'unit' ? 'selected' : ''}>Unitario</option>
+          <option value="fixed" ${item.calculation_type === 'fixed' ? 'selected' : ''}>Fijo</option>
+        </select>
+      </td>
+      <td>
+        <input type="text" class="form-input-sm" list="raw-materials-list" value="${item.description}" placeholder="Descripción ítem..." oninput="window.updateQuoteItem(${index}, 'description', this.value)">
       </td>
       <td>
         <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'document_type', this.value)">
@@ -2484,8 +2740,11 @@ window.renderQuotationItems = () => {
       <td>
         <input type="number" class="form-input-sm" value="${item.quantity}" style="text-align:center" oninput="window.updateQuoteItem(${index}, 'quantity', this.value)">
       </td>
-      <td style="text-align:right; font-weight:500">
-        $${Math.round(item.unit_value_net * item.quantity * (item.document_type === 'boleta' ? 1.19 : 1)).toLocaleString()}
+      <td id="quote-item-subtotunit-${index}" style="text-align:right; font-weight:400; color: var(--text-muted)">
+        $${Math.round((item.unit_value_net || 0) * (item.quantity || 0)).toLocaleString()}
+      </td>
+      <td id="quote-item-subtotal-${index}" style="text-align:right; font-weight:500">
+        $${window.getItemProjectTotal(item).toLocaleString()}
       </td>
       <td>
         <button class="btn-sm" onclick="window.removeQuoteItem(${index})" style="background:none; color:var(--danger); border:none; padding:0">✕</button>
@@ -2497,6 +2756,59 @@ window.renderQuotationItems = () => {
 window.updateQuoteItem = (index, field, value) => {
   const item = window.quotationItems[index];
   item[field] = (field === 'unit_value_net' || field === 'quantity') ? parseFloat(value) || 0 : value;
+
+  // Actualizar SubTot Unit y Subtotal de la fila en tiempo real
+  const subtotUnitTd = document.getElementById(`quote-item-subtotunit-${index}`);
+  if (subtotUnitTd) {
+    subtotUnitTd.textContent = `$${Math.round((item.unit_value_net || 0) * (item.quantity || 0)).toLocaleString()}`;
+  }
+  const subtotalTd = document.getElementById(`quote-item-subtotal-${index}`);
+  if (subtotalTd) {
+    subtotalTd.textContent = `$${window.getItemProjectTotal(item).toLocaleString()}`;
+  }
+
+  // Autocompletado de precio si es Material y coincide con un Insumo
+  if (field === 'description' && item.type === 'material') {
+    const rm = state.rawMaterials.find(x => x.name === value || x.code === value);
+    if (rm) {
+      item.unit_value_net = Math.round((rm.cost_net || 0) / (rm.batch_size || 1));
+      window.renderQuotationItems(); // Re-render to show new price
+    }
+  }
+
+  window.calculateQuotation();
+};
+
+window.addQuotationProduct = () => {
+  window.quotationProducts.push({ id: 'p' + Date.now(), name: '', quantity: 1 });
+  window.renderQuotationProducts();
+  window.renderQuotationItems(); // Para actualizar los selects de vinculación
+};
+
+window.renderQuotationProducts = () => {
+  const container = document.getElementById('quote-products-list');
+  if (!container) return;
+  container.innerHTML = window.quotationProducts.map((p, index) => `
+    <div style="display:flex; gap:0.5rem; align-items:center">
+      <input type="text" class="form-input-sm" placeholder="Nombre Producto (ej: Mantel Spandex)" value="${p.name}" style="flex:2" oninput="window.updateQuotationProduct(${index}, 'name', this.value)">
+      <input type="number" class="form-input-sm" placeholder="Cantidad" value="${p.quantity}" style="width:100px" oninput="window.updateQuotationProduct(${index}, 'quantity', this.value)">
+      <button class="btn-sm" onclick="window.removeQuotationProduct(${index})" style="background:none; color:var(--danger)">✕</button>
+    </div>
+  `).join('');
+};
+
+window.updateQuotationProduct = (index, field, value) => {
+  window.quotationProducts[index][field] = field === 'quantity' ? parseFloat(value) || 0 : value;
+  window.renderQuotationItems(); // Para actualizar los nombres en los selects
+  window.calculateQuotation();
+};
+
+window.removeQuotationProduct = (index) => {
+  const pid = window.quotationProducts[index].id;
+  window.quotationProducts.splice(index, 1);
+  // Desvincular items que apuntaban a este producto
+  window.quotationItems.forEach(it => { if (it.linked_to === pid) it.linked_to = 'general'; });
+  window.renderQuotationProducts();
   window.renderQuotationItems();
   window.calculateQuotation();
 };
@@ -2507,86 +2819,303 @@ window.removeQuoteItem = (index) => {
   window.calculateQuotation();
 };
 
+window.onQuoteClientChange = (cid) => {
+  const client = state.clients.find(c => c.id == cid);
+  if (client) {
+    document.getElementById('quote-rut').value = client.rut || '';
+    document.getElementById('quote-address').value = client.address || '';
+  }
+};
+
 window.calculateQuotation = () => {
-  const globalQty = parseFloat(document.getElementById('quote-qty').value) || 1;
   const utilityPerc = parseFloat(document.getElementById('quote-utility').value) || 0;
 
-  let costFacturas = 0;
-  let costBoletas = 0;
+  let totalCostGlobal = 0;
+  let factNetGlobal = 0;
+  let bolIVAGlobal = 0;
 
-  window.quotationItems.forEach(item => {
-    let sub = (item.unit_value_net || 0) * (item.quantity || 0);
-    if (item.document_type === 'boleta') {
-      costBoletas += sub * 0.19; // IVA as cost
-      sub *= 1.19;
-    } else {
-      costFacturas += sub;
-    }
+  // 1. Mapear productos para fácil acceso
+  const products = {};
+  window.quotationProducts.forEach(p => {
+    products[p.id] = { ...p, cost: 0, net: 0, iva: 0 };
   });
 
-  const totalInternalCost = costFacturas + (costBoletas); // Wait, costBoletas above already includes the 1.19 multiplier? 
-  // Let's re-fix logic:
-  let totalCost = 0;
-  let factNet = 0;
-  let bolIVA = 0;
+  // 2. Separar costos fijos (generales) y variables (por producto)
+  let generalFixedCost = 0;
+  let generalFixedNet = 0;
+  let generalFixedIVA = 0;
 
   window.quotationItems.forEach(item => {
     const raw = (item.unit_value_net || 0) * (item.quantity || 0);
+    const isFixed = item.calculation_type === 'fixed';
+
+    let lineCost = raw;
+    let lineIVA = 0;
     if (item.document_type === 'boleta') {
-      totalCost += raw * 1.19;
-      bolIVA += raw * 0.19;
+      lineCost = raw * 1.19;
+      lineIVA = raw * 0.19;
+    }
+
+    if (item.linked_to === 'general') {
+      if (isFixed) {
+        generalFixedCost += lineCost;
+        generalFixedNet += (item.document_type === 'factura' ? raw : 0);
+        generalFixedIVA += lineIVA;
+      } else {
+        // Unitario General: Escala por la suma de todos los productos
+        const totalQty = window.quotationProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
+        generalFixedCost += lineCost * (totalQty || 1);
+        generalFixedNet += (item.document_type === 'factura' ? raw * (totalQty || 1) : 0);
+        generalFixedIVA += lineIVA * (totalQty || 1);
+      }
     } else {
-      totalCost += raw;
-      factNet += raw;
+      const p = products[item.linked_to];
+      if (p) {
+        if (isFixed) {
+          p.cost += lineCost;
+          p.net += (item.document_type === 'factura' ? raw : 0);
+          p.iva += lineIVA;
+        } else {
+          // Si es unitario, se multiplica por la cantidad del producto
+          const totalLine = lineCost * (p.quantity || 1);
+          p.cost += totalLine;
+          p.net += (item.document_type === 'factura' ? raw * p.quantity : 0);
+          p.iva += lineIVA * (p.quantity || 1);
+        }
+      }
     }
   });
 
-  const ctu = totalCost / globalQty;
-  const priceNet = totalCost * (1 + (utilityPerc / 100));
-  const iva = priceNet * 0.19;
+  // 3. Sumar y calcular precios unitarios redondeados (Bottom-Up)
+  let totalNetoVisual = 0;
+  const totalQty = window.quotationProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
+
+  Object.values(products).forEach(p => {
+    // Proporción de costos generales (basado en cantidad de unidades)
+    const share = totalQty > 0 ? (p.quantity / totalQty) : 0;
+    const pTotalCost = p.cost + (generalFixedCost * share);
+
+    // Precio Unitario Neto propuesto (Costo + Utilidad)
+    const unitPriceNetRaw = (pTotalCost / (p.quantity || 1)) * (1 + (utilityPerc / 100));
+    const unitPriceNetRounded = Math.round(unitPriceNetRaw);
+
+    const productSubtotalNet = unitPriceNetRounded * (p.quantity || 0);
+    totalNetoVisual += productSubtotalNet;
+
+    // Guardar para uso en la vista
+    p.unitPriceNet = unitPriceNetRounded;
+    p.subtotalNet = productSubtotalNet;
+
+    totalCostGlobal += pTotalCost;
+    factNetGlobal += p.net + (generalFixedNet * share);
+    bolIVAGlobal += p.iva + (generalFixedIVA * share);
+  });
+
+  const priceNet = totalNetoVisual;
+  const iva = Math.round(priceNet * 0.19);
   const priceGross = priceNet + iva;
 
-  document.getElementById('res-cost-net').textContent = `$${Math.round(factNet).toLocaleString()}`;
-  document.getElementById('res-cost-iva').textContent = `$${Math.round(bolIVA).toLocaleString()}`;
-  document.getElementById('res-cost-total').textContent = `$${Math.round(totalCost).toLocaleString()}`;
-  document.getElementById('res-ctu').textContent = `$${Math.round(ctu).toLocaleString()}`;
+  // Probabilidad
+  const budget = parseFloat(document.getElementById('quote-budget').value) || 0;
+  let probPercent = 0;
+  if (budget > 0) {
+    const rawProb = -1.6 * (priceGross / budget) + 1.7;
+    probPercent = Math.max(0, Math.min(100, rawProb * 100));
+  }
+  const probEl = document.getElementById('quote-probability');
+  if (probEl) {
+    probEl.textContent = budget > 0 ? `${Math.round(probPercent)}%` : '-%';
+    probEl.style.color = probPercent > 50 ? '#10b981' : (probPercent > 20 ? '#f59e0b' : '#ef4444');
+  }
+
+  document.getElementById('res-cost-net').textContent = `$${Math.round(factNetGlobal).toLocaleString()}`;
+  document.getElementById('res-cost-iva').textContent = `$${Math.round(bolIVAGlobal).toLocaleString()}`;
+  document.getElementById('res-cost-total').textContent = `$${Math.round(totalCostGlobal).toLocaleString()}`;
+
+  // CTU promedio
+  document.getElementById('res-ctu').textContent = `$${Math.round(totalCostGlobal / (totalQty || 1)).toLocaleString()}`;
 
   document.getElementById('res-price-net').textContent = `$${Math.round(priceNet).toLocaleString()}`;
   document.getElementById('res-price-iva').textContent = `$${Math.round(iva).toLocaleString()}`;
   document.getElementById('res-price-total').textContent = `$${Math.round(priceGross).toLocaleString()}`;
-  document.getElementById('res-pvp').textContent = `$${Math.round(priceGross / globalQty).toLocaleString()}`;
+  document.getElementById('res-pvp').textContent = `$${Math.round(priceGross / (totalQty || 1)).toLocaleString()}`;
 
   window.currentQuoteCalcs = {
-    total_net_cost: totalCost,
+    total_net_cost: totalCostGlobal,
     total_price_net: priceNet,
     total_iva: iva,
-    total_price_gross: priceGross
+    total_price_gross: priceGross,
+    budget: budget,
+    success_probability: probPercent
   };
 };
 
+// Función auxiliar para calcular el impacto total de una fila de costo en el proyecto
+window.getItemProjectTotal = (item) => {
+  const raw = (item.unit_value_net || 0) * (item.quantity || 0);
+  const lineCost = item.document_type === 'boleta' ? raw * 1.19 : raw;
+  const isFixed = item.calculation_type === 'fixed';
+
+  if (item.linked_to === 'general') {
+    if (isFixed) return Math.round(lineCost);
+    const totalQty = window.quotationProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
+    return Math.round(lineCost * (totalQty || 1));
+  } else {
+    const p = window.quotationProducts.find(x => x.id === item.linked_to);
+    if (!p) return Math.round(lineCost);
+    if (isFixed) return Math.round(lineCost);
+    return Math.round(lineCost * (p.quantity || 1));
+  }
+};
+
 window.saveQuotation = async () => {
+  const btn = document.getElementById('btn-save-quote');
+  const quoteId = document.getElementById('quote-id').value;
   const clientId = document.getElementById('quote-client').value;
   const name = document.getElementById('quote-name').value;
-  if (!clientId || !name) return alert('Por favor complete Cliente y Nombre del Proyecto');
+  const rut = document.getElementById('quote-rut').value;
+  const address = document.getElementById('quote-address').value;
+  const descProposal = document.getElementById('quote-description-proposal').value;
+  const quoteDate = document.getElementById('quote-date').value;
+  const deliveryTime = document.getElementById('quote-delivery-time').value;
+
+  if (!clientId || !name) return alert('Por favor complete Cliente y Nombre');
+
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  console.log('SAVE_DEBUG - quotationImages:', window.quotationImages?.length, 'items');
+  console.log('SAVE_DEBUG - images type:', typeof window.quotationImages, Array.isArray(window.quotationImages));
 
   const body = {
     client_id: clientId,
     name: name,
-    quantity: parseFloat(document.getElementById('quote-qty').value),
+    rut: rut,
+    address: address,
+    description_proposal: descProposal,
+    images: window.quotationImages,
+    quote_date: quoteDate,
+    delivery_time: deliveryTime,
+    quantity: window.quotationProducts.reduce((sum, p) => sum + (p.quantity || 0), 0),
     utility_percentage: parseFloat(document.getElementById('quote-utility').value),
+    products_list: window.quotationProducts,
     ...window.currentQuoteCalcs,
-    items: window.quotationItems.map(it => ({
-      ...it,
-      subtotal_cost: Math.round(it.unit_value_net * it.quantity * (it.document_type === 'boleta' ? 1.19 : 1))
-    }))
+    items: window.quotationItems
+      .filter(it => it.quantity > 0)
+      .map(it => {
+        const projectTotal = window.getItemProjectTotal(it);
+        return {
+          item_type: it.type,
+          calculation_type: it.calculation_type,
+          linked_to: it.linked_to,
+          description: it.description,
+          quantity: it.quantity,
+          unit_cost: it.unit_value_net,
+          total_cost: Math.round(projectTotal)
+        };
+      })
   };
 
-  const res = await apiFetch('/quotations', { method: 'POST', body: JSON.stringify(body) });
-  if (res && res.success) {
-    alert('Cotización guardada correctamente');
-    document.getElementById('quotation-modal').style.display = 'none';
-    fetchData();
+  try {
+    const method = quoteId ? 'PUT' : 'POST';
+    const endpoint = quoteId ? `/quotations/${quoteId}` : '/quotations';
+    const res = await apiFetch(endpoint, { method, body: JSON.stringify(body) });
+
+    if (res && res.success) {
+      alert(res.message || 'Cotización guardada correctamente');
+      document.getElementById('quotation-modal').style.display = 'none';
+      fetchData();
+    } else {
+      btn.disabled = false;
+      btn.textContent = '💾 Guardar Cotización';
+      alert('Error: No se pudo guardar la cotización. Podría ser que las imágenes son muy pesadas o hay un problema de conexión.');
+    }
+  } catch (err) {
+    console.error('Save error:', err);
+    btn.disabled = false;
+    btn.textContent = '💾 Guardar Cotización';
+    alert('Error al guardar la cotización');
   }
+};
+
+
+window.handleQuoteDrop = (e) => {
+  e.preventDefault();
+  const dz = document.getElementById('quote-dropzone');
+  dz.style.borderColor = 'var(--border)';
+  dz.style.background = 'rgba(255,255,255,0.02)';
+  window.handleQuoteFiles(e.dataTransfer.files);
+};
+
+window.handleQuoteFiles = async (files) => {
+  if (window.quotationImages.length >= 4) return alert('Máximo 4 imágenes por cotización');
+
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) continue;
+    if (window.quotationImages.length >= 4) break;
+
+    const base64 = await window.processQuoteImage(file);
+    window.quotationImages.push(base64);
+  }
+  window.renderQuoteImagePreviews();
+};
+
+window.processQuoteImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const max = 600;
+
+        if (width > height) {
+          if (width > max) {
+            height *= max / width;
+            width = max;
+          }
+        } else {
+          if (height > max) {
+            width *= max / height;
+            height = max;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compresión para peso pequeño
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+window.renderQuoteImagePreviews = () => {
+  const container = document.getElementById('quote-images-preview');
+  const dzText = document.getElementById('dropzone-text');
+  if (!container) return;
+
+  container.innerHTML = window.quotationImages.map((src, idx) => `
+    <div style="position:relative; width:80px; height:80px; border-radius:8px; overflow:hidden; border:1px solid var(--border)">
+      <img src="${src}" style="width:100%; height:100%; object-fit:cover">
+      <button onclick="event.stopPropagation(); window.removeQuoteImage(${idx})" 
+        style="position:absolute; top:2px; right:2px; background:rgba(239, 68, 68, 0.8); color:white; border:none; border-radius:50%; width:18px; height:18px; font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center">✕</button>
+    </div>
+  `).join('');
+
+  if (dzText) {
+    dzText.style.display = window.quotationImages.length > 0 ? 'none' : 'block';
+  }
+};
+
+window.removeQuoteImage = (idx) => {
+  window.quotationImages.splice(idx, 1);
+  window.renderQuoteImagePreviews();
 };
 
 window.viewQuotation = async (id) => {
@@ -2608,60 +3137,156 @@ window.viewQuotation = async (id) => {
       tableHtml = `
         <table>
           <thead>
-            <tr><th>Tipo</th><th>Descripción</th><th>Doc.</th><th>Costo Unit</th><th>Cant</th><th>Subtotal</th></tr>
+            <tr style="background: var(--surface-light)">
+              <th>Item</th>
+              <th>Vincular a</th>
+              <th>Tipo</th>
+              <th>Descripción</th>
+              <th style="text-align:right">Subtotal Proyecto</th>
+            </tr>
           </thead>
           <tbody>
-            ${q.items.map(it => `
+            ${q.items.map((it, idx) => `
               <tr>
-                <td>${it.type}</td>
+                <td style="text-align:center">${idx + 1}</td>
+                <td style="color: var(--primary); font-weight:500">${it.linked_to === 'general' ? 'General' : (q.products_list?.find(p => p.id === it.linked_to)?.name || 'Producto')}</td>
+                <td>${it.item_type}</td>
                 <td>${it.description}</td>
-                <td>${it.document_type}</td>
-                <td>$${Math.round(it.unit_value_net).toLocaleString()}</td>
-                <td>${it.quantity}</td>
-                <td style="text-align:right">$${Math.round(it.subtotal_cost).toLocaleString()}</td>
+                <td style="text-align:right; font-weight:bold">$${Math.round(it.total_cost).toLocaleString()}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       `;
     } else {
-      // Client view: Consolidate by type or just show items with final price
-      // For now, let's show items but with a "Client Price" (Cost * Utility * 1.19)
-      const multiplier = (1 + (q.utility_percentage / 100)) * 1.19;
+      // Client view: Multi-product table with Item, Detalle, Precio Unit, Cant, Sub Tot
+      const products = q.products_list || [{ id: 'p1', name: q.name, quantity: q.quantity || 1 }];
+      const totalQuoteGross = q.total_price_gross || 0;
+      const totalQuoteNet = q.total_price_net || 0;
+      const totalQuoteIVA = q.total_iva || 0;
+
+      // 1. Calculate each product's cost weight to distribute the final price proportionally
+      let totalProjectCost = 0;
+      const productCosts = {};
+      const totalQuantityAll = products.reduce((sum, p) => sum + (p.quantity || 0), 0);
+
+      products.forEach(p => productCosts[p.id] = 0);
+      let generalCosts = 0;
+
+      (q.items || []).forEach(it => {
+        const raw = (it.unit_cost || 0) * (it.quantity || 0);
+        const costWithTax = it.document_type === 'boleta' ? raw * 1.19 : raw;
+        const isFixed = it.calculation_type === 'fixed';
+
+        if (it.linked_to === 'general') {
+          generalCosts += isFixed ? costWithTax : (costWithTax * totalQuantityAll);
+        } else if (productCosts[it.linked_to] !== undefined) {
+          const p = products.find(x => x.id === it.linked_to);
+          productCosts[it.linked_to] += isFixed ? costWithTax : (costWithTax * (p?.quantity || 1));
+        }
+      });
+
+      // Distribute general costs among products based on quantity
+      products.forEach(p => {
+        const share = totalQuantityAll > 0 ? (p.quantity / totalQuantityAll) : 0;
+        productCosts[p.id] += generalCosts * share;
+        totalProjectCost += productCosts[p.id];
+      });
+
       tableHtml = `
-        <table>
-          <thead>
-            <tr><th>Descripción</th><th>Unidades</th><th style="text-align:right">Valor Unitario (IVA Inc)</th><th style="text-align:right">Total</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>${q.name}</td>
-              <td style="text-align:center">${q.quantity}</td>
-              <td style="text-align:right">$${Math.round(q.total_price_gross / q.quantity).toLocaleString()}</td>
-              <td style="text-align:right; font-weight:bold">$${Math.round(q.total_price_gross).toLocaleString()}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p style="margin-top:1rem; font-size:0.9rem; opacity:0.7">Nota: Valores incluyen IVA (19%). Cotización sujeta a factibilidad técnica.</p>
+        <div class="client-view-container">
+          <table class="item-table pvp-table">
+            <thead>
+              <tr style="background: var(--primary); color: white">
+                <th style="width: 50px; text-align: center">Item</th>
+                <th>Detalle</th>
+                <th style="width: 140px; text-align: right">Precio Unit</th>
+                <th style="width: 80px; text-align: center">Cant</th>
+                <th style="width: 140px; text-align: right">Sub Tot</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(() => {
+          let currentVisualNeto = 0;
+          return products.map((p, idx) => {
+            const costWeight = totalProjectCost > 0 ? (productCosts[p.id] / totalProjectCost) : (1 / products.length);
+            const pNetShare = totalQuoteNet * costWeight;
+            const unitPriceNet = Math.round(p.quantity > 0 ? (pNetShare / p.quantity) : 0);
+            const rowSubtotal = unitPriceNet * p.quantity;
+            currentVisualNeto += rowSubtotal;
+
+            return `
+                    <tr>
+                      <td style="text-align: center; color: var(--text-muted)">${idx + 1}</td>
+                      <td style="font-weight: 600">${p.name || '-'}</td>
+                      <td style="text-align: right">$ ${unitPriceNet.toLocaleString()}</td>
+                      <td style="text-align: center">${p.quantity}</td>
+                      <td style="text-align: right">$ ${rowSubtotal.toLocaleString()}</td>
+                    </tr>
+                  `;
+          }).join('');
+        })()}
+            </tbody>
+          </table>
+
+          <div style="display: flex; justify-content: flex-end; margin-top: -1px">
+            <table style="width: 360px; border-collapse: collapse; background: rgba(255,255,255,0.05)">
+              <tr style="border: 1px solid var(--border)">
+                <td style="padding: 0.8rem; font-weight: bold; background: var(--primary); color: white; width: 40%">Neto</td>
+                <td style="padding: 0.8rem; text-align: right; font-weight: bold; font-size: 1.1rem">$ ${Math.round(totalQuoteNet).toLocaleString()}</td>
+              </tr>
+              <tr style="border: 1px solid var(--border)">
+                <td style="padding: 0.8rem; font-weight: bold; background: var(--primary); color: white">IVA (19%)</td>
+                <td style="padding: 0.8rem; text-align: right; font-weight: bold; font-size: 1.1rem">$ ${Math.round(totalQuoteIVA).toLocaleString()}</td>
+              </tr>
+              <tr style="border: 1px solid var(--border)">
+                <td style="padding: 0.8rem; font-weight: bold; background: var(--primary); color: white">TOTAL</td>
+                <td style="padding: 0.8rem; text-align: right; font-weight: bold; font-size: 1.3rem; color: var(--primary)">$ ${Math.round(totalQuoteGross).toLocaleString()}</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+        <p style="margin-top:2rem; font-size:0.9rem; opacity:0.7; border-top: 1px solid var(--border); padding-top: 1rem">
+          Nota: Cotización sujeta a factibilidad técnica y disponibilidad de stock. Valores expresados en Pesos Chilenos ($).
+        </p>
       `;
     }
 
     modal.innerHTML = `
       <div class="card modal-content modal-wide animate-fade">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem">
-          <h3>Cotización #${q.id.split('-')[0]} - ${q.name}</h3>
+          <h3>Cotización #${String(q.id).split('-')[0]} - ${q.name}</h3>
           <div class="tab-group">
             <button class="tab-btn ${viewType === 'internal' ? 'active' : ''}" onclick="window.updateViewQuoteType('internal')">Vista Interna</button>
             <button class="tab-btn ${viewType === 'client' ? 'active' : ''}" onclick="window.updateViewQuoteType('client')">Vista Cliente (PVP)</button>
           </div>
         </div>
 
-        <div style="margin-bottom:1.5rem">
-          <p><strong>Cliente:</strong> ${q.clients?.name || 'Varios'}</p>
-          <p><strong>Fecha:</strong> ${q.date}</p>
+        <div style="margin-bottom:1.5rem; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem">
+          ${(() => {
+        const clientInfo = state.clients.find(c => String(c.id) === String(q.client_id)) || q.clients || {};
+        const displayRut = q.rut || clientInfo.rut || '-';
+        const displayAddress = q.address || clientInfo.address || '-';
+        return `
+              <div><p><strong>Cliente:</strong> ${clientInfo.name || q.name || 'Varios'}</p></div>
+              <div><p><strong>RUT:</strong> ${displayRut}</p></div>
+              <div><p><strong>Dirección:</strong> ${displayAddress}</p></div>
+              <div><p><strong>Fecha Emisión:</strong> ${q.quote_date ? new Date(q.quote_date).toLocaleDateString() : '-'}</p></div>
+              <div><p><strong>Plazo de Entrega:</strong> ${q.delivery_time || 'No especificado'}</p></div>
+            `;
+      })()}
         </div>
 
         <div class="table-container">${tableHtml}</div>
+
+        ${q.images && q.images.length > 0 ? `
+          <div style="margin-top: 1.5rem">
+            <h4 style="margin-bottom: 0.8rem; color: var(--primary)">🖼️ Imágenes de Referencia</h4>
+            <div style="display: flex; gap: 1rem; flex-wrap: wrap">
+              ${q.images.map(img => `<img src="${img}" style="width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: #000">`).join('')}
+            </div>
+          </div>
+        ` : ''}
 
         <div class="form-actions" style="margin-top:2rem">
           <button onclick="document.getElementById('${modalId}').style.display='none'">Cerrar</button>
@@ -2682,109 +3307,228 @@ window.printQuotation = () => {
   const q = window.currentViewedQuote;
   if (!q) return alert('No hay cotización cargada');
 
-  const printWindow = window.open('', '_blank', 'width=800,height=600');
-  const today = new Date().toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
+  const printWindow = window.open('', '_blank', 'width=900,height=900');
+  if (!printWindow) return alert('Por favor, desactive el bloqueador de ventanas emergentes.');
+
+  const today = new Date().toLocaleDateString('es-CL');
+  const quoteDisplayId = String(q.id).split('-')[0].toUpperCase();
+
+  // Find client in global state for fallback
+  const clientInfo = state.clients.find(c => String(c.id) === String(q.client_id)) || q.clients || {};
+  const displayRut = q.rut || clientInfo.rut || '-';
+  const displayAddress = q.address || clientInfo.address || '-';
+  const displayClientName = clientInfo.name || q.name || 'Varios';
+
+  const products = q.products_list || [{ id: 'p1', name: q.name, quantity: q.quantity || 1 }];
+  const totalQuoteNet = q.total_price_net || 0;
+  const totalQuoteIVA = q.total_iva || 0;
+  const totalQuoteGross = q.total_price_gross || 0;
+
+  // Re-calculate weights for unit prices
+  let totalProjectCost = 0;
+  const productCosts = {};
+  const totalQuantityAll = products.reduce((sum, p) => sum + (p.quantity || 0), 0);
+  products.forEach(p => productCosts[p.id] = 0);
+  let generalCosts = 0;
+  (q.items || []).forEach(it => {
+    const raw = (it.unit_cost || 0) * (it.quantity || 0);
+    const costWithTax = it.document_type === 'boleta' ? raw * 1.19 : raw;
+    if (it.linked_to === 'general') {
+      generalCosts += (it.calculation_type === 'fixed') ? costWithTax : (costWithTax * totalQuantityAll);
+    } else if (productCosts[it.linked_to] !== undefined) {
+      const p = products.find(x => x.id === it.linked_to);
+      productCosts[it.linked_to] += (it.calculation_type === 'fixed') ? costWithTax : (costWithTax * (p?.quantity || 1));
+    }
+  });
+  products.forEach(p => {
+    productCosts[p.id] += generalCosts * (totalQuantityAll > 0 ? (p.quantity / totalQuantityAll) : 0);
+    totalProjectCost += productCosts[p.id];
+  });
 
   printWindow.document.write(`
     <!DOCTYPE html>
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>Cotización - ${q.name}</title>
+      <title>Cotización Ross - ${q.id}</title>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #333; background: #fff; }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #3b82f6; }
-        .company-info h1 { font-size: 24px; color: #1e3a5f; margin-bottom: 5px; }
-        .company-info p { font-size: 12px; color: #666; }
-        .quote-info { text-align: right; }
-        .quote-info h2 { font-size: 28px; color: #3b82f6; margin-bottom: 10px; }
-        .quote-info p { font-size: 12px; color: #666; }
-        .client-section { background: #f8fafc; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
-        .client-section h3 { font-size: 14px; color: #64748b; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
-        .client-section p { font-size: 16px; color: #1e3a5f; font-weight: 600; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-        thead { background: #1e3a5f; color: white; }
-        th { padding: 12px 15px; text-align: left; font-weight: 600; font-size: 13px; }
-        th:last-child, th:nth-child(3), th:nth-child(4) { text-align: right; }
-        td { padding: 12px 15px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
-        td:last-child, td:nth-child(3), td:nth-child(4) { text-align: right; }
-        tr:nth-child(even) { background: #f8fafc; }
-        .totals { display: flex; justify-content: flex-end; margin-bottom: 30px; }
-        .totals-box { background: linear-gradient(135deg, #3b82f6 0%, #1e40af 100%); color: white; padding: 20px 30px; border-radius: 8px; min-width: 280px; }
-        .totals-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
-        .totals-row.total { font-size: 20px; font-weight: 700; border-top: 1px solid rgba(255,255,255,0.3); padding-top: 10px; margin-top: 10px; }
-        .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
-        .footer p { font-size: 11px; color: #94a3b8; margin-bottom: 5px; }
-        .validity { background: #fef3c7; padding: 10px 15px; border-radius: 6px; margin-top: 15px; font-size: 12px; color: #92400e; }
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: 'Roboto', sans-serif; padding: 40px; color: #333; line-height: 1.4; background: white; }
+        
+        .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
+        .logo-section { display: flex; align-items: center; gap: 15px; }
+        .logo-img { width: 90px; height: 90px; object-fit: contain; }
+        
+        .company-details h2 { font-size: 18px; color: #000; }
+        .company-details p { font-size: 13px; color: #444; }
+        
+        .quote-meta { text-align: right; }
+        .quote-meta p { font-size: 14px; font-weight: bold; margin-bottom: 2px; }
+        
+        .line-divider { border-top: 3px solid #000; margin-bottom: 30px; }
+        
+        .main-title { text-align: center; color: #4a7ebb; font-size: 26px; font-weight: bold; margin-bottom: 30px; letter-spacing: 2px; }
+        
+        .client-info-grid { margin-bottom: 40px; font-size: 14px; }
+        .info-row { display: flex; margin-bottom: 5px; }
+        .info-label { width: 100px; font-weight: bold; }
+        .info-value { flex: 1; }
+        
+        .presente { color: #4a7ebb; font-size: 18px; font-weight: bold; margin-bottom: 20px; text-transform: uppercase; }
+        .intro-text { font-size: 14px; margin-bottom: 20px; }
+        
+        table { width: 100%; border-collapse: collapse; margin-bottom: 0; table-layout: fixed; }
+        th { border: 1.5px solid #000; padding: 10px; font-size: 13px; background: #fff; text-transform: uppercase; }
+        td { border: 1.5px solid #000; padding: 10px; font-size: 14px; }
+        
+        .totals-table { width: 260px; margin-left: auto; margin-top: -1.5px; border-collapse: collapse; }
+        .totals-table td { font-weight: bold; width: 50%; }
+        .label-cell { background: #fff; }
+        
+        .section-title { color: #4a7ebb; font-size: 18px; font-weight: bold; margin: 40px 0 20px 0; text-transform: uppercase; }
+        
+        .bank-details { background: #f9f9f9; padding: 20px; border: 1px dashed #4a7ebb; border-radius: 8px; margin-top: 20px; }
+        .bank-details p { font-size: 13px; margin-bottom: 3px; }
+        
+        .page-break { page-break-before: always; }
+        
         @media print {
-          body { padding: 20px; }
+          body { padding: 0; }
           .no-print { display: none; }
         }
       </style>
     </head>
     <body>
-      <div class="header">
-        <div class="company-info">
-          <h1>ERP Universal</h1>
-          <p>Sistema de Gestión Empresarial</p>
+      <!-- HOJA 1: COTIZACIÓN -->
+      <div class="page-header">
+        <div class="logo-section">
+          <img src="${window.LOGO_ROSS_B64 || ''}" class="logo-img" alt="Logo">
+          <div class="company-details">
+            <h2>ROSS Confecciones</h2>
+            <p>Rosa Huentemil Contreras</p>
+            <p>Fono: +569 98745436</p>
+            <p>Mail: ross.confecciones@gmail.com</p>
+          </div>
         </div>
-        <div class="quote-info">
-          <h2>COTIZACIÓN</h2>
-          <p><strong>N°:</strong> ${q.id.split('-')[0].toUpperCase()}</p>
-          <p><strong>Fecha:</strong> ${today}</p>
+        <div class="quote-meta">
+          <p>COTIZACIÓN: ${quoteDisplayId}</p>
+          <p>Fecha documento: ${q.quote_date ? q.quote_date.split('-').reverse().join('-') : today}</p>
+          <p>Página 1 de 2</p>
         </div>
       </div>
 
-      <div class="client-section">
-        <h3>Cliente</h3>
-        <p>${q.clients?.name || 'Cliente General'}</p>
+      <div class="line-divider"></div>
+      
+      <h1 class="main-title">COTIZACIÓN</h1>
+
+      <div class="client-info-grid">
+        <div class="info-row"><span class="info-label">Señores:</span><span class="info-value">${displayClientName}</span></div>
+        <div class="info-row">
+          <span class="info-label">RUT:</span><span class="info-value" style="width:200px">${displayRut}</span>
+          <span class="info-label">Estado Cotización:</span><span class="info-value">VIGENTE</span>
+        </div>
+        <div class="info-row"><span class="info-label">Dirección:</span><span class="info-value">${displayAddress}</span></div>
+        <div class="info-row"><span class="info-label">Descripción:</span><span class="info-value">${q.description_proposal || '-'}</span></div>
       </div>
+
+      <h2 class="presente">PRESENTE</h2>
+      
+      <p class="intro-text">De nuestra consideración:<br>Por la presente, tenemos el agrado de Cotizar nuestros productos que detallamos a continuación:</p>
 
       <table>
         <thead>
           <tr>
-            <th style="width: 50%">Descripción</th>
-            <th style="width: 15%">Cantidad</th>
-            <th style="width: 17%">Precio Unit.</th>
-            <th style="width: 18%">Total</th>
+            <th style="width: 50px; text-align:center">Items</th>
+            <th>DESCRIPCION</th>
+            <th style="width: 130px; text-align:right">PRECIO X UNIDAD</th>
+            <th style="width: 130px; text-align:right">TOTAL</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td><strong>${q.name}</strong></td>
-            <td style="text-align: center">${q.quantity}</td>
-            <td>$${Math.round(q.total_price_gross / q.quantity).toLocaleString('es-CL')}</td>
-            <td><strong>$${Math.round(q.total_price_gross).toLocaleString('es-CL')}</strong></td>
-          </tr>
+          ${products.map((p, idx) => {
+    const costWeight = totalProjectCost > 0 ? (productCosts[p.id] / totalProjectCost) : (1 / products.length);
+    const unitPrice = Math.round(p.quantity > 0 ? (totalQuoteNet * costWeight / p.quantity) : 0);
+    return `
+              <tr>
+                <td style="text-align:center">${p.quantity}</td>
+                <td><strong>${p.name}</strong></td>
+                <td style="text-align:right">$ ${unitPrice.toLocaleString('es-CL')}</td>
+                <td style="text-align:right">$ ${Math.round(unitPrice * p.quantity).toLocaleString('es-CL')}</td>
+              </tr>
+            `;
+  }).join('')}
         </tbody>
       </table>
 
-      <div class="totals">
-        <div class="totals-box">
-          <div class="totals-row">
-            <span>Subtotal Neto:</span>
-            <span>$${Math.round(q.total_price_net).toLocaleString('es-CL')}</span>
-          </div>
-          <div class="totals-row">
-            <span>IVA (19%):</span>
-            <span>$${Math.round(q.total_iva).toLocaleString('es-CL')}</span>
-          </div>
-          <div class="totals-row total">
-            <span>TOTAL:</span>
-            <span>$${Math.round(q.total_price_gross).toLocaleString('es-CL')}</span>
-          </div>
+      <table class="totals-table">
+        <tr><td class="label-cell">NETO</td><td style="text-align:right">$ ${Math.round(totalQuoteNet).toLocaleString('es-CL')}</td></tr>
+        <tr><td class="label-cell">IVA (19%)</td><td style="text-align:right">$ ${Math.round(totalQuoteIVA).toLocaleString('es-CL')}</td></tr>
+        <tr style="font-size:18px"><td class="label-cell" style="background:#eee">TOTAL</td><td style="text-align:right; background:#eee">$ ${Math.round(totalQuoteGross).toLocaleString('es-CL')}</td></tr>
+      </table>
+
+      <div class="page-break"></div>
+
+      <!-- HOJA 2: ESPECIFICACIONES Y CONDICIONES -->
+      <div class="page-header">
+        <div class="logo-section">
+          <img src="${window.LOGO_ROSS_B64 || ''}" class="logo-img" alt="Logo">
+          <div class="company-details"><h2>ROSS Confecciones</h2></div>
+        </div>
+        <div class="quote-meta">
+          <p>COTIZACIÓN: ${quoteDisplayId}</p>
+          <p>Página 2 de 2</p>
         </div>
       </div>
 
-      <div class="footer">
-        <p>• Precios expresados en pesos chilenos (CLP), incluyen IVA.</p>
-        <p>• Esta cotización es referencial y está sujeta a disponibilidad de stock.</p>
-        <div class="validity">
-          <strong>Validez:</strong> Esta cotización tiene una validez de 15 días corridos desde la fecha de emisión.
+      <h2 class="section-title">SERVICIOS INCLUIDOS:</h2>
+      <ul style="list-style: none; font-size:14px; margin-left: 20px">
+        <li>• Materiales e insumos de alta calidad.</li>
+        <li>• Confección completa y terminaciones profesionales.</li>
+        <li>• Control de calidad unitario.</li>
+        <li>• Embalaje y despacho incluido.</li>
+      </ul>
+
+      ${q.images && q.images.length > 0 ? `
+        <h2 class="section-title">REFERENCIAS VISUALES:</h2>
+        <div style="display: flex; gap: 15px; margin-left: 20px; flex-wrap: wrap">
+          ${q.images.map(img => `<img src="${img}" style="width: 180px; height: 180px; object-fit: cover; border: 1.5px solid #000; border-radius: 4px">`).join('')}
         </div>
+      ` : ''}
+
+      <h2 class="section-title">PLAZO DE ENTREGA:</h2>
+      <p style="font-size:14px; margin-left: 20px"><strong>${q.delivery_time || 'Por confirmar'}</strong> a contar de la confirmación del pedido y pago inicial.</p>
+
+      <h2 class="section-title">PLAZO DE VALIDEZ DE LA COTIZACIÓN:</h2>
+      <p style="font-size:14px; margin-left: 20px">Cotización válida por 30 días.</p>
+
+      <h2 class="section-title">DATOS BANCARIOS PARA TRANSFERENCIA:</h2>
+      <div class="bank-details">
+        <p><strong>Nombre:</strong> Rosa Angélica Huentemil Contreras</p>
+        <p><strong>RUT:</strong> 13.267.639-9</p>
+        <p><strong>Banco:</strong> Banco Estado</p>
+        <p><strong>Tipo Cuenta:</strong> Cuenta Rut</p>
+        <p><strong>N° Cuenta:</strong> 13267639</p>
+        <p><strong>E-mail:</strong> ross.confecciones@gmail.com</p>
       </div>
 
+      <h2 class="section-title">GARANTÍA Y POST-VENTA:</h2>
+      <p style="font-size:14px; margin-left: 20px">
+        • <strong>Plazo:</strong> 90 días desde la entrega del producto.<br>
+        • <strong>Cobertura:</strong> Defectos de confección, fallas de material o medidas fuera de especificación.<br>
+        • <strong>Condición:</strong> El producto debe devolverse limpio y sin signos de mal uso.
+      </p>
+
+      <div style="margin-top: 80px; text-align: center; font-size: 13px; color: #666">
+        <p>Sin otro particular y atento a sus comentarios, le saluda muy cordialmente,</p>
+        <div style="position: relative; height: 120px; margin-top: 30px">
+          <img src="${window.FIRMA_ROSS_B64 || ''}" style="width: 250px; height: auto; position: absolute; left: 50%; transform: translateX(-50%); top: -65px; z-index: 1" alt="Firma">
+          <div style="position: relative; z-index: 2; margin-top: 80px">
+            <p style="margin: 0"><strong>ROSS Confecciones</strong></p>
+            <p style="margin: 0">Rosa Huentemil Contreras</p>
+          </div>
+        </div>
+      </div>
       <script>
         window.onload = function() { window.print(); }
       </script>
@@ -2806,7 +3550,7 @@ async function postData(endpoint, body) {
     });
     const result = await response.json();
     if (result.success) {
-      alert(result.message);
+      alert(result.message || 'Operación exitosa');
       fetchData(); // Sincronizar stock
     } else alert('Error: ' + result.error);
   } catch (e) { alert('Error de conexión'); }
@@ -2815,7 +3559,8 @@ async function postData(endpoint, body) {
 function renderView(viewName) {
   const appContainer = document.getElementById('app');
 
-  // Limpiar cualquier residuo de vistas anteriores
+  // Limpiar cualquier residuo de vistas y modales abiertos para evitar blurs persistentes
+  document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
   if (viewName === 'login') {
     appContainer.style.display = 'block';
     document.querySelector('.sidebar').style.display = 'none';
@@ -2969,38 +3714,110 @@ function renderView(viewName) {
   }
 
   if (viewName === 'purchases') {
-    setupItemTable('purchase');
-    document.getElementById('btn-submit-purchase').addEventListener('click', async () => {
-      const isEditMode = document.getElementById('pur-edit-mode').value === 'true';
-      const editId = document.getElementById('pur-edit-id').value;
+    setupItemTable('pur');
 
-      const body = {
-        providerId: document.getElementById('pur-prov').value,
-        date: document.getElementById('pur-date').value,
-        items: getTableItems('purchase'),
-        net: parseInt(document.getElementById('pur-net').value),
-        iva: parseInt(document.getElementById('pur-iva').value),
-        total: parseInt(document.getElementById('pur-total').value),
-        payment_method: document.getElementById('pur-payment-method').value,
-        account_id: document.getElementById('pur-account').value || null,
-        document_type: document.getElementById('pur-doc-type').value
+    window.togglePurType = function () {
+      const type = document.getElementById('pur-type')?.value;
+      const mpContainer = document.getElementById('pur-items-container');
+      const expenseContainer = document.getElementById('pur-expense-amount-container');
+      const summarySection = document.getElementById('pur-summary-section');
+      const descGroup = document.getElementById('pur-desc-group');
+      const provGroup = document.getElementById('pur-prov-group');
+
+      if (!mpContainer || !expenseContainer || !summarySection || !descGroup || !provGroup) return;
+
+      if (type === 'expense') {
+        mpContainer.style.display = 'none';
+        expenseContainer.style.display = 'block';
+        summarySection.style.display = 'none';
+        descGroup.style.display = 'block';
+        provGroup.style.display = 'none';
+      } else {
+        mpContainer.style.display = 'block';
+        expenseContainer.style.display = 'none';
+        summarySection.style.display = 'block';
+        descGroup.style.display = 'none';
+        provGroup.style.display = 'block';
+      }
+    };
+
+    window.openPurchaseModal = function () {
+      const modal = document.getElementById('buy-modal');
+      if (modal) modal.style.display = 'flex';
+
+      const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.value = val;
       };
 
-      if (body.items.length === 0) return alert('Debe agregar al menos un ítem');
+      setVal('pur-edit-mode', 'false');
+      setVal('pur-edit-id', '');
+      setVal('pur-type', 'mp');
+      setVal('pur-description', '');
+      setVal('pur-project', '');
+      setVal('pur-expense-total', 0);
 
-      if (isEditMode) {
-        await putData(`/purchases/${editId}`, body);
+      window.togglePurType();
+    };
+
+    window.runMigration = async function () {
+      if (!confirm('¿Ejecutar actualización de base de datos?')) return;
+      try {
+        const res = await apiFetch('/admin/migrate-purchases');
+        alert(res?.message || 'Migración exitosa');
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    };
+
+    document.getElementById('btn-submit-purchase')?.addEventListener('click', async () => {
+      const isEditMode = document.getElementById('pur-edit-mode')?.value === 'true';
+      const editId = document.getElementById('pur-edit-id')?.value;
+      const type = document.getElementById('pur-type')?.value;
+
+      const body = {
+        type: type,
+        date: document.getElementById('pur-date')?.value,
+        payment_method: document.getElementById('pur-payment-method')?.value,
+        account_id: document.getElementById('pur-account')?.value || null,
+        document_type: document.getElementById('pur-doc-type')?.value,
+        quotation_id: document.getElementById('pur-project')?.value || null
+      };
+
+      if (type === 'mp') {
+        body.providerId = document.getElementById('pur-prov')?.value;
+        body.items = getTableItems('pur');
+        body.net = parseInt(document.getElementById('pur-net')?.value) || 0;
+        body.iva = parseInt(document.getElementById('pur-iva')?.value) || 0;
+        body.total = parseInt(document.getElementById('pur-total')?.value) || 0;
+
+        if (!body.items || body.items.length === 0) return alert('Debe agregar al menos un ítem');
       } else {
-        await postData('/purchases', body);
+        const totalExp = parseInt(document.getElementById('pur-expense-total')?.value) || 0;
+        body.description = document.getElementById('pur-description')?.value;
+        body.net = totalExp;
+        body.iva = 0;
+        body.total = totalExp;
+
+        if (!body.description) return alert('Debe ingresar una descripción para el gasto');
+        if (body.total <= 0) return alert('El monto debe ser mayor a cero');
       }
 
-      // Limpiar y cerrar
-      document.getElementById('buy-modal').style.display = 'none';
-      document.getElementById('pur-edit-mode').value = 'false';
-      document.getElementById('pur-edit-id').value = '';
-      document.getElementById('buy-modal-title').textContent = 'Nueva Compra de Insumos';
-      document.getElementById('btn-submit-purchase').textContent = 'Registrar Compra';
-      fetchData();
+      try {
+        let res;
+        if (isEditMode) {
+          res = await putData(`/purchases/${editId}`, body);
+        } else {
+          res = await postData('/purchases', body);
+        }
+
+        // Hide modal immediately if successful (postData/putData already alert and refresh)
+        const modal = document.getElementById('buy-modal');
+        if (modal) modal.style.display = 'none';
+
+      } catch (e) {
+        alert('Error al procesar: ' + e.message);
+      }
     });
   }
 
@@ -3595,7 +4412,7 @@ window.openClientModal = () => {
 };
 
 window.editClient = (id) => {
-  const c = state.clients.find(x => x.id === id);
+  const c = state.clients.find(x => String(x.id) === String(id));
   if (!c) return;
   window.openClientModal();
   document.getElementById('cli-modal-title').textContent = 'Editar Cliente';
@@ -3623,7 +4440,7 @@ window.openProviderModal = () => {
 };
 
 window.editProvider = (id) => {
-  const p = state.providers.find(x => x.id === id);
+  const p = state.providers.find(x => String(x.id) === String(id));
   if (!p) return;
   window.openProviderModal();
   document.getElementById('prov-modal-title').textContent = 'Editar Proveedor';
@@ -3806,6 +4623,7 @@ function initSalesChart() {
 
 function setupItemTable(prefix) {
   const body = document.getElementById(`${prefix}-items-body`);
+  if (!body) return;
   const rows = body.querySelectorAll('.item-row');
 
   rows.forEach(row => {
@@ -3814,9 +4632,13 @@ function setupItemTable(prefix) {
     const qtyInput = row.querySelector('.item-qty');
     const subtotalInput = row.querySelector('.item-subtotal');
 
+    if (!codeSelect || !priceInput || !qtyInput || !subtotalInput) return;
+
+    const parseNum = (val) => parseFloat(String(val).replace(',', '.')) || 0;
+
     const calculateRow = () => {
-      const price = parseFloat(priceInput.value) || 0;
-      const qty = parseFloat(qtyInput.value) || 0;
+      const price = parseNum(priceInput.value);
+      const qty = parseNum(qtyInput.value);
       const subtotal = price * qty;
       subtotalInput.value = Math.round(subtotal);
       calculateTotals(prefix);
@@ -3910,9 +4732,13 @@ function calculateTotals(prefix) {
   }
 
   // Common updates (using original 'net' which is subtotal of rows)
-  document.getElementById(`${prefix}-net`).value = net;
-  document.getElementById(`${prefix}-iva`).value = iva;
-  document.getElementById(`${prefix}-total`).value = total;
+  const netEl = document.getElementById(`${prefix}-net`);
+  const ivaEl = document.getElementById(`${prefix}-iva`);
+  const totalEl = document.getElementById(`${prefix}-total`);
+
+  if (netEl) netEl.value = net;
+  if (ivaEl) ivaEl.value = iva;
+  if (totalEl) totalEl.value = total;
 
   const netDisplay = document.getElementById(`${prefix}-net-display`);
   const ivaDisplay = document.getElementById(`${prefix}-iva-display`);
@@ -3928,11 +4754,13 @@ function getTableItems(prefix) {
   const rows = body.querySelectorAll('.item-row');
   const items = [];
 
+  const parseNum = (val) => parseFloat(String(val).replace(',', '.')) || 0;
+
   rows.forEach(row => {
     const code = row.querySelector('.item-code').value;
-    const price = parseFloat(row.querySelector('.item-price').value) || 0;
-    const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
-    const subtotal = parseInt(row.querySelector('.item-subtotal').value) || 0;
+    const price = parseNum(row.querySelector('.item-price').value);
+    const qty = parseNum(row.querySelector('.item-qty').value);
+    const subtotal = parseNum(row.querySelector('.item-subtotal').value);
 
     if (code && qty > 0) {
       if (prefix === 'sale') {
@@ -4018,6 +4846,23 @@ window.exportPurchases = function () {
   exportToExcel(formatted, 'Historial_Compras', 'Compras');
   alert('✅ Compras exportadas a Excel exitosamente');
 };
+
+window.exportLedger = function () {
+  let filtered = [...state.ledger];
+  if (state.ledgerFilter.type !== 'all') {
+    filtered = filtered.filter(e => e.entry_type === state.ledgerFilter.type);
+  }
+  filtered.sort((a, b) => {
+    return state.ledgerFilter.order === 'asc'
+      ? new Date(a.date) - new Date(b.date)
+      : new Date(b.date) - new Date(a.date);
+  });
+
+  const formatted = formatLedgerForExport(filtered);
+  exportToExcel(formatted, 'Libro_Diario', 'Libro Diario');
+  alert('✅ Libro Diario exportado a Excel exitosamente');
+};
+
 
 window.exportProduction = function () {
   const formatted = formatProductionForExport(state.history.production);

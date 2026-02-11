@@ -166,3 +166,27 @@ export function formatProductionForExport(production) {
         'Estado': p.status
     }));
 }
+/**
+ * Formatea datos del libro diario para exportación
+ * @param {Array} ledger - Array de asientos contables
+ * @returns {Array} Libro diario formateado para Excel
+ */
+export function formatLedgerForExport(ledger) {
+    const formatted = [];
+    ledger.forEach(entry => {
+        entry.lines.forEach(line => {
+            formatted.push({
+                'Fecha': entry.date,
+                'Tipo': entry.entry_type.toUpperCase(),
+                'Descripción': entry.description,
+                'Documento': entry.document_number || '-',
+                'Código Cuenta': line.account_code,
+                'Cuenta': line.account_name,
+                'Glosa Línea': line.glosa || '-',
+                'Debe': line.debit || 0,
+                'Haber': line.credit || 0
+            });
+        });
+    });
+    return formatted;
+}

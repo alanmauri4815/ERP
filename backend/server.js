@@ -119,7 +119,7 @@ function calculateTax(netPrice, taxRate = 0.19) {
 }
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 // Request logger
 app.use((req, res, next) => {
@@ -269,15 +269,14 @@ app.post('/api/providers', authenticateToken, async (req, res) => {
     const { rut, name, address, contact, phone, email, notes } = req.body;
     const { data, error } = await supabase.from(T.PROVIDERS).insert({ rut, name, address, contact, phone, email, notes }).select().single();
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, data });
+    res.json({ success: true, message: 'Proveedor guardado correctamente', data });
 });
 
 app.put('/api/providers/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { rut, name, address, contact, phone, email, notes } = req.body;
     const { error } = await supabase.from(T.PROVIDERS).update({ rut, name, address, contact, phone, email, notes }).eq('id', id);
-    if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
+    res.json({ success: true, message: 'Proveedor actualizado correctamente' });
 });
 
 app.delete('/api/providers/:id', authenticateToken, async (req, res) => {
@@ -297,7 +296,7 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
     const { name, address, phone, email, rut, notes } = req.body;
     const { data, error } = await supabase.from(T.CLIENTS).insert({ name, address, phone, email, rut, notes }).select().single();
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true, data });
+    res.json({ success: true, message: 'Cliente guardado correctamente', data });
 });
 
 app.put('/api/clients/:id', authenticateToken, async (req, res) => {
@@ -305,7 +304,7 @@ app.put('/api/clients/:id', authenticateToken, async (req, res) => {
     const { name, address, phone, email, rut, notes } = req.body;
     const { error } = await supabase.from(T.CLIENTS).update({ name, address, phone, email, rut, notes }).eq('id', id);
     if (error) return res.status(500).json({ error: error.message });
-    res.json({ success: true });
+    res.json({ success: true, message: 'Cliente actualizado correctamente' });
 });
 
 app.delete('/api/clients/:id', authenticateToken, async (req, res) => {
@@ -430,34 +429,73 @@ app.put('/api/recipes/:productCode', authenticateToken, async (req, res) => {
     }
 });
 
-app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (req, res) => {
-    const { data: history, error } = await supabase
-        .from(T.PURCHASES)
-        .select(`*, proveedores:"${T.PROVIDERS}"(name)`)
-        .order('date', { ascending: false });
-
-    if (error) return res.status(500).json({ error: error.message });
-
-    const fullHistory = [];
-    for (const p of history) {
-        const { data: items } = await supabase
-            .from(T.PURCHASE_ITEMS)
-            .select(`*, raw_materials:"${T.MP}"(name, color, size)`)
-            .eq('purchase_id', p.id);
-
-        fullHistory.push({
-            ...p,
-            provider_name: p.providers?.name,
-            items: items?.map(i => ({
-                ...i,
-                mp_name: i.raw_materials?.name,
-                color: i.raw_materials?.color,
-                size: i.raw_materials?.size
-            })) || []
-        });
+app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, async (req, res) => {
+    try {
+        // Since we can't run raw SQL via RPC easily, we'll try to use the ALTER TABLE command via a custom RPC if it exists, 
+        // otherwise this serves as documentation.
+        // Actually, I'll try to use the 'exec_sql' RPC which is often present.
+        const sql = `
+            ALTER TABLE compras ADD COLUMN IF NOT EXISTS description text;
+            ALTER TABLE compras ADD COLUMN IF NOT EXISTS type text DEFAULT 'mp';
+            ALTER TABLE compras ADD COLUMN IF NOT EXISTS quotation_id int8 REFERENCES quotations(id);
+        `;
+        const { error } = await supabase.rpc('exec_sql', { sql });
+        if (error) throw error;
+        res.json({ success: true, message: 'Migration successful' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
+});
 
-    res.json(fullHistory);
+app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (req, res) => {
+    try {
+        const { data: history, error } = await supabase
+            .from(T.PURCHASES)
+            .select('*')
+            .order('date', { ascending: false });
+
+        if (error) throw error;
+
+        // Fetch lookup tables
+        const [provs, accs, quotes] = await Promise.all([
+            supabase.from(T.PROVIDERS).select('id, name'),
+            supabase.from(T.ACCOUNTS).select('id, name'),
+            supabase.from(T.QUOTATIONS).select('id, name').limit(1000)
+        ]);
+
+        const provMap = {}; provs.data?.forEach(p => provMap[p.id] = p.name);
+        const accMap = {}; accs.data?.forEach(a => accMap[a.id] = a.name);
+        const quoteMap = {}; quotes.data?.forEach(q => quoteMap[q.id] = q.name);
+
+        const fullHistory = [];
+        for (const p of history) {
+            let items = [];
+            const { data: itemData } = await supabase
+                .from(T.PURCHASE_ITEMS)
+                .select(`*, raw_materials:"${T.MP}"(name, color, size)`)
+                .eq('purchase_id', p.id);
+
+            if (itemData) {
+                items = itemData.map(i => ({
+                    ...i,
+                    mp_name: i.raw_materials?.name || '?',
+                    color: i.raw_materials?.color,
+                    size: i.raw_materials?.size
+                }));
+            }
+
+            fullHistory.push({
+                ...p,
+                provider_name: provMap[p.provider_id] || 'Sin Proveedor',
+                account_name: accMap[p.account_id] || 'N/A',
+                project_name: quoteMap[p.quotation_id] || 'N/A',
+                items: items
+            });
+        }
+        res.json(fullHistory);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.get(['/api/history/sales', '/api/sales'], authenticateToken, async (req, res) => {
@@ -520,58 +558,90 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 });
 
 app.post('/api/purchases', authenticateToken, async (req, res) => {
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type } = req.body;
-    const date = new Date().toISOString().split('T')[0];
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id } = req.body;
+    const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
-        const { data: purchase, error: pError } = await supabase
-            .from(T.PURCHASES)
-            .insert({
-                date,
-                provider_id: providerId || null,
-                net, iva, total,
-                payment_method: payment_method || null,
-                account_id: account_id || null,
-                document_type: document_type || 'factura'
-            })
-            .select()
-            .single();
+        // Base object with guaranteed columns
+        const purchaseData = {
+            date,
+            provider_id: providerId || null,
+            net, iva, total,
+            payment_method: payment_method || null,
+            account_id: account_id || null,
+            document_type: document_type || 'factura'
+        };
 
-        if (pError) throw pError;
+        // Try to insert with ALL columns first
+        let result = await supabase.from(T.PURCHASES).insert({
+            ...purchaseData,
+            type: type || 'mp',
+            description: description || null,
+            quotation_id: quotation_id || null
+        }).select().single();
 
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            if (item.mpCode && item.quantity > 0) {
-                await supabase.from(T.PURCHASE_ITEMS).insert({
-                    purchase_id: purchase.id,
-                    item_number: i + 1,
-                    mp_code: item.mpCode,
-                    quantity: item.quantity,
-                    unit_price: item.unitPrice,
-                    subtotal: item.subtotal
-                });
+        if (result.error && result.error.message.includes('column') && result.error.message.includes('does not exist')) {
+            console.warn("Retrying purchase insert without extended columns...", result.error.message);
+            result = await supabase.from(T.PURCHASES).insert(purchaseData).select().single();
+        }
 
-                // Update stock
-                const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
-                await supabase.from(T.MP).update({ stock: (rm?.stock || 0) + item.quantity }).eq('code', item.mpCode);
+        if (result.error) throw result.error;
+        const purchase = result.data;
+
+        if (type === 'mp' && items && items.length > 0) {
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.mpCode && item.quantity > 0) {
+                    await supabase.from(T.PURCHASE_ITEMS).insert({
+                        purchase_id: purchase.id,
+                        item_number: i + 1,
+                        mp_code: item.mpCode,
+                        quantity: item.quantity,
+                        unit_price: item.unitPrice,
+                        subtotal: item.subtotal
+                    });
+
+                    // Update stock
+                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
+                    await supabase.from(T.MP).update({ stock: (rm?.stock || 0) + item.quantity }).eq('code', item.mpCode);
+                }
             }
         }
 
         // Create Accounting Entry
+        let finalPaymentMethod = payment_method;
+        if (account_id) {
+            const { data: acc } = await supabase.from(T.ACCOUNTS).select('type').eq('id', account_id).single();
+            if (acc?.type === 'credit') finalPaymentMethod = 'credit';
+            else if (acc?.type === 'debit') finalPaymentMethod = 'transfer';
+        }
+
+        let paymentAccount = '1.1.01.01'; // Default: Caja
+        if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01.05';
+        else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.01.02';
+
+        const glosa = type === 'expense' ? `Gasto: ${description}` : `Compra a proveedor (Factura #${purchase.id})`;
+        const inventoryAccount = type === 'expense' ? '5.1.02.01' : '1.1.02.01'; // Gasto Operacional vs Inventario
+
+        const journalLines = [
+            { account_code: inventoryAccount, debit: net, glosa: glosa },
+            { account_code: paymentAccount, credit: total, glosa: glosa }
+        ];
+
+        if (iva > 0) {
+            journalLines.push({ account_code: '1.1.03.01', debit: iva, glosa: `IVA Crédito #${purchase.id}` });
+        }
+
         await createAccountingEntry({
             date,
-            description: `Compra a proveedor (Factura #${purchase.id})`,
-            type: 'compra',
+            description: glosa,
+            type: type === 'expense' ? 'gasto' : 'compra',
             document_number: purchase.id.toString(),
             userId: req.user.id,
-            lines: [
-                { account_code: '1.1.02.01', debit: net },         // Inventario MP (Neto)
-                { account_code: '1.1.03.01', debit: iva },         // IVA Crédito Fiscal
-                { account_code: '1.1.01.01', credit: total }       // Pago desde Caja/Banco (Total)
-            ]
+            lines: journalLines
         });
 
-        res.json({ success: true, message: 'Compra registrada exitosamente.' });
+        res.json({ success: true, message: 'Registro exitoso.' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -580,47 +650,70 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
 // ========== UPDATE PURCHASE (with accounting recalculation) ==========
 app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     const purchaseId = req.params.id;
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id } = req.body;
+    const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
-        // 1. Get current purchase date for accounting
-        const { data: existingPurchase } = await supabase.from(T.PURCHASES).select('date').eq('id', purchaseId).single();
-        const date = existingPurchase?.date || new Date().toISOString().split('T')[0];
+        // 1. Get old items to reverse stock
+        const { data: oldItems } = await supabase.from(T.PURCHASE_ITEMS).select('*').eq('purchase_id', purchaseId);
+        if (oldItems) {
+            for (const it of oldItems) {
+                const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', it.mp_code).single();
+                if (rm) {
+                    await supabase.from(T.MP).update({ stock: Math.max(0, rm.stock - it.quantity) }).eq('code', it.mp_code);
+                }
+            }
+        }
 
-        // 2. Update purchase record
-        const { error: updateError } = await supabase.from(T.PURCHASES).update({
+        // 2. Update purchase record (Robustly)
+        const purchaseData = {
             provider_id: providerId || null,
             net, iva, total,
             payment_method: payment_method || null,
             account_id: account_id || null,
             document_type: document_type || 'factura'
+        };
+
+        let result = await supabase.from(T.PURCHASES).update({
+            ...purchaseData,
+            type: type || 'mp',
+            description: description || null,
+            quotation_id: quotation_id || null
         }).eq('id', purchaseId);
 
-        if (updateError) throw updateError;
+        if (result.error && result.error.message.includes('column')) {
+            result = await supabase.from(T.PURCHASES).update(purchaseData).eq('id', purchaseId);
+        }
+        if (result.error) throw result.error;
 
-        // 3. Delete existing purchase items and insert new ones
+        // 3. Delete & Re-insert items + Add back to stock
         await supabase.from(T.PURCHASE_ITEMS).delete().eq('purchase_id', purchaseId);
 
-        for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            if (item.mpCode && item.quantity > 0) {
-                await supabase.from(T.PURCHASE_ITEMS).insert({
-                    purchase_id: purchaseId,
-                    item_number: i + 1,
-                    mp_code: item.mpCode,
-                    quantity: item.quantity,
-                    unit_price: item.unitPrice,
-                    subtotal: item.subtotal
-                });
+        if (type === 'mp' && items && items.length > 0) {
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.mpCode && item.quantity > 0) {
+                    await supabase.from(T.PURCHASE_ITEMS).insert({
+                        purchase_id: purchaseId,
+                        item_number: i + 1,
+                        mp_code: item.mpCode,
+                        quantity: item.quantity,
+                        unit_price: item.unitPrice,
+                        subtotal: item.subtotal
+                    });
+
+                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
+                    await supabase.from(T.MP).update({ stock: (rm?.stock || 0) + item.quantity }).eq('code', item.mpCode);
+                }
             }
         }
 
-        // 4. DELETE old accounting entry for this purchase
+        // 4. DELETE old accounting entry (could be 'compra' or 'gasto')
         const { data: oldEntries } = await supabase
             .from(T.ACCOUNTING_ENTRIES)
             .select('id')
             .eq('document_number', purchaseId.toString())
-            .eq('entry_type', 'compra');
+            .in('entry_type', ['compra', 'gasto']);
 
         if (oldEntries && oldEntries.length > 0) {
             const entryIds = oldEntries.map(e => e.id);
@@ -629,17 +722,36 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
         }
 
         // 5. CREATE new accounting entry with updated values
+        let finalPaymentMethod = payment_method;
+        if (account_id) {
+            const { data: acc } = await supabase.from(T.ACCOUNTS).select('type').eq('id', account_id).single();
+            if (acc?.type === 'credit') finalPaymentMethod = 'credit';
+            else if (acc?.type === 'debit') finalPaymentMethod = 'transfer';
+        }
+
+        let paymentAccount = '1.1.01.01'; // Default: Caja
+        if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01.05';
+        else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.01.02';
+
+        const glosa = type === 'expense' ? `Gasto: ${description}` : `Compra a proveedor (Factura #${purchaseId})`;
+        const inventoryAccount = type === 'expense' ? '5.1.02.01' : '1.1.02.01';
+
+        const journalLines = [
+            { account_code: inventoryAccount, debit: net, glosa: glosa },
+            { account_code: paymentAccount, credit: total, glosa: glosa }
+        ];
+
+        if (iva > 0) {
+            journalLines.push({ account_code: '1.1.03.01', debit: iva, glosa: `IVA Crédito #${purchaseId}` });
+        }
+
         await createAccountingEntry({
             date,
-            description: `Compra a proveedor (Factura #${purchaseId})`,
-            type: 'compra',
+            description: glosa,
+            type: type === 'expense' ? 'gasto' : 'compra',
             document_number: purchaseId.toString(),
             userId: req.user.id,
-            lines: [
-                { account_code: '1.1.02.01', debit: net },         // Inventario MP (Neto)
-                { account_code: '1.1.03.01', debit: iva },         // IVA Crédito Fiscal
-                { account_code: '1.1.01.01', credit: total }       // Pago desde Caja/Banco (Total)
-            ]
+            lines: journalLines
         });
 
         res.json({ success: true, message: 'Compra actualizada y contabilidad recalculada exitosamente.' });
@@ -1225,17 +1337,21 @@ app.put('/api/accounts/:id', authenticateToken, checkAdmin, async (req, res) => 
 app.get('/api/quotations', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from(T.QUOTATIONS)
-        .select(`*, clients:"${T.CLIENTS}"(name)`)
+        .select(`*, clients:"${T.CLIENTS}"(name, rut, address)`)
         .order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
+    const formatted = (data || []).map(q => ({
+        ...q,
+        clients: Array.isArray(q.clients) ? q.clients[0] : q.clients
+    }));
+    res.json(formatted);
 });
 
 app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { data: quotation, error: qError } = await supabase
         .from(T.QUOTATIONS)
-        .select(`*, clients:"${T.CLIENTS}"(name)`)
+        .select(`*, clients:"${T.CLIENTS}"(name, rut, address)`)
         .eq('id', id)
         .single();
     if (qError) return res.status(500).json({ error: qError.message });
@@ -1243,7 +1359,10 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
     const { data: items, error: iError } = await supabase.from(T.QUOTE_ITEMS).select('*').eq('quotation_id', id);
     if (iError) return res.status(500).json({ error: iError.message });
 
-    res.json({ ...quotation, items });
+    // Flatten clients if it's an array
+    const clientData = Array.isArray(quotation.clients) ? quotation.clients[0] : quotation.clients;
+    console.log('API_DEBUG_QUOTE_DETAIL:', { id: quotation.id, clients: clientData });
+    res.json({ ...quotation, clients: clientData, items });
 });
 
 // --- Accounting System Endpoints ---
@@ -1324,18 +1443,29 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
     const {
         client_id, name, quantity, utility_percentage,
         total_net_cost, total_price_net, total_iva, total_price_gross,
-        items
+        budget, success_probability, products_list,
+        items, rut, address, description_proposal, images
     } = req.body;
 
+    console.log('--- CREATE QUOTATION ---');
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+
     try {
+
         // 1. Create Quotation Header
         const { data: quote, error: qError } = await supabase.from(T.QUOTATIONS).insert({
             client_id, name, quantity, utility_percentage,
             total_net_cost, total_price_net, total_iva, total_price_gross,
+            budget, success_probability, products_list,
+            rut, address, description_proposal, images,
             status: 'draft'
         }).select().single();
 
-        if (qError) throw qError;
+        if (qError) {
+            console.error('Header Error:', qError);
+            throw qError;
+        }
+        console.log('Header created:', quote.id);
 
         // 2. Insert Items
         if (items && items.length > 0) {
@@ -1344,10 +1474,66 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
                 quotation_id: quote.id
             }));
             const { error: iError } = await supabase.from(T.QUOTE_ITEMS).insert(itemsWithId);
-            if (iError) throw iError;
+            if (iError) {
+                console.error('Items Error:', iError);
+                throw iError;
+            }
+            console.log('Items inserted successfully');
         }
 
-        res.json({ success: true, id: quote.id });
+        res.json({ success: true, message: 'Cotización guardada exitosamente', id: quote.id });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    console.log('--- UPDATE QUOTATION ---', id);
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+
+    const {
+        client_id, name, quantity, utility_percentage,
+        total_net_cost, total_price_net, total_iva, total_price_gross,
+        budget, success_probability, products_list,
+        items, rut, address, description_proposal, images
+    } = req.body;
+
+    try {
+        // 1. Update Header
+        const { error: qError } = await supabase.from(T.QUOTATIONS).update({
+            client_id, name, quantity, utility_percentage,
+            total_net_cost, total_price_net, total_iva, total_price_gross,
+            budget, success_probability, products_list,
+            rut, address, description_proposal, images
+        }).eq('id', id);
+
+        if (qError) {
+            console.error('Update Header Error:', qError);
+            throw qError;
+        }
+
+        // 2. Replace Items (Delete then Insert)
+        const { error: dError } = await supabase.from(T.QUOTE_ITEMS).delete().eq('quotation_id', id);
+        if (dError) {
+            console.error('Delete Items Error:', dError);
+            throw dError;
+        }
+
+        if (items && items.length > 0) {
+            const itemsWithId = items.map(item => ({
+                ...item,
+                quotation_id: id
+            }));
+            const { error: iError } = await supabase.from(T.QUOTE_ITEMS).insert(itemsWithId);
+            if (iError) {
+                console.error('Insert Items Error:', iError);
+                throw iError;
+            }
+            console.log('Items updated successfully');
+        }
+
+        res.json({ success: true, message: 'Cotización actualizada exitosamente' });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
