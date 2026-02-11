@@ -646,7 +646,9 @@ const views = {
                       ${state.rawMaterials.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(m => `
                         <option value="${m.code}" data-price="${m.cost_net}">${m.code} | ${m.name}</option>
                       `).join('')}
+                      <option value="__otros__" style="background:#f59e0b; color:#000; font-weight:bold">➕ Otros (escribir nombre)</option>
                     </select>
+                    <input type="text" class="item-custom-name" placeholder="Nombre del producto eventual..." style="display:none; margin-top:4px; width:100%; background:var(--surface-light); border:1px solid var(--accent); color:var(--text); padding:0.4rem; border-radius:4px; font-size:0.85rem">
                   </td>
                   <td><input type="number" class="item-price" step="0.01" value="0"></td>
                   <td><input type="number" class="item-qty" step="0.01" value="0"></td>
@@ -1929,15 +1931,18 @@ window.showTransactionDetails = (type, id) => {
     }
 
     return `
-            <tr>
+            <tr${item.mp_code === '__otros__' ? ' style="background: rgba(245, 158, 11, 0.08)"' : ''}>
               <td style="text-align: center">${item.item_number}</td>
-              <td><code>${item.product_code || item.mp_code}</code></td>
-              <td>${item.product_name || item.mp_name}${item.color ? ' (' + item.color + ')' : ''}${item.size ? ' [' + item.size + ']' : ''}</td>
+              <td>${item.mp_code === '__otros__' ? '<span style="background:#f59e0b22; color:#f59e0b; padding:2px 6px; border-radius:4px; font-size:0.75rem; font-weight:700">EVENTUAL</span>' : '<code>' + (item.product_code || item.mp_code) + '</code>'}</td>
+              <td>
+                ${item.mp_code === '__otros__' ? (item.custom_name || 'Producto Eventual') : (item.product_name || item.mp_name || '?')}${item.color ? ' (' + item.color + ')' : ''}${item.size ? ' [' + item.size + ']' : ''}
+                ${item.mp_code === '__otros__' && item.id ? `<button class="btn-sm migrate-otros-btn" data-id="${item.id}" data-name="${(item.custom_name || '').replace(/"/g, '&quot;')}" data-price="${item.unit_price || 0}" style="margin-left:0.5rem; background:var(--secondary); font-size:0.65rem">📦 Migrar a MP</button>` : ''}
+              </td>
               <td style="text-align: center">${item.quantity}</td>
               ${!isProduction ? `<td style="text-align: right">$${(displayUnitPrice).toLocaleString()}</td>` : ''}
               ${!isProduction ? `<td style="text-align: right; font-weight: 600">$${(displaySubtotal).toLocaleString()}</td>` : ''}
-            </tr>
-          `;
+            </tr >
+    `;
   }).join('')}
   </tbody>
 </table>
@@ -2300,6 +2305,41 @@ window.calculateRecipeTotal = () => {
 window.showProductionHistory = () => {
   document.getElementById('prod-history-modal').style.display = 'flex';
 };
+
+window.migrateOtrosToMP = async (itemId, customName, unitPrice) => {
+  if (!confirm(`¿Desea registrar "${customName}" como una materia prima permanente?\n\nSe creará un código automático y quedará vinculada en este registro.`)) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/purchase-items/migrate-to-mp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ item_id: itemId, custom_name: customName, unit_price: unitPrice })
+    });
+    const result = await res.json();
+    if (result.success) {
+      alert(result.message);
+      fetchData(); // Refresh everything
+      // Close detail modal if open
+      const detailsModal = document.getElementById('details-modal');
+      if (detailsModal) detailsModal.style.display = 'none';
+    } else {
+      alert('Error: ' + result.error);
+    }
+  } catch (e) {
+    alert('Error al migrar: ' + e.message);
+  }
+};
+
+// Global listener for dynamic "Migrate" buttons
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('migrate-otros-btn')) {
+    const { id, name, price } = e.target.dataset;
+    window.migrateOtrosToMP(id, name, price);
+  }
+});
 
 window.populateProductDropdowns = (selector) => {
   const selects = document.querySelectorAll(selector);
@@ -4979,10 +5019,26 @@ function setupItemTable(prefix) {
 
     codeSelect.addEventListener('change', () => {
       const option = codeSelect.selectedOptions[0];
-      if (option && option.dataset.price) {
-        priceInput.value = option.dataset.price;
-      } else {
+      const customNameInput = row.querySelector('.item-custom-name');
+
+      if (codeSelect.value === '__otros__') {
+        // Show custom name input for "Otros"
+        if (customNameInput) {
+          customNameInput.style.display = 'block';
+          customNameInput.focus();
+        }
         priceInput.value = 0;
+      } else {
+        // Hide custom name input
+        if (customNameInput) {
+          customNameInput.style.display = 'none';
+          customNameInput.value = '';
+        }
+        if (option && option.dataset.price) {
+          priceInput.value = option.dataset.price;
+        } else {
+          priceInput.value = 0;
+        }
       }
       calculateRow();
     });
@@ -5094,12 +5150,18 @@ function getTableItems(prefix) {
     const price = parseNum(row.querySelector('.item-price').value);
     const qty = parseNum(row.querySelector('.item-qty').value);
     const subtotal = parseNum(row.querySelector('.item-subtotal').value);
+    const customNameInput = row.querySelector('.item-custom-name');
+    const customName = customNameInput ? customNameInput.value.trim() : '';
 
     if (code && qty > 0) {
       if (prefix === 'sale') {
         items.push({ productCode: code, quantity: qty, unitPrice: price, subtotal });
       } else {
-        items.push({ mpCode: code, quantity: qty, unitPrice: price, subtotal });
+        const item = { mpCode: code, quantity: qty, unitPrice: price, subtotal };
+        if (code === '__otros__' && customName) {
+          item.customName = customName;
+        }
+        items.push(item);
       }
     }
   });

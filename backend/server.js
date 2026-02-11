@@ -442,12 +442,48 @@ app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, asyn
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS purchase_category text DEFAULT 'general';
             ALTER TABLE production ADD COLUMN IF NOT EXISTS production_category text DEFAULT 'push';
             ALTER TABLE production ADD COLUMN IF NOT EXISTS quotation_id int8 REFERENCES quotations(id);
+            ALTER TABLE purchase_items ADD COLUMN IF NOT EXISTS custom_name text;
         `;
         const { error } = await supabase.rpc('exec_sql', { sql });
         if (error) throw error;
         res.json({ success: true, message: 'Migration successful' });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// ========== MIGRATE "OTROS" ITEM TO RAW MATERIALS ==========
+app.post('/api/purchase-items/migrate-to-mp', authenticateToken, async (req, res) => {
+    const { item_id, custom_name, unit_price } = req.body;
+    try {
+        // Generate code for eventual item: EVT-XXX
+        const { data: existing } = await supabase.from(T.MP).select('code').like('code', 'EVT-%').order('code', { ascending: false }).limit(1);
+        let nextNum = 1;
+        if (existing && existing.length > 0) {
+            const lastCode = existing[0].code;
+            const num = parseInt(lastCode.replace('EVT-', ''));
+            if (!isNaN(num)) nextNum = num + 1;
+        }
+        const newCode = `EVT-${String(nextNum).padStart(3, '0')}`;
+
+        // Create the raw material
+        const { error: mpError } = await supabase.from(T.MP).insert({
+            code: newCode,
+            name: custom_name || 'Producto Eventual',
+            unit: 'UN',
+            cost_net: unit_price || 0,
+            stock: 0
+        });
+        if (mpError) throw mpError;
+
+        // Update the purchase item to point to the new code
+        if (item_id) {
+            await supabase.from(T.PURCHASE_ITEMS).update({ mp_code: newCode }).eq('id', item_id);
+        }
+
+        res.json({ success: true, message: `Migrado como ${newCode}: ${custom_name}`, code: newCode });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -607,18 +643,33 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             for (let i = 0; i < items.length; i++) {
                 const item = items[i];
                 if (item.mpCode && item.quantity > 0) {
-                    await supabase.from(T.PURCHASE_ITEMS).insert({
+                    const insertItem = {
                         purchase_id: purchase.id,
                         item_number: i + 1,
                         mp_code: item.mpCode,
                         quantity: item.quantity,
                         unit_price: item.unitPrice,
                         subtotal: item.subtotal
-                    });
+                    };
 
-                    // Update stock
-                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
-                    await supabase.from(T.MP).update({ stock: (rm?.stock || 0) + item.quantity }).eq('code', item.mpCode);
+                    // For "Otros" items, store custom name and skip stock
+                    if (item.mpCode === '__otros__') {
+                        insertItem.custom_name = item.customName || 'Producto Eventual';
+                        insertItem.mp_code = '__otros__';
+                        try {
+                            await supabase.from(T.PURCHASE_ITEMS).insert(insertItem);
+                        } catch (e) {
+                            // If custom_name column doesn't exist yet, retry without it
+                            delete insertItem.custom_name;
+                            await supabase.from(T.PURCHASE_ITEMS).insert(insertItem);
+                        }
+                    } else {
+                        await supabase.from(T.PURCHASE_ITEMS).insert(insertItem);
+
+                        // Update stock only for real raw materials
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
+                        await supabase.from(T.MP).update({ stock: (rm?.stock || 0) + item.quantity }).eq('code', item.mpCode);
+                    }
                 }
             }
         }

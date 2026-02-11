@@ -232,10 +232,23 @@ h1 {
 .item-table input,
 .item-table select {
     width: 100%;
-    background: transparent;
+    background: var(--surface-light);
     border: none;
     color: var(--text);
     padding: 0.25rem;
+}
+
+/* Fix dropdown option readability (native OS dropdowns) */
+select option,
+select optgroup {
+    background: #1e293b;
+    color: #f8fafc;
+}
+
+.item-table select option {
+    background: #1e293b;
+    color: #f8fafc;
+    padding: 0.4rem;
 }
 
 .item-table input:focus {
