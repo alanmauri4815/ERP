@@ -535,34 +535,40 @@ const views = {
           </div>
         </div>
 
-        <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap">
-          <div class="form-group" style="flex: 1; min-width: 200px" id="pur-prov-group">
-            <label>Proveedor</label>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem">
+          <div class="form-group" id="pur-prov-group">
+            <label style="font-weight: 600">Proveedor</label>
             <select id="pur-prov">
               <option value="">Sin Proveedor / Boleta</option>
               ${state.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
             </select>
           </div>
-          <div class="form-group" style="flex: 1; min-width: 200px">
-            <label>Fecha</label>
+          <div class="form-group">
+            <label style="font-weight: 600">Fecha de Registro</label>
             <input type="date" id="pur-date" value="${new Date().toISOString().split('T')[0]}">
           </div>
-          <div class="form-group" style="flex: 1; min-width: 200px" id="pur-project-group">
-            <label>Asociar a Proyecto (Opcional)</label>
-            <select id="pur-project">
-              <option value="">Gasto General</option>
-              ${state.quotations.filter(q => q.status === 'won' || q.status === 'approved').map(q => `<option value="${q.id}">PROY: ${q.name || q.id}</option>`).join('')}
+          <div class="form-group" id="pur-project-group">
+            <label style="font-weight: 600; color: var(--secondary)">📁 Asociar a Proyecto (ABC)</label>
+            <select id="pur-project" style="border: 1px solid var(--secondary)">
+              <option value="">Gasto General (Sin Proyecto)</option>
+              <optgroup label="Cotizaciones Ganadas / Aprobadas">
+                ${state.quotations.filter(q => q.status === 'won' || q.status === 'approved').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)}</option>`).join('')}
+              </optgroup>
+              <optgroup label="Ventas Realizadas">
+                ${state.history.sales.slice(0, 10).map(s => `<option value="S-${s.id}">💰 Venta #${s.id} - ${s.client_name || 'Vta Directa'}</option>`).join('')}
+              </optgroup>
             </select>
+            <small style="font-size: 0.7rem; opacity: 0.7">Vincula este costo a un ingreso para calcular utilidad real.</small>
           </div>
         </div>
 
         <div class="form-group" id="pur-desc-group" style="display:none; margin-bottom: 1rem">
-          <label>Descripción del Gasto</label>
-          <input type="text" id="pur-description" placeholder="Ej: Compra de hilos en Cordonería Central, Almuerzo terreno, etc.">
+          <label style="font-weight: 600">Descripción / Motivo del Gasto</label>
+          <input type="text" id="pur-description" placeholder="Ej: Compra de hilos, Almuerzo terreno, etc.">
         </div>
 
-        <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
-          <div class="form-group" style="flex: 1">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; background: rgba(255,255,255,0.02); padding: 1rem; border-radius: 8px">
+          <div class="form-group">
             <label>Método de Pago</label>
             <select id="pur-payment-method">
               <option value="transfer">Transferencia</option>
@@ -571,14 +577,14 @@ const views = {
               <option value="cash">Efectivo / Caja Chica</option>
             </select>
           </div>
-          <div class="form-group" style="flex: 1">
-            <label>Cuenta / Fondo de Origen</label>
+          <div class="form-group">
+            <label>Cuenta / Fondo</label>
             <select id="pur-account">
               <option value="">Seleccionar cuenta...</option>
               ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
             </select>
           </div>
-          <div class="form-group" style="flex: 1">
+          <div class="form-group">
             <label>Tipo Documento</label>
             <select id="pur-doc-type">
               <option value="factura">Factura</option>
@@ -3723,16 +3729,20 @@ function renderView(viewName) {
       const summarySection = document.getElementById('pur-summary-section');
       const descGroup = document.getElementById('pur-desc-group');
       const provGroup = document.getElementById('pur-prov-group');
+      const projectGroup = document.getElementById('pur-project-group');
+      const titleEl = document.getElementById('buy-modal-title');
 
-      if (!mpContainer || !expenseContainer || !summarySection || !descGroup || !provGroup) return;
+      if (!mpContainer || !expenseContainer || !summarySection || !descGroup || !provGroup || !projectGroup) return;
 
       if (type === 'expense') {
+        if (titleEl) titleEl.textContent = 'Informe de Gasto / Caja Chica';
         mpContainer.style.display = 'none';
         expenseContainer.style.display = 'block';
         summarySection.style.display = 'none';
         descGroup.style.display = 'block';
         provGroup.style.display = 'none';
       } else {
+        if (titleEl) titleEl.textContent = 'Nueva Compra de Insumos (Materiales)';
         mpContainer.style.display = 'block';
         expenseContainer.style.display = 'none';
         summarySection.style.display = 'block';
@@ -3775,13 +3785,15 @@ function renderView(viewName) {
       const editId = document.getElementById('pur-edit-id')?.value;
       const type = document.getElementById('pur-type')?.value;
 
+      const projectVal = document.getElementById('pur-project')?.value || null;
       const body = {
         type: type,
         date: document.getElementById('pur-date')?.value,
         payment_method: document.getElementById('pur-payment-method')?.value,
         account_id: document.getElementById('pur-account')?.value || null,
         document_type: document.getElementById('pur-doc-type')?.value,
-        quotation_id: document.getElementById('pur-project')?.value || null
+        quotation_id: (projectVal && !projectVal.includes('S-')) ? parseInt(projectVal) : null,
+        project_ref: (projectVal && projectVal.includes('S-')) ? projectVal : (projectVal || null)
       };
 
       if (type === 'mp') {

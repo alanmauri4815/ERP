@@ -438,6 +438,7 @@ app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, asyn
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS description text;
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS type text DEFAULT 'mp';
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS quotation_id int8 REFERENCES quotations(id);
+            ALTER TABLE compras ADD COLUMN IF NOT EXISTS project_ref text;
         `;
         const { error } = await supabase.rpc('exec_sql', { sql });
         if (error) throw error;
@@ -488,7 +489,7 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
                 ...p,
                 provider_name: provMap[p.provider_id] || 'Sin Proveedor',
                 account_name: accMap[p.account_id] || 'N/A',
-                project_name: quoteMap[p.quotation_id] || 'N/A',
+                project_name: quoteMap[p.quotation_id] || p.project_ref || 'N/A',
                 items: items
             });
         }
@@ -558,7 +559,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 });
 
 app.post('/api/purchases', authenticateToken, async (req, res) => {
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -577,7 +578,8 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             ...purchaseData,
             type: type || 'mp',
             description: description || null,
-            quotation_id: quotation_id || null
+            quotation_id: (quotation_id && !isNaN(quotation_id)) ? quotation_id : null,
+            project_ref: project_ref || null
         }).select().single();
 
         if (result.error && result.error.message.includes('column') && result.error.message.includes('does not exist')) {
@@ -650,7 +652,7 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
 // ========== UPDATE PURCHASE (with accounting recalculation) ==========
 app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     const purchaseId = req.params.id;
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -678,7 +680,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             ...purchaseData,
             type: type || 'mp',
             description: description || null,
-            quotation_id: quotation_id || null
+            quotation_id: (quotation_id && !isNaN(quotation_id)) ? quotation_id : null,
+            project_ref: project_ref || null
         }).eq('id', purchaseId);
 
         if (result.error && result.error.message.includes('column')) {
