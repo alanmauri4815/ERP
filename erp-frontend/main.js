@@ -449,6 +449,11 @@ const views = {
     </div>
 
     <!-- Production Modal -->
+    <datalist id="production-products-list">
+      ${state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
+        <option value="${p.code}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>
+      `).join('')}
+    </datalist>
     <div id="production-modal" class="modal" style="display:none">
       <div class="card modal-content modal-wide">
         <header>
@@ -487,9 +492,10 @@ const views = {
           <thead>
             <tr>
               <th style="width: 50px">Ítem</th>
-              <th>Producto a Producir</th>
+              <th>Producto (Código o Nuevo)</th>
               <th style="width: 100px">Cantidad</th>
               <th style="width: 120px">Costo M.O. ($)</th>
+              <th style="width: 40px" title="Registrar en lista maestra si el código no existe">💎</th>
             </tr>
           </thead>
           <tbody id="production-items-body">
@@ -497,15 +503,11 @@ const views = {
               <tr class="item-row">
                 <td style="text-align: center; color: var(--text-muted)">${i + 1}</td>
                 <td>
-                  <select class="prod-item-code" data-index="${i}">
-                    <option value="">Seleccione...</option>
-                    ${state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
-                      <option value="${p.code}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>
-                    `).join('')}
-                  </select>
+                  <input type="text" class="prod-item-code" data-index="${i}" list="production-products-list" placeholder="Código o producto nuevo..." style="width:100%">
                 </td>
                 <td><input type="number" class="prod-item-qty" step="1" value="0" placeholder="0"></td>
                 <td><input type="number" class="prod-item-mo" step="0.01" value="0"></td>
+                <td style="text-align: center"><input type="checkbox" class="prod-item-register" title="Registrar nuevo producto"></td>
               </tr>
             `).join('')}
           </tbody>
@@ -2349,17 +2351,24 @@ document.addEventListener('click', (e) => {
 window.populateProductDropdowns = (selector) => {
   const selects = document.querySelectorAll(selector);
   const optionsHtml = `
-  < option value = "" > Seleccione...</option >
+  <option value="">Seleccione...</option>
     ${state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
       <option value="${p.code}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>
-    `).join('')
-    }
+    `).join('')}
 `;
   selects.forEach(s => {
     const currentVal = s.value;
     s.innerHTML = optionsHtml;
     s.value = currentVal;
   });
+
+  // Also update datalist if present
+  const dl = document.getElementById('production-products-list');
+  if (dl) {
+    dl.innerHTML = state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
+      <option value="${p.code}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>
+    `).join('');
+  }
 };
 
 window.openProductionModal = (code) => {
@@ -2373,9 +2382,11 @@ window.openProductionModal = (code) => {
   const selects = modal.querySelectorAll('.prod-item-code');
   const mtos = modal.querySelectorAll('.prod-item-mo');
   const qtys = modal.querySelectorAll('.prod-item-qty');
+  const regs = modal.querySelectorAll('.prod-item-register');
   selects.forEach(s => s.value = '');
   qtys.forEach(q => q.value = '0');
   mtos.forEach(m => m.value = '0');
+  regs.forEach(r => r.checked = false);
 
   if (code) {
     selects[0].value = code;
@@ -2404,6 +2415,7 @@ window.editProduction = (id) => {
     row.querySelector('.prod-item-code').value = '';
     row.querySelector('.prod-item-qty').value = '0';
     row.querySelector('.prod-item-mo').value = '0';
+    if (row.querySelector('.prod-item-register')) row.querySelector('.prod-item-register').checked = false;
   });
 
   // Fill data
@@ -4493,28 +4505,68 @@ function renderView(viewName) {
 
       const items = [];
       const rows = document.querySelectorAll('#production-items-body .item-row');
-      rows.forEach(row => {
-        const productCode = row.querySelector('.prod-item-code').value;
-        const quantity = parseFloat(row.querySelector('.prod-item-qty').value);
-        const mo_cost = parseFloat(row.querySelector('.prod-item-mo').value) || 0;
-        if (productCode && quantity > 0) {
-          items.push({ productCode, quantity, mo_cost });
+
+      const btn = document.getElementById('btn-submit-production');
+      btn.disabled = true;
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '⌛ Procesando...';
+
+      try {
+        for (const row of rows) {
+          const productCode = row.querySelector('.prod-item-code').value.trim();
+          const quantity = parseFloat(row.querySelector('.prod-item-qty').value);
+          const mo_cost = parseFloat(row.querySelector('.prod-item-mo').value) || 0;
+          const shouldRegister = row.querySelector('.prod-item-register').checked;
+
+          if (productCode && quantity > 0) {
+            // Check if product exists in master
+            const exists = state.products.find(p => p.code.toLowerCase() === productCode.toLowerCase());
+
+            if (shouldRegister && !exists) {
+              const name = prompt(`Nuevo producto detectado: "${productCode}"\nIngrese el nombre para registrarlo en el maestro:`, productCode);
+              if (name) {
+                const res = await postData('/products', {
+                  code: productCode,
+                  name,
+                  type: 'terminado',
+                  price_sale: 0,
+                  cost_unit: 0
+                });
+                if (res) {
+                  // Actualizar estado local para evitar re-prompts
+                  state.products.push({ code: productCode, name, type: 'terminado', stock: 0 });
+                  window.populateProductDropdowns('.prod-item-code');
+                }
+              }
+            }
+            items.push({ productCode, quantity, mo_cost });
+          }
         }
-      });
 
-      if (items.length === 0) return alert('Debe agregar al menos un ítem');
+        if (items.length === 0) {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+          return alert('Debe agregar al menos un ítem');
+        }
 
-      const body = {
-        date: document.getElementById('prod-date').value,
-        items,
-        production_category: document.getElementById('prod-category')?.value || 'push',
-        quotation_id: document.getElementById('prod-quotation')?.value || null
-      };
+        const body = {
+          date: document.getElementById('prod-date').value,
+          items,
+          production_category: document.getElementById('prod-category')?.value || 'push',
+          quotation_id: document.getElementById('prod-quotation')?.value || null
+        };
 
-      if (isEditMode) {
-        await putData(`/production/${editId}`, body);
-      } else {
-        await postData('/production', body);
+        if (isEditMode) {
+          await putData(`/production/${editId}`, body);
+        } else {
+          await postData('/production', body);
+        }
+      } catch (err) {
+        console.error('Error saving production:', err);
+        alert('Error al guardar la producción: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
       }
 
       document.getElementById('production-modal').style.display = 'none';
