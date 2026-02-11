@@ -574,17 +574,20 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         };
 
         // Try to insert with ALL columns first
-        let result = await supabase.from(T.PURCHASES).insert({
+        const fullData = {
             ...purchaseData,
             type: type || 'mp',
             description: description || null,
             quotation_id: (quotation_id && !isNaN(quotation_id)) ? quotation_id : null,
             project_ref: project_ref || null
-        }).select().single();
+        };
 
-        if (result.error && result.error.message.includes('column') && result.error.message.includes('does not exist')) {
-            console.warn("Retrying purchase insert without extended columns...", result.error.message);
-            result = await supabase.from(T.PURCHASES).insert(purchaseData).select().single();
+        let result = await supabase.from(T.PURCHASES).insert(fullData).select().single();
+
+        if (result.error && result.error.message.includes('column')) {
+            console.warn("Retrying purchase insert without project_ref...", result.error.message);
+            const { project_ref: _, ...fallbackData } = fullData;
+            result = await supabase.from(T.PURCHASES).insert(fallbackData).select().single();
         }
 
         if (result.error) throw result.error;
@@ -676,16 +679,20 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             document_type: document_type || 'factura'
         };
 
-        let result = await supabase.from(T.PURCHASES).update({
+        const fullUpdate = {
             ...purchaseData,
             type: type || 'mp',
             description: description || null,
             quotation_id: (quotation_id && !isNaN(quotation_id)) ? quotation_id : null,
             project_ref: project_ref || null
-        }).eq('id', purchaseId);
+        };
+
+        let result = await supabase.from(T.PURCHASES).update(fullUpdate).eq('id', purchaseId);
 
         if (result.error && result.error.message.includes('column')) {
-            result = await supabase.from(T.PURCHASES).update(purchaseData).eq('id', purchaseId);
+            console.warn("Retrying purchase update without project_ref...");
+            const { project_ref: _, ...fallbackUpdate } = fullUpdate;
+            result = await supabase.from(T.PURCHASES).update(fallbackUpdate).eq('id', purchaseId);
         }
         if (result.error) throw result.error;
 
