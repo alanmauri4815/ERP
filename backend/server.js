@@ -1545,14 +1545,26 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
     try {
 
         // 1. Create Quotation Header
-        const { data: quote, error: qError } = await supabase.from(T.QUOTATIONS).insert({
+        const insertData = {
             client_id, name, quantity, utility_percentage,
             total_net_cost, total_price_net, total_iva, total_price_gross,
             budget, success_probability, products_list,
             rut, address, description_proposal, images,
             external_quote_id, purchase_order_id,
             status: 'draft'
-        }).select().single();
+        };
+
+        let { data: quote, error: qError } = await supabase.from(T.QUOTATIONS).insert(insertData).select().single();
+
+        // Fallback if columns don't exist
+        if (qError && qError.message.includes('column') && (qError.message.includes('external_quote_id') || qError.message.includes('purchase_order_id'))) {
+            console.warn('Fallback: Columns missing. Retrying without external_quote_id and purchase_order_id');
+            delete insertData.external_quote_id;
+            delete insertData.purchase_order_id;
+            const retry = await supabase.from(T.QUOTATIONS).insert(insertData).select().single();
+            quote = retry.data;
+            qError = retry.error;
+        }
 
         if (qError) {
             console.error('Header Error:', qError);
@@ -1595,13 +1607,24 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
 
     try {
         // 1. Update Header
-        const { error: qError } = await supabase.from(T.QUOTATIONS).update({
+        const updateData = {
             client_id, name, quantity, utility_percentage,
             total_net_cost, total_price_net, total_iva, total_price_gross,
             budget, success_probability, products_list,
             rut, address, description_proposal, images,
             external_quote_id, purchase_order_id
-        }).eq('id', id);
+        };
+
+        let { error: qError } = await supabase.from(T.QUOTATIONS).update(updateData).eq('id', id);
+
+        // Fallback if columns don't exist
+        if (qError && qError.message.includes('column') && (qError.message.includes('external_quote_id') || qError.message.includes('purchase_order_id'))) {
+            console.warn('Fallback: Columns missing. Retrying without external_quote_id and purchase_order_id');
+            delete updateData.external_quote_id;
+            delete updateData.purchase_order_id;
+            const retry = await supabase.from(T.QUOTATIONS).update(updateData).eq('id', id);
+            qError = retry.error;
+        }
 
         if (qError) {
             console.error('Update Header Error:', qError);
