@@ -1969,14 +1969,14 @@ window.showTransactionDetails = (type, id) => {
           </tr>
           ${transaction.payment_method === 'machine' ? `
             <tr style="color: var(--danger); font-size: 0.9rem">
-              <td>Comisión Máquina (3,33%)</td>
-              <td style="text-align: right">-$${(transaction.commission || Math.round(transaction.total * 0.0333)).toLocaleString()}</td>
+              <td>Comisión Máquina (3,45%)</td>
+              <td style="text-align: right">-$${(transaction.commission || Math.round(transaction.total * 0.0345)).toLocaleString()}</td>
             </tr>
           ` : ''}
           ${type === 'sale' ? `
             <tr style="font-size: 1rem; border-top: 2px solid var(--border); background: rgba(var(--success-rgb), 0.1)">
               <td style="padding: 0.75rem 0.5rem"><strong>Ingreso Real (Monto Líquido)</strong></td>
-              <td style="text-align: right; padding: 0.75rem 0.5rem"><strong>$${(transaction.total - (transaction.commission || (transaction.payment_method === 'machine' ? Math.round(transaction.total * 0.0333) : 0))).toLocaleString()}</strong></td>
+              <td style="text-align: right; padding: 0.75rem 0.5rem"><strong>$${(transaction.total - (transaction.commission || (transaction.payment_method === 'machine' ? Math.round(transaction.total * 0.0345) : 0))).toLocaleString()}</strong></td>
             </tr>
           ` : ''}
         </table>
