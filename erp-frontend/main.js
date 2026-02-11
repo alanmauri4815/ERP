@@ -2812,20 +2812,20 @@ views.quotations = () => {
           </select>
         </div>
         <div class="form-group" style="grid-column: span 2">
-          <label style="color:var(--secondary); font-weight:700">ID Cotización (Municipalidad/Cliente)</label>
-          <input type="text" id="quote-external-id" placeholder="Ej: 1216088-250-COT25" style="border:1px solid var(--secondary)">
-        </div>
-        <div class="form-group" style="grid-column: span 2">
-          <label style="color:var(--secondary); font-weight:700">Orden de Compra (OC)</label>
-          <input type="text" id="quote-purchase-order" placeholder="Ej: 1216088-295-AG25" style="border:1px solid var(--secondary)">
-        </div>
-        <div class="form-group" style="grid-column: span 2">
           <label>RUT Cliente</label>
           <input type="text" id="quote-rut" placeholder="Ej: 76.123.456-7">
         </div>
         <div class="form-group" style="grid-column: span 2">
           <label>Dirección Cliente</label>
           <input type="text" id="quote-address" placeholder="Ej: Av. Vitacura 1234, Oficina 501">
+        </div>
+        <div class="form-group" style="grid-column: span 1">
+          <label style="color:var(--secondary); font-weight:700">ID Cotización</label>
+          <input type="text" id="quote-external-id" placeholder="Ej: 1216088..." style="border:1px solid var(--secondary)">
+        </div>
+        <div class="form-group" style="grid-column: span 1">
+          <label style="color:var(--secondary); font-weight:700">OC (Orden Compra)</label>
+          <input type="text" id="quote-purchase-order" placeholder="Ej: 1216088..." style="border:1px solid var(--secondary)">
         </div>
         <div class="form-group" style="grid-column: span 4">
           <label>Descripción de la Propuesta (Aparece en PDF)</label>
