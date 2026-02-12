@@ -1806,7 +1806,7 @@ function renderHistoryTable(type) {
         </tr>
       </thead>
       <tbody>
-        ${flatItems.reverse().map(it => {
+        ${flatItems.map(it => {
       const pcat = it.production_category || 'push';
       return `
               <tr>
@@ -3921,8 +3921,15 @@ async function postData(endpoint, body) {
     if (result.success) {
       alert(result.message || 'Operación exitosa');
       fetchData(); // Sincronizar stock
-    } else alert('Error: ' + result.error);
-  } catch (e) { alert('Error de conexión'); }
+      return result;
+    } else {
+      alert('Error: ' + result.error);
+      return null;
+    }
+  } catch (e) {
+    alert('Error de conexión');
+    return null;
+  }
 }
 
 function renderView(viewName) {
@@ -4270,19 +4277,22 @@ function renderView(viewName) {
 
       if (body.items.length === 0) return alert('Debe agregar al menos un ítem');
 
+      let res;
       if (isEditMode) {
-        await putData(`/sales/${editId}`, body);
+        res = await putData(`/sales/${editId}`, body);
       } else {
-        await postData('/sales', body);
+        res = await postData('/sales', body);
       }
 
-      // Limpiar y cerrar
-      document.getElementById('sale-modal').style.display = 'none';
-      document.getElementById('sale-edit-mode').value = 'false';
-      document.getElementById('sale-edit-id').value = '';
-      document.getElementById('sale-modal-title').textContent = 'Nueva Venta de Productos';
-      document.getElementById('btn-submit-sale').textContent = 'Registrar Venta';
-      fetchData();
+      if (res) {
+        // Limpiar y cerrar
+        document.getElementById('sale-modal').style.display = 'none';
+        document.getElementById('sale-edit-mode').value = 'false';
+        document.getElementById('sale-edit-id').value = '';
+        document.getElementById('sale-modal-title').textContent = 'Nueva Venta de Productos';
+        document.getElementById('btn-submit-sale').textContent = 'Registrar Venta';
+        fetchData();
+      }
     });
   }
 
@@ -4570,10 +4580,25 @@ function renderView(viewName) {
           quotation_id: document.getElementById('prod-quotation')?.value || null
         };
 
+        let res;
         if (isEditMode) {
-          await putData(`/production/${editId}`, body);
+          res = await putData(`/production/${editId}`, body);
         } else {
-          await postData('/production', body);
+          res = await postData('/production', body);
+        }
+
+        if (res) {
+          document.getElementById('production-modal').style.display = 'none';
+          document.getElementById('prod-edit-mode').value = 'false';
+          document.getElementById('prod-edit-id').value = '';
+          document.getElementById('prod-modal-title').textContent = 'Nueva Orden de Producción';
+          document.getElementById('btn-prod-text').textContent = 'Iniciar Producción';
+          // Reset category
+          const catSel = document.getElementById('prod-category');
+          if (catSel) catSel.value = 'push';
+          const projGroup = document.getElementById('prod-project-group');
+          if (projGroup) projGroup.style.display = 'none';
+          fetchData();
         }
       } catch (err) {
         console.error('Error saving production:', err);
@@ -4582,18 +4607,6 @@ function renderView(viewName) {
         btn.disabled = false;
         btn.innerHTML = originalText;
       }
-
-      document.getElementById('production-modal').style.display = 'none';
-      document.getElementById('prod-edit-mode').value = 'false';
-      document.getElementById('prod-edit-id').value = '';
-      document.getElementById('prod-modal-title').textContent = 'Nueva Orden de Producción';
-      document.getElementById('btn-prod-text').textContent = 'Iniciar Producción';
-      // Reset category
-      const catSel = document.getElementById('prod-category');
-      if (catSel) catSel.value = 'push';
-      const projGroup = document.getElementById('prod-project-group');
-      if (projGroup) projGroup.style.display = 'none';
-      fetchData();
     });
   }
 
