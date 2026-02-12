@@ -4556,6 +4556,12 @@ function renderView(viewName) {
             // Check if product exists in master
             const exists = state.products.find(p => p.code.toLowerCase() === productCode.toLowerCase());
 
+            if (!exists && !shouldRegister) {
+              btn.disabled = false;
+              btn.innerHTML = originalText;
+              return alert(`El producto "${productCode}" no existe en el maestro. \n\nMarque la casilla 💎 para registrarlo automáticamente o use un código existente.`);
+            }
+
             if (shouldRegister && !exists) {
               const name = prompt(`Nuevo producto detectado: "${productCode}"\nIngrese el nombre para registrarlo en el maestro:`, productCode);
               if (name) {

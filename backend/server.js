@@ -1117,13 +1117,14 @@ app.post('/api/production', authenticateToken, async (req, res) => {
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.productCode && item.quantity > 0) {
-                await supabase.from(T.PRODUCTION_ITEMS).insert({
+                const { error: itemError } = await supabase.from(T.PRODUCTION_ITEMS).insert({
                     production_id: prod.id,
                     item_number: i + 1,
                     product_code: item.productCode,
                     quantity: item.quantity,
                     mo_cost: item.mo_cost || 0
                 });
+                if (itemError) throw new Error(`Error en ítem ${i + 1} (${item.productCode}): ${itemError.message}`);
 
                 // Update product stock
                 const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.productCode).single();
