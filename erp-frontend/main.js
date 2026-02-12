@@ -1771,67 +1771,53 @@ function renderHistoryTable(type) {
   if (type === 'production') {
     const PROD_CAT_LABELS = { push: '🚀 Push', pull: '🔄 Pull' };
     const PROD_CAT_COLORS = { push: '#f59e0b', pull: '#3b82f6' };
-    const flatItems = [];
-    data.forEach(p => {
-      if (p.items) {
-        p.items.forEach(it => {
-          flatItems.push({
-            transId: p.id,
-            date: p.date.split('T')[0],
-            production_category: p.production_category || 'push',
-            project_name: p.project_name || null,
-            purchase_order_id: p.purchase_order_id || null,
-            ...it
-          });
-        });
-      }
-    });
 
     return `
-  <div class="table-container">
-    <table>
-      <thead>
-        <tr>
-          <th>ID</th>
-          <th>Ítem</th>
-          <th>Fecha</th>
-          <th>Método</th>
-          <th>Ref / OC</th>
-          <th>Producto</th>
-          <th>Nombre P</th>
-          <th>Cant</th>
-          <th>Costo M.O.</th>
-          <th>T. M.O.</th>
-          <th>Acción</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${flatItems.map(it => {
-      const pcat = it.production_category || 'push';
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Fecha</th>
+            <th>Método</th>
+            <th>Proyecto / Cotización</th>
+            <th style="text-align: center">Cant. Prod</th>
+            <th style="text-align: right">Costo M.O. Total</th>
+            <th style="text-align: center">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.map(p => {
+      const pcat = p.production_category || 'push';
+      const totalQty = (p.items || []).reduce((sum, it) => sum + (it.quantity || 0), 0);
+      const totalMO = (p.items || []).reduce((sum, it) => sum + ((it.mo_cost || 0) * (it.quantity || 0)), 0);
       return `
               <tr>
-                <td><strong>#${it.transId}</strong></td>
-                <td>${it.item_number}</td>
-                <td>${it.date}</td>
+                <td><strong>#${p.id}</strong></td>
+                <td>${p.date ? p.date.split('T')[0] : '-'}</td>
                 <td>
-                  <span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.72rem; font-weight:700; background:${PROD_CAT_COLORS[pcat] || '#6b7280'}22; color:${PROD_CAT_COLORS[pcat] || '#6b7280'}; border:1px solid ${PROD_CAT_COLORS[pcat] || '#6b7280'}44">
+                  <span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.75rem; font-weight:700; background:${PROD_CAT_COLORS[pcat] || '#6b7280'}22; color:${PROD_CAT_COLORS[pcat] || '#6b7280'}; border:1px solid ${PROD_CAT_COLORS[pcat] || '#6b7280'}44">
                     ${PROD_CAT_LABELS[pcat] || pcat}
                   </span>
-                  ${it.project_name ? '<br><small>📁 ' + it.project_name + '</small>' : ''}
+                  ${p.project_name ? '<br><small>📁 ' + p.project_name + '</small>' : ''}
                 </td>
-                <td><small style="font-weight:700; color:var(--secondary)">${it.purchase_order_id || '-'}</small></td>
-                <td>${it.product_code}</td>
-                <td>${it.product_name} <small>(${it.color || '-'})</small></td>
-                <td style="text-align: center">${it.quantity}</td>
-                <td style="text-align: right">$${(it.mo_cost || 0).toLocaleString()}</td>
-                <td style="text-align: right">$${((it.mo_cost || 0) * it.quantity).toLocaleString()}</td>
-                <td style="text-align: center"><button class="btn-sm" onclick="window.editProduction(${it.transId})">✏️ Editar</button></td>
+                <td>
+                   <small style="font-weight:700; color:var(--secondary)">${p.purchase_order_id || '-'}</small>
+                </td>
+                <td style="text-align: center">${totalQty}</td>
+                <td style="text-align: right">$${totalMO.toLocaleString()}</td>
+                <td style="text-align: center">
+                   <div style="display: flex; gap: 0.3rem; justify-content: center">
+                     <button class="btn-sm" onclick="window.showTransactionDetails('production', '${p.id}')">👁️ Ver</button>
+                     <button class="btn-sm" onclick="window.editProduction(${p.id})" style="background:var(--secondary)">✏️ Editar</button>
+                   </div>
+                </td>
               </tr>
             `;
     }).join('')}
-      </tbody>
-    </table>
-      </div>
+        </tbody>
+      </table>
+    </div>
   `;
   }
   if (type === 'purchases') {
@@ -1928,8 +1914,8 @@ window.showTransactionDetails = (type, id) => {
       <th>Código</th>
       <th>Nombre</th>
       <th style="width: 80px; text-align: center">Cant</th>
-      ${!isProduction ? `<th style="width: 110px; text-align: right">Precio</th>` : ''}
-      ${!isProduction ? `<th style="width: 130px; text-align: right">Subtotal</th>` : ''}
+      <th style="width: 110px; text-align: right">${isProduction ? 'Costo M.O.' : 'Precio'}</th>
+      <th style="width: 130px; text-align: right">${isProduction ? 'T. M.O.' : 'Subtotal'}</th>
     </tr>
   </thead>
   <tbody>
@@ -1959,15 +1945,24 @@ window.showTransactionDetails = (type, id) => {
                 ${item.mp_code === '__otros__' && item.id ? `<button class="btn-sm migrate-otros-btn" data-id="${item.id}" data-name="${(item.custom_name || '').replace(/"/g, '&quot;')}" data-price="${item.unit_price || 0}" style="margin-left:0.5rem; background:var(--secondary); font-size:0.65rem">📦 Migrar a MP</button>` : ''}
               </td>
               <td style="text-align: center">${item.quantity}</td>
-              ${!isProduction ? `<td style="text-align: right">$${(displayUnitPrice).toLocaleString()}</td>` : ''}
-              ${!isProduction ? `<td style="text-align: right; font-weight: 600">$${(displaySubtotal).toLocaleString()}</td>` : ''}
+              <td style="text-align: right">$${isProduction ? (item.mo_cost || 0).toLocaleString() : (displayUnitPrice).toLocaleString()}</td>
+              <td style="text-align: right; font-weight: 600">$${isProduction ? ((item.mo_cost || 0) * item.quantity).toLocaleString() : (displaySubtotal).toLocaleString()}</td>
             </tr >
     `;
   }).join('')}
   </tbody>
 </table>
 
-      ${!isProduction ? `
+      ${isProduction ? `
+      <div class="summary-section">
+        <table class="summary-table">
+          <tr style="font-size: 1.1rem; border-top: 2px solid var(--border); color: var(--secondary)">
+             <td>COSTO M.O. TOTAL</td>
+             <td style="text-align: right"><strong>$${(transaction.items.reduce((sum, it) => sum + ((it.mo_cost || 0) * it.quantity), 0)).toLocaleString()}</strong></td>
+          </tr>
+        </table>
+      </div>
+      ` : `
       <div class="summary-section">
         <table class="summary-table">
           <tr><td>Sub Total (Detalle)</td><td style="text-align: right">$${(transaction.net || 0).toLocaleString()}</td></tr>
@@ -2000,8 +1995,8 @@ window.showTransactionDetails = (type, id) => {
             </tr>
           ` : ''}
         </table>
-        </div>
-      ` : ''}
+      </div>
+      `}
       
       <div class="form-actions">
         ${!isProduction ? `<button style="background: var(--accent)" onclick="window.editTransaction('${type}', '${transaction.id}')">✏️ Editar</button>` : ''}
