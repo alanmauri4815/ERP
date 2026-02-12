@@ -1167,6 +1167,116 @@ app.post('/api/production', authenticateToken, async (req, res) => {
     }
 });
 
+app.put('/api/production/:id', authenticateToken, async (req, res) => {
+    const prodId = req.params.id;
+    const { items, date, production_category, quotation_id } = req.body;
+    const productionDate = date || new Date().toISOString();
+
+    try {
+        // 1. REVERSE OLD STOCK IMPACT
+        const { data: oldItems } = await supabase.from(T.PRODUCTION_ITEMS).select('*').eq('production_id', prodId);
+
+        if (oldItems) {
+            for (const item of oldItems) {
+                // Subtract from PT stock
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.product_code).single();
+                if (p) {
+                    await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) - item.quantity }).eq('code', item.product_code);
+                }
+
+                // Add back to MP stock based on recipe
+                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', item.product_code);
+                if (recipe) {
+                    for (const r of recipe) {
+                        const consumptionQty = (r.quantity * item.quantity);
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).single();
+                        if (rm) {
+                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + consumptionQty }).eq('code', r.mp_code);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. DELETE OLD ITEMS
+        await supabase.from(T.PRODUCTION_ITEMS).delete().eq('production_id', prodId);
+
+        // 3. UPDATE PRODUCTION HEADER
+        const updateData = { date: productionDate };
+        if (production_category) updateData.production_category = production_category;
+        if (quotation_id && !isNaN(quotation_id)) updateData.quotation_id = parseInt(quotation_id);
+
+        const { error: updateError } = await supabase.from(T.PRODUCTION).update(updateData).eq('id', prodId);
+        if (updateError) throw updateError;
+
+        // 4. INSERT NEW ITEMS AND APPLY NEW STOCK IMPACT
+        let totalProductionCost = 0;
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.productCode && item.quantity > 0) {
+                const { error: itemError } = await supabase.from(T.PRODUCTION_ITEMS).insert({
+                    production_id: prodId,
+                    item_number: i + 1,
+                    product_code: item.productCode,
+                    quantity: item.quantity,
+                    mo_cost: item.mo_cost || 0
+                });
+                if (itemError) throw new Error(`Error en ítem ${i + 1} (${item.productCode}): ${itemError.message}`);
+
+                // Update product stock
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.productCode).single();
+                await supabase.from(T.PRODUCTS).update({ stock: (p?.stock || 0) + item.quantity }).eq('code', item.productCode);
+
+                // Update MP stock based on recipe
+                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', item.productCode);
+                if (recipe) {
+                    for (const r of recipe) {
+                        const consumptionQty = (r.quantity * item.quantity);
+                        const consumptionCost = r.unit_cost ? (r.unit_cost * item.quantity) : 0;
+                        totalProductionCost += consumptionCost;
+
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).single();
+                        const newStock = (rm?.stock || 0) - consumptionQty;
+                        await supabase.from(T.MP).update({ stock: newStock }).eq('code', r.mp_code);
+                        await checkLowStockAlerts(r.mp_code);
+                    }
+                }
+            }
+        }
+
+        // 5. UPDATE ACCOUNTING
+        // Delete old entry for this production
+        const { data: oldEntries } = await supabase
+            .from(T.ACCOUNTING_ENTRIES)
+            .select('id')
+            .eq('description', `Consumo de Materias Primas - Producción #${prodId}`)
+            .eq('type', 'consumo');
+
+        if (oldEntries && oldEntries.length > 0) {
+            const entryIds = oldEntries.map(e => e.id);
+            await supabase.from(T.ACCOUNTING_LINES).delete().in('asiento_id', entryIds);
+            await supabase.from(T.ACCOUNTING_ENTRIES).delete().in('id', entryIds);
+        }
+
+        if (totalProductionCost > 0) {
+            await createAccountingEntry({
+                date: productionDate,
+                description: `Consumo de Materias Primas - Producción #${prodId}`,
+                type: 'consumo',
+                userId: req.user.id,
+                lines: [
+                    { account_code: '1.1.02.02', debit: totalProductionCost }, // Inventario PT
+                    { account_code: '1.1.02.01', credit: totalProductionCost } // Inventario MP
+                ]
+            });
+        }
+
+        res.json({ success: true, message: 'Producción actualizada exitosamente.' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Master routes (POST, PUT, DELETE) follow similar patterns...
 // Adding some key ones
 app.post('/api/products', authenticateToken, async (req, res) => {
