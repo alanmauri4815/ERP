@@ -486,15 +486,26 @@ const views = {
               </select>
             </div>
           </div>
+          
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05)">
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600; color: var(--accent)">📦 Costo Materiales / Insumos ($)</label>
+              <input type="number" id="prod-material-cost" value="0" style="border-color: var(--accent)44">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600; color: var(--warning)">⚙️ Gastos Generales / Varios ($)</label>
+              <input type="number" id="prod-general-expenses" value="0" style="border-color: var(--warning)44">
+            </div>
+          </div>
         </div>
 
         <table class="item-table">
           <thead>
             <tr>
               <th style="width: 50px">Ítem</th>
-              <th>Producto (Código o Nuevo)</th>
-              <th style="width: 100px">Cantidad</th>
-              <th style="width: 120px">Costo M.O. ($)</th>
+              <th style="width: 280px">Producto (Código o Nuevo)</th>
+              <th style="width: 100px; text-align: center">Cantidad</th>
+              <th style="width: 120px; text-align: center">Costo M.O. ($)</th>
               <th style="width: 40px" title="Registrar en lista maestra si el código no existe">💎</th>
             </tr>
           </thead>
@@ -1779,18 +1790,25 @@ function renderHistoryTable(type) {
           <tr>
             <th>ID</th>
             <th>Fecha</th>
-            <th>Método</th>
-            <th>Proyecto / Cotización</th>
-            <th style="text-align: center">Cant. Prod</th>
-            <th style="text-align: right">Costo M.O. Total</th>
+            <th>Método / Proyecto</th>
+            <th style="text-align: center">Cant.</th>
+            <th style="text-align: right">Costo M.O.</th>
+            <th style="text-align: right">Insumos</th>
+            <th style="text-align: right">Gastos Gral.</th>
+            <th style="text-align: right; background: rgba(var(--success-rgb), 0.05)">Costo Total</th>
+            <th style="text-align: center">Rentabilidad</th>
             <th style="text-align: center">Acción</th>
           </tr>
         </thead>
         <tbody>
           ${data.map(p => {
       const pcat = p.production_category || 'push';
-      const totalQty = (p.items || []).reduce((sum, it) => sum + (it.quantity || 0), 0);
       const totalMO = (p.items || []).reduce((sum, it) => sum + ((it.mo_cost || 0) * (it.quantity || 0)), 0);
+      const totalCost = totalMO + (p.material_cost || 0) + (p.general_expenses || 0);
+      const income = p.quotation_total || 0;
+      const profit = income > 0 ? income - totalCost : 0;
+      const profitPercent = income > 0 ? (profit / income * 100).toFixed(1) : null;
+
       return `
               <tr>
                 <td><strong>#${p.id}</strong></td>
@@ -1799,17 +1817,25 @@ function renderHistoryTable(type) {
                   <span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.75rem; font-weight:700; background:${PROD_CAT_COLORS[pcat] || '#6b7280'}22; color:${PROD_CAT_COLORS[pcat] || '#6b7280'}; border:1px solid ${PROD_CAT_COLORS[pcat] || '#6b7280'}44">
                     ${PROD_CAT_LABELS[pcat] || pcat}
                   </span>
-                  ${p.project_name ? '<br><small>📁 ' + p.project_name + '</small>' : ''}
+                  ${p.project_name ? '<br><small style="color:var(--text-muted)">📁 ' + p.project_name + '</small>' : ''}
                 </td>
-                <td>
-                   <small style="font-weight:700; color:var(--secondary)">${p.purchase_order_id || '-'}</small>
-                </td>
-                <td style="text-align: center">${totalQty}</td>
+                <td style="text-align: center">${(p.items || []).reduce((sum, it) => sum + (it.quantity || 0), 0)}</td>
                 <td style="text-align: right">$${totalMO.toLocaleString()}</td>
+                <td style="text-align: right">$${(p.material_cost || 0).toLocaleString()}</td>
+                <td style="text-align: right">$${(p.general_expenses || 0).toLocaleString()}</td>
+                <td style="text-align: right; background: rgba(var(--success-rgb), 0.05); font-weight:700; color:var(--success)">$${totalCost.toLocaleString()}</td>
+                <td style="text-align: center">
+                  ${income > 0 ? `
+                    <div style="font-size:0.8rem">
+                      <strong style="color:${profit >= 0 ? 'var(--success)' : 'var(--danger)'}">$${profit.toLocaleString()}</strong><br>
+                      <small style="opacity:0.7">${profitPercent}%</small>
+                    </div>
+                  ` : '<small style="opacity:0.5">N/A (Push)</small>'}
+                </td>
                 <td style="text-align: center">
                    <div style="display: flex; gap: 0.3rem; justify-content: center">
-                     <button class="btn-sm" onclick="window.showTransactionDetails('production', '${p.id}')">👁️ Ver</button>
-                     <button class="btn-sm" onclick="window.editProduction(${p.id})" style="background:var(--secondary)">✏️ Editar</button>
+                     <button class="btn-sm" onclick="window.showTransactionDetails('production', '${p.id}')">👁️</button>
+                     <button class="btn-sm" onclick="window.editProduction(${p.id})" style="background:var(--secondary)">✏️</button>
                      <button class="btn-sm" onclick="window.deleteProduction(${p.id})" style="background:var(--danger)">🗑️</button>
                    </div>
                 </td>
@@ -1957,10 +1983,23 @@ window.showTransactionDetails = (type, id) => {
       ${isProduction ? `
       <div class="summary-section">
         <table class="summary-table">
-          <tr style="font-size: 1.1rem; border-top: 2px solid var(--border); color: var(--secondary)">
-             <td>COSTO M.O. TOTAL</td>
-             <td style="text-align: right"><strong>$${(transaction.items.reduce((sum, it) => sum + ((it.mo_cost || 0) * it.quantity), 0)).toLocaleString()}</strong></td>
+          <tr><td>Costo Mano de Obra (M.O.)</td><td style="text-align: right">$${(transaction.items.reduce((sum, it) => sum + ((it.mo_cost || 0) * it.quantity), 0)).toLocaleString()}</td></tr>
+          <tr><td>Costo Materiales / Insumos</td><td style="text-align: right">$${(transaction.material_cost || 0).toLocaleString()}</td></tr>
+          <tr><td>Gastos Generales / Varios</td><td style="text-align: right">$${(transaction.general_expenses || 0).toLocaleString()}</td></tr>
+          <tr style="font-size: 1.1rem; border-top: 2px solid var(--border); color: var(--danger)">
+             <td>COSTO TOTAL REAL</td>
+             <td style="text-align: right"><strong>$${((transaction.items.reduce((sum, it) => sum + ((it.mo_cost || 0) * it.quantity), 0)) + (transaction.material_cost || 0) + (transaction.general_expenses || 0)).toLocaleString()}</strong></td>
           </tr>
+          ${transaction.quotation_total > 0 ? `
+            <tr style="font-size: 1rem; border-top: 1px dashed var(--border); color: var(--success); margin-top: 10px">
+               <td>Ingreso Proyectado (Cotización)</td>
+               <td style="text-align: right"><strong>$${(transaction.quotation_total).toLocaleString()}</strong></td>
+            </tr>
+            <tr style="font-size: 1.1rem; background: rgba(var(--success-rgb), 0.1)">
+               <td style="padding: 0.5rem">UTILIDAD ESTIMADA (PROYECTO)</td>
+               <td style="text-align: right; padding: 0.5rem"><strong>$${(transaction.quotation_total - ((transaction.items.reduce((sum, it) => sum + ((it.mo_cost || 0) * it.quantity), 0)) + (transaction.material_cost || 0) + (transaction.general_expenses || 0))).toLocaleString()}</strong></td>
+            </tr>
+          ` : ''}
         </table>
       </div>
       ` : `
@@ -2397,6 +2436,9 @@ window.openProductionModal = (code) => {
   mtos.forEach(m => m.value = '0');
   regs.forEach(r => r.checked = false);
 
+  if (document.getElementById('prod-material-cost')) document.getElementById('prod-material-cost').value = '0';
+  if (document.getElementById('prod-general-expenses')) document.getElementById('prod-general-expenses').value = '0';
+
   if (code) {
     selects[0].value = code;
     qtys[0].value = '1';
@@ -2417,6 +2459,8 @@ window.editProduction = (id) => {
   document.getElementById('prod-edit-mode').value = 'true';
   document.getElementById('prod-edit-id').value = id;
   document.getElementById('prod-date').value = production.date.split('T')[0];
+  if (document.getElementById('prod-material-cost')) document.getElementById('prod-material-cost').value = production.material_cost || 0;
+  if (document.getElementById('prod-general-expenses')) document.getElementById('prod-general-expenses').value = production.general_expenses || 0;
 
   const rows = modal.querySelectorAll('#production-items-body .item-row');
   // Reset all rows
@@ -4598,7 +4642,9 @@ function renderView(viewName) {
           date: document.getElementById('prod-date').value,
           items,
           production_category: document.getElementById('prod-category')?.value || 'push',
-          quotation_id: document.getElementById('prod-quotation')?.value || null
+          quotation_id: document.getElementById('prod-quotation')?.value || null,
+          material_cost: parseFloat(document.getElementById('prod-material-cost')?.value || 0),
+          general_expenses: parseFloat(document.getElementById('prod-general-expenses')?.value || 0)
         };
 
         let res;

@@ -579,10 +579,10 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 
     if (error) return res.status(500).json({ error: error.message });
 
-    // Build quotation lookup for project names
-    const { data: quotes } = await supabase.from(T.QUOTATIONS).select('id, name, purchase_order_id').limit(1000);
+    // Build quotation lookup for project names and totals
+    const { data: quotes } = await supabase.from(T.QUOTATIONS).select('id, name, purchase_order_id, total_price_gross').limit(1000);
     const quoteMap = {};
-    quotes?.forEach(q => quoteMap[q.id] = { name: q.name, oc: q.purchase_order_id });
+    quotes?.forEach(q => quoteMap[q.id] = { name: q.name, oc: q.purchase_order_id, total: q.total_price_gross });
 
     const fullHistory = [];
     for (const p of history) {
@@ -595,6 +595,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
             ...p,
             project_name: quoteMap[p.quotation_id]?.name || null,
             purchase_order_id: quoteMap[p.quotation_id]?.oc || null,
+            quotation_total: quoteMap[p.quotation_id]?.total || 0,
             items: items.map(i => ({
                 ...i,
                 product_name: i.products?.name,
@@ -1086,13 +1087,15 @@ app.get('/api/accounting-entries', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/production', authenticateToken, async (req, res) => {
-    const { items, date, production_category, quotation_id } = req.body;
+    const { items, date, production_category, quotation_id, material_cost, general_expenses } = req.body;
     const productionDate = date || new Date().toISOString();
 
     try {
         const insertData = { date: productionDate };
         if (production_category) insertData.production_category = production_category;
         if (quotation_id && !isNaN(quotation_id)) insertData.quotation_id = parseInt(quotation_id);
+        insertData.material_cost = material_cost || 0;
+        insertData.general_expenses = general_expenses || 0;
 
         let result = await supabase
             .from(T.PRODUCTION)
@@ -1169,7 +1172,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
 
 app.put('/api/production/:id', authenticateToken, async (req, res) => {
     const prodId = req.params.id;
-    const { items, date, production_category, quotation_id } = req.body;
+    const { items, date, production_category, quotation_id, material_cost, general_expenses } = req.body;
     const productionDate = date || new Date().toISOString();
 
     try {
@@ -1205,6 +1208,8 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
         const updateData = { date: productionDate };
         if (production_category) updateData.production_category = production_category;
         if (quotation_id && !isNaN(quotation_id)) updateData.quotation_id = parseInt(quotation_id);
+        updateData.material_cost = material_cost || 0;
+        updateData.general_expenses = general_expenses || 0;
 
         const { error: updateError } = await supabase.from(T.PRODUCTION).update(updateData).eq('id', prodId);
         if (updateError) throw updateError;
