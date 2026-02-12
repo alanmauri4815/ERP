@@ -4554,7 +4554,7 @@ function renderView(viewName) {
 
           if (productCode && quantity > 0) {
             // Check if product exists in master
-            const exists = state.products.find(p => p.code.toLowerCase() === productCode.toLowerCase());
+            const exists = state.products.find(p => p.code && p.code.toLowerCase().trim() === productCode.toLowerCase());
 
             if (!exists && !shouldRegister) {
               btn.disabled = false;
