@@ -109,7 +109,7 @@ async function fetchData() {
       apiFetch('/providers'),
       apiFetch('/sales'),
       apiFetch('/purchases'),
-      apiFetch('/production'),
+      apiFetch(`/production?t=${Date.now()}`),
       apiFetch('/stats'),
       (currentUser.role === 'superadmin') ? apiFetch('/users') : Promise.resolve([]),
       apiFetch('/recipes'),
@@ -5349,8 +5349,10 @@ async function deleteData(endpoint) {
     } else {
       alert('Error: ' + result.error);
     }
+    return result;
   } catch (error) {
     alert('Error al eliminar datos');
+    return null;
   }
 }
 
