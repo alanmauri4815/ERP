@@ -1125,7 +1125,8 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                     item_number: i + 1,
                     product_code: item.productCode,
                     quantity: item.quantity,
-                    mo_cost: item.mo_cost || 0
+                    mo_cost: item.mo_cost || 0,
+                    material_cost: item.material_cost || 0
                 });
                 if (itemError) throw new Error(`Error en ítem ${i + 1} (${item.productCode}): ${itemError.message}`);
 
@@ -1224,7 +1225,8 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
                     item_number: i + 1,
                     product_code: item.productCode,
                     quantity: item.quantity,
-                    mo_cost: item.mo_cost || 0
+                    mo_cost: item.mo_cost || 0,
+                    material_cost: item.material_cost || 0
                 });
                 if (itemError) throw new Error(`Error en ítem ${i + 1} (${item.productCode}): ${itemError.message}`);
 
