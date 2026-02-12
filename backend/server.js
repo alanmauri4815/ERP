@@ -1277,6 +1277,61 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
     }
 });
 
+app.delete('/api/production/:id', authenticateToken, async (req, res) => {
+    const prodId = req.params.id;
+
+    try {
+        // 1. REVERSE STOCK IMPACT (Same logic as PUT)
+        const { data: oldItems } = await supabase.from(T.PRODUCTION_ITEMS).select('*').eq('production_id', prodId);
+
+        if (oldItems) {
+            for (const item of oldItems) {
+                // Subtract from PT stock
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.product_code).single();
+                if (p) {
+                    await supabase.from(T.PRODUCTS).update({ stock: Math.max(0, (p.stock || 0) - item.quantity) }).eq('code', item.product_code);
+                }
+
+                // Add back to MP stock based on recipe
+                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', item.product_code);
+                if (recipe) {
+                    for (const r of recipe) {
+                        const consumptionQty = (r.quantity * item.quantity);
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).single();
+                        if (rm) {
+                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + consumptionQty }).eq('code', r.mp_code);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. DELETE FROM PRODUCTION_ITEMS (Supabase should handle with CASCADE, but let's be explicit)
+        await supabase.from(T.PRODUCTION_ITEMS).delete().eq('production_id', prodId);
+
+        // 3. DELETE ACCOUNTING ENTRIES
+        const { data: entries } = await supabase
+            .from(T.ACCOUNTING_ENTRIES)
+            .select('id')
+            .eq('description', `Consumo de Materias Primas - Producción #${prodId}`)
+            .eq('entry_type', 'consumo');
+
+        if (entries && entries.length > 0) {
+            const entryIds = entries.map(e => e.id);
+            await supabase.from(T.ACCOUNTING_LINES).delete().in('asiento_id', entryIds);
+            await supabase.from(T.ACCOUNTING_ENTRIES).delete().in('id', entryIds);
+        }
+
+        // 4. DELETE PRODUCTION HEADER
+        const { error: deleteError } = await supabase.from(T.PRODUCTION).delete().eq('id', prodId);
+        if (deleteError) throw deleteError;
+
+        res.json({ success: true, message: 'Producción eliminada y stock revertido correctamente.' });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Master routes (POST, PUT, DELETE) follow similar patterns...
 // Adding some key ones
 app.post('/api/products', authenticateToken, async (req, res) => {

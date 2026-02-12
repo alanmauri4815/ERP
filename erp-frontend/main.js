@@ -1810,6 +1810,7 @@ function renderHistoryTable(type) {
                    <div style="display: flex; gap: 0.3rem; justify-content: center">
                      <button class="btn-sm" onclick="window.showTransactionDetails('production', '${p.id}')">👁️ Ver</button>
                      <button class="btn-sm" onclick="window.editProduction(${p.id})" style="background:var(--secondary)">✏️ Editar</button>
+                     <button class="btn-sm" onclick="window.deleteProduction(${p.id})" style="background:var(--danger)">🗑️</button>
                    </div>
                 </td>
               </tr>
@@ -2434,6 +2435,15 @@ window.editProduction = (id) => {
       rows[i].querySelector('.prod-item-mo').value = item.mo_cost || 0;
     }
   });
+};
+
+window.deleteProduction = async (id) => {
+  if (!confirm(`¿Está seguro de eliminar la Orden de Producción #${id}?\n\nEsta acción revertirá el stock de productos y devolverá las materias primas al inventario.`)) return;
+
+  const res = await deleteData(`/production/${id}`);
+  if (res) {
+    fetchData();
+  }
 };
 
 // --- USER MANAGEMENT HELPERS ---
