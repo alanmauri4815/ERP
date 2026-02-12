@@ -3907,7 +3907,7 @@ window.printQuotation = () => {
   printWindow.document.close();
 };
 
-async function postData(endpoint, body) {
+async function postData(endpoint, body, refresh = true) {
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
@@ -3920,7 +3920,7 @@ async function postData(endpoint, body) {
     const result = await response.json();
     if (result.success) {
       alert(result.message || 'Operación exitosa');
-      fetchData(); // Sincronizar stock
+      if (refresh) fetchData(); // Sincronizar stock si se solicita
       return result;
     } else {
       alert('Error: ' + result.error);
@@ -4279,9 +4279,9 @@ function renderView(viewName) {
 
       let res;
       if (isEditMode) {
-        res = await putData(`/sales/${editId}`, body);
+        res = await putData(`/sales/${editId}`, body, false, false);
       } else {
-        res = await postData('/sales', body);
+        res = await postData('/sales', body, false);
       }
 
       if (res) {
@@ -4300,6 +4300,8 @@ function renderView(viewName) {
 
         const saleBtn = document.getElementById('btn-submit-sale');
         if (saleBtn) saleBtn.textContent = 'Registrar Venta';
+
+        fetchData();
       }
     });
   }
@@ -4590,9 +4592,9 @@ function renderView(viewName) {
 
         let res;
         if (isEditMode) {
-          res = await putData(`/production/${editId}`, body);
+          res = await putData(`/production/${editId}`, body, false, false);
         } else {
-          res = await postData('/production', body);
+          res = await postData('/production', body, false);
         }
 
         if (res) {
@@ -4616,6 +4618,8 @@ function renderView(viewName) {
 
           const projGroup = document.getElementById('prod-project-group');
           if (projGroup) projGroup.style.display = 'none';
+
+          fetchData();
         }
       } catch (err) {
         console.error('Error saving production:', err);
@@ -5291,7 +5295,7 @@ function getTableItems(prefix) {
   return items;
 }
 
-async function putData(endpoint, body, silent = false) {
+async function putData(endpoint, body, silent = false, refresh = true) {
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'PUT',
@@ -5307,7 +5311,7 @@ async function putData(endpoint, body, silent = false) {
     if (!silent) {
       if (result.success) {
         alert(result.message || 'Actualizado correctamente');
-        fetchData();
+        if (refresh) fetchData();
       } else {
         alert('Error: ' + result.error);
       }
