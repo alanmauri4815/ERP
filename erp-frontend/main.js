@@ -482,7 +482,7 @@ const views = {
               <label style="font-weight: 600; color: var(--secondary)">📁 Cotización Asociada</label>
               <select id="prod-quotation" style="border: 1px solid var(--secondary)">
                 <option value="">Sin asociar</option>
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — $${Math.round(q.total_price_gross || 0).toLocaleString()}</option>`).join('')}
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — 👤 ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
               </select>
             </div>
           </div>
