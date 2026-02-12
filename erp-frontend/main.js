@@ -4286,12 +4286,20 @@ function renderView(viewName) {
 
       if (res) {
         // Limpiar y cerrar
-        document.getElementById('sale-modal').style.display = 'none';
-        document.getElementById('sale-edit-mode').value = 'false';
-        document.getElementById('sale-edit-id').value = '';
-        document.getElementById('sale-modal-title').textContent = 'Nueva Venta de Productos';
-        document.getElementById('btn-submit-sale').textContent = 'Registrar Venta';
-        fetchData();
+        const saleModal = document.getElementById('sale-modal');
+        if (saleModal) saleModal.style.display = 'none';
+
+        const saleEditMode = document.getElementById('sale-edit-mode');
+        if (saleEditMode) saleEditMode.value = 'false';
+
+        const saleEditId = document.getElementById('sale-edit-id');
+        if (saleEditId) saleEditId.value = '';
+
+        const saleTitle = document.getElementById('sale-modal-title');
+        if (saleTitle) saleTitle.textContent = 'Nueva Venta de Productos';
+
+        const saleBtn = document.getElementById('btn-submit-sale');
+        if (saleBtn) saleBtn.textContent = 'Registrar Venta';
       }
     });
   }
@@ -4588,24 +4596,36 @@ function renderView(viewName) {
         }
 
         if (res) {
-          document.getElementById('production-modal').style.display = 'none';
-          document.getElementById('prod-edit-mode').value = 'false';
-          document.getElementById('prod-edit-id').value = '';
-          document.getElementById('prod-modal-title').textContent = 'Nueva Orden de Producción';
-          document.getElementById('btn-prod-text').textContent = 'Iniciar Producción';
-          // Reset category
+          const mainModal = document.getElementById('production-modal');
+          if (mainModal) mainModal.style.display = 'none';
+
+          const editModeInput = document.getElementById('prod-edit-mode');
+          if (editModeInput) editModeInput.value = 'false';
+
+          const editIdInput = document.getElementById('prod-edit-id');
+          if (editIdInput) editIdInput.value = '';
+
+          const titleEl = document.getElementById('prod-modal-title');
+          if (titleEl) titleEl.textContent = 'Nueva Orden de Producción';
+
+          const btnTextEl = document.getElementById('btn-prod-text');
+          if (btnTextEl) btnTextEl.textContent = 'Iniciar Producción';
+
           const catSel = document.getElementById('prod-category');
           if (catSel) catSel.value = 'push';
+
           const projGroup = document.getElementById('prod-project-group');
           if (projGroup) projGroup.style.display = 'none';
-          fetchData();
         }
       } catch (err) {
         console.error('Error saving production:', err);
         alert('Error al guardar la producción: ' + err.message);
       } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalText;
+        const btnFinal = document.getElementById('btn-submit-production');
+        if (btnFinal) {
+          btnFinal.disabled = false;
+          btnFinal.innerHTML = originalText;
+        }
       }
     });
   }
