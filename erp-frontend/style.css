@@ -202,6 +202,10 @@ h1 {
     padding: 2rem 1rem;
 }
 
+#prov-modal {
+    z-index: 10000 !important;
+}
+
 .modal-content {
     width: 100%;
     max-width: 500px;

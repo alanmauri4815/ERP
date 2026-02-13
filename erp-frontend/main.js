@@ -105,7 +105,7 @@ async function fetchData() {
   `;
 
   try {
-    const [prods, rms, provs, hSales, hPurch, hProd, st, usrs, recipes, accs, quotes, clis, pmachines, aAccounts, aLedger] = await Promise.all([
+    const [prods, rms, provs, hSales, hPurch, hProd, st, usrs, recipes, accs, quotes, clis, pmachines, aAccounts, aLedger, logHistory, pendingLog] = await Promise.all([
       apiFetch('/products'),
       apiFetch('/raw-materials'),
       apiFetch('/providers'),
@@ -596,7 +596,7 @@ const views = {
                 <option value="">Sin Proveedor / Boleta</option>
                 ${state.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
               </select>
-              <button type="button" onclick="window.openProviderModal()" style="padding: 0 0.75rem; background: var(--secondary)" title="Nuevo Proveedor">+</button>
+              <button type="button" onclick="window.openProviderModal(); document.getElementById('prov-modal').style.display='flex'; document.getElementById('prov-modal').style.zIndex='10000';" style="padding: 0 0.75rem; background: var(--secondary)" title="Nuevo Proveedor">+</button>
             </div>
           </div>
           <div class="form-group">
@@ -4631,36 +4631,7 @@ function renderView(viewName) {
   }
 
 
-  // Register global form listeners if not already done
-  if (!window.globalListenersRegistered) {
-    document.addEventListener('submit', async (e) => {
-      if (e.target && e.target.id === 'prov-form') {
-        e.preventDefault();
-        const id = document.getElementById('prov-id').value;
-        const body = {
-          rut: document.getElementById('prov-rut').value,
-          name: document.getElementById('prov-name').value,
-          address: document.getElementById('prov-addr').value,
-          contact: document.getElementById('prov-cont').value,
-          email: document.getElementById('prov-email').value,
-          phone: document.getElementById('prov-phone').value,
-          notes: document.getElementById('prov-notes').value
-        };
 
-        const res = id ? await putData(`/providers/${id}`, body) : await postData('/providers', body);
-        if (res && res.success) {
-          document.getElementById('prov-modal').style.display = 'none';
-          await window.refreshProviders();
-
-          // If we were in providers_management view, we need full refresh
-          if (document.querySelector('.nav-item.active')?.dataset.view === 'providers_management') {
-            fetchData();
-          }
-        }
-      }
-    });
-    window.globalListenersRegistered = true;
-  }
 
   if (viewName === 'masters') {
     document.getElementById('new-mp-form')?.addEventListener('submit', async (e) => {
@@ -5110,11 +5081,17 @@ window.deleteClient = async (id) => {
 };
 
 window.openProviderModal = () => {
+  console.log('Opening Provider Modal...');
   const modal = document.getElementById('prov-modal');
-  modal.style.display = 'flex';
-  document.getElementById('prov-modal-title').textContent = 'Nuevo Proveedor';
-  document.getElementById('prov-id').value = '';
-  document.getElementById('prov-form').reset();
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.style.zIndex = '10000'; // Higher than other modals
+    document.getElementById('prov-modal-title').textContent = 'Nuevo Proveedor';
+    document.getElementById('prov-id').value = '';
+    document.getElementById('prov-form').reset();
+  } else {
+    console.error('Modal "prov-modal" not found in DOM!');
+  }
 };
 
 window.editProvider = (id) => {
@@ -5694,3 +5671,31 @@ window.populateProviderDropdowns = () => {
     select.value = currentVal;
   });
 };
+
+// --- Global Listeners ---
+document.addEventListener('submit', async (e) => {
+  if (e.target && e.target.id === 'prov-form') {
+    e.preventDefault();
+    const id = document.getElementById('prov-id').value;
+    const body = {
+      rut: document.getElementById('prov-rut').value,
+      name: document.getElementById('prov-name').value,
+      address: document.getElementById('prov-addr').value,
+      contact: document.getElementById('prov-cont').value,
+      email: document.getElementById('prov-email').value,
+      phone: document.getElementById('prov-phone').value,
+      notes: document.getElementById('prov-notes').value
+    };
+
+    const res = id ? await putData(`/providers/${id}`, body) : await postData('/providers', body);
+    if (res && res.success) {
+      document.getElementById('prov-modal').style.display = 'none';
+      await window.refreshProviders();
+
+      // If we were in providers_management view, we need full refresh
+      if (document.querySelector('.nav-item.active')?.dataset.view === 'providers_management') {
+        fetchData();
+      }
+    }
+  }
+});
