@@ -2175,7 +2175,7 @@ window.editTransaction = (type, id) => {
       const discountInput = document.getElementById('sale-discount-input');
 
       if (clientEl) clientEl.value = transaction.client_id || '';
-      if (dateEl) dateEl.value = transaction.date;
+      if (dateEl) dateEl.value = transaction.date ? transaction.date.split('T')[0] : '';
       if (eventEl) eventEl.value = transaction.event_name || '';
       if (ivaExemptEl) ivaExemptEl.checked = transaction.is_iva_exempt || false;
       if (paymentEl) {
@@ -2189,17 +2189,33 @@ window.editTransaction = (type, id) => {
         if (machineEl) machineEl.value = transaction.machine_id || '';
       }
     } else {
+      const typeEl = document.getElementById('pur-type');
+      const categoryEl = document.getElementById('pur-category');
       const provEl = document.getElementById('pur-prov');
       const dateEl = document.getElementById('pur-date');
       const paymentEl = document.getElementById('pur-payment-method');
       const accEl = document.getElementById('pur-account');
       const docEl = document.getElementById('pur-doc-type');
+      const projectEl = document.getElementById('pur-project');
+      const descEl = document.getElementById('pur-description');
+      const expTotalEl = document.getElementById('pur-expense-total');
 
+      if (typeEl) typeEl.value = transaction.type || 'mp';
+      if (categoryEl) categoryEl.value = transaction.purchase_category || 'general';
       if (provEl) provEl.value = transaction.provider_id || '';
-      if (dateEl) dateEl.value = transaction.date;
+      if (dateEl) dateEl.value = transaction.date ? transaction.date.split('T')[0] : '';
       if (paymentEl) paymentEl.value = transaction.payment_method || 'transfer';
       if (accEl) accEl.value = transaction.account_id || '';
       if (docEl) docEl.value = transaction.document_type || 'factura';
+      if (projectEl) projectEl.value = transaction.quotation_id || transaction.project_ref || '';
+
+      if (transaction.type === 'expense') {
+        if (descEl) descEl.value = transaction.description || '';
+        if (expTotalEl) expTotalEl.value = transaction.total || 0;
+      }
+
+      // Refresh UI state
+      if (typeof window.togglePurType === 'function') window.togglePurType();
     }
 
     // Fill Items Table
@@ -2228,7 +2244,11 @@ window.editTransaction = (type, id) => {
           const qtyInp = row.querySelector('.item-qty');
           const subInp = row.querySelector('.item-subtotal');
 
-          if (codeSel) codeSel.value = type === 'sale' ? item.product_code : item.mp_code;
+          if (codeSel) {
+            codeSel.value = type === 'sale' ? item.product_code : item.mp_code;
+            // Trigger change to populate names/prices if needed
+            // codeSel.dispatchEvent(new Event('change')); 
+          }
           if (priceInp) priceInp.value = item.unit_price || 0;
           if (qtyInp) qtyInp.value = item.quantity || 0;
           if (subInp) subInp.value = item.subtotal || 0;
@@ -2237,16 +2257,17 @@ window.editTransaction = (type, id) => {
     }
 
     // Update Totals/Summary
-    const netH = document.getElementById(`${prefix}-net`);
-    const ivaH = document.getElementById(`${prefix}-iva`);
-    const totalH = document.getElementById(`${prefix}-total`);
-    const netD = document.getElementById(`${prefix}-net-display`);
-    const ivaD = document.getElementById(`${prefix}-iva-display`);
-    const totalD = document.getElementById(`${prefix}-total-display`);
+    const prefix_ = type === 'sale' ? 'sale' : 'pur';
+    const netH = document.getElementById(`${prefix_}-net`);
+    const ivaH = document.getElementById(`${prefix_}-iva`);
+    const totalH = document.getElementById(`${prefix_}-total`);
+    const netD = document.getElementById(`${prefix_}-net-display`);
+    const ivaD = document.getElementById(`${prefix_}-iva-display`);
+    const totalD = document.getElementById(`${prefix_}-total-display`);
 
-    if (netH) netH.value = transaction.net;
-    if (ivaH) ivaH.value = transaction.iva;
-    if (totalH) totalH.value = transaction.total;
+    if (netH) netH.value = transaction.net || 0;
+    if (ivaH) ivaH.value = transaction.iva || 0;
+    if (totalH) totalH.value = transaction.total || 0;
     if (netD) netD.textContent = (transaction.net || 0).toLocaleString();
     if (ivaD) ivaD.textContent = (transaction.iva || 0).toLocaleString();
     if (totalD) totalD.textContent = (transaction.total || 0).toLocaleString();
