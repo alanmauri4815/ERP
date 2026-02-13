@@ -591,10 +591,13 @@ const views = {
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem">
           <div class="form-group" id="pur-prov-group">
             <label style="font-weight: 600">Proveedor</label>
-            <select id="pur-prov">
-              <option value="">Sin Proveedor / Boleta</option>
-              ${state.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
-            </select>
+            <div style="display: flex; gap: 0.5rem">
+              <select id="pur-prov" style="flex: 1">
+                <option value="">Sin Proveedor / Boleta</option>
+                ${state.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+              </select>
+              <button type="button" onclick="window.openProviderModal()" style="padding: 0 0.75rem; background: var(--secondary)" title="Nuevo Proveedor">+</button>
+            </div>
           </div>
           <div class="form-group">
             <label style="font-weight: 600">Fecha de Registro</label>
@@ -1015,31 +1018,6 @@ const views = {
             `).join('')}
           </tbody>
         </table>
-      </div>
-    </div>
-
-    <!-- Provider Modal -->
-    <div id="prov-modal" class="modal" style="display:none">
-      <div class="card modal-content">
-        <h3 id="prov-modal-title">Nuevo Proveedor</h3>
-        <form id="prov-form">
-          <input type="hidden" id="prov-id">
-          <div class="grid-2">
-            <div class="form-group"><label>RUT</label><input type="text" id="prov-rut" placeholder="12.345.678-9"></div>
-            <div class="form-group"><label>Nombre Empresa</label><input type="text" id="prov-name" required></div>
-          </div>
-          <div class="form-group"><label>Dirección</label><input type="text" id="prov-addr"></div>
-          <div class="form-group"><label>Persona de Contacto</label><input type="text" id="prov-cont"></div>
-          <div class="grid-2">
-            <div class="form-group"><label>Email</label><input type="email" id="prov-email"></div>
-            <div class="form-group"><label>Teléfono</label><input type="text" id="prov-phone"></div>
-          </div>
-          <div class="form-group"><label>Observaciones</label><textarea id="prov-notes" rows="2" style="width:100%; border: 1px solid var(--border); border-radius:0.5rem; padding:0.5rem"></textarea></div>
-          <div class="form-actions">
-            <button type="button" onclick="document.getElementById('prov-modal').style.display='none'">Cancelar</button>
-            <button type="submit">Guardar Proveedor</button>
-          </div>
-        </form>
       </div>
     </div>
   `,
@@ -4652,29 +4630,36 @@ function renderView(viewName) {
     });
   }
 
-  if (viewName === 'providers_management') {
-    document.getElementById('prov-form')?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const id = document.getElementById('prov-id').value;
-      const body = {
-        rut: document.getElementById('prov-rut').value,
-        name: document.getElementById('prov-name').value,
-        address: document.getElementById('prov-addr').value,
-        contact: document.getElementById('prov-cont').value,
-        email: document.getElementById('prov-email').value,
-        phone: document.getElementById('prov-phone').value,
-        notes: document.getElementById('prov-notes').value
-      };
 
-      if (id) {
-        await putData(`/providers/${id}`, body);
-      } else {
-        await postData('/providers', body);
+  // Register global form listeners if not already done
+  if (!window.globalListenersRegistered) {
+    document.addEventListener('submit', async (e) => {
+      if (e.target && e.target.id === 'prov-form') {
+        e.preventDefault();
+        const id = document.getElementById('prov-id').value;
+        const body = {
+          rut: document.getElementById('prov-rut').value,
+          name: document.getElementById('prov-name').value,
+          address: document.getElementById('prov-addr').value,
+          contact: document.getElementById('prov-cont').value,
+          email: document.getElementById('prov-email').value,
+          phone: document.getElementById('prov-phone').value,
+          notes: document.getElementById('prov-notes').value
+        };
+
+        const res = id ? await putData(`/providers/${id}`, body) : await postData('/providers', body);
+        if (res && res.success) {
+          document.getElementById('prov-modal').style.display = 'none';
+          await window.refreshProviders();
+
+          // If we were in providers_management view, we need full refresh
+          if (document.querySelector('.nav-item.active')?.dataset.view === 'providers_management') {
+            fetchData();
+          }
+        }
       }
-
-      document.getElementById('prov-modal').style.display = 'none';
-      fetchData();
     });
+    window.globalListenersRegistered = true;
   }
 
   if (viewName === 'masters') {
@@ -5688,3 +5673,24 @@ document.getElementById('btn-submit-logistics')?.addEventListener('click', async
 });
 
 fetchData();
+
+// --- Provider Helpers ---
+window.refreshProviders = async () => {
+  const provs = await apiFetch('/providers');
+  state.providers = Array.isArray(provs) ? provs : [];
+  window.populateProviderDropdowns();
+};
+
+window.populateProviderDropdowns = () => {
+  const selects = document.querySelectorAll('#pur-prov');
+  selects.forEach(select => {
+    const currentVal = select.value;
+    select.innerHTML = `
+      <option value="">Sin Proveedor / Boleta</option>
+      ${state.providers.map(p => `
+        <option value="${p.id}">${p.name}</option>
+      `).join('')}
+    `;
+    select.value = currentVal;
+  });
+};
