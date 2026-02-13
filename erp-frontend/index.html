@@ -96,6 +96,16 @@
             </svg>
             Compras
           </li>
+          <li class="nav-item" data-view="logistics">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect x="1" y="3" width="15" height="13"></rect>
+              <polyline points="16 8 20 8 23 11 23 16 16 16 16 8"></polyline>
+              <circle cx="5.5" cy="18.5" r="2.5"></circle>
+              <circle cx="18.5" cy="18.5" r="2.5"></circle>
+            </svg>
+            Logística
+          </li>
           <li class="nav-item" data-view="history">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
               stroke-linecap="round" stroke-linejoin="round">
@@ -213,6 +223,79 @@
 
       </nav>
     </aside>
+
+    <!-- Logistics Modal -->
+    <div id="logistics-modal" class="modal" style="display:none">
+      <div class="card modal-content modal-wide">
+        <header>
+          <h3 id="log-modal-title">Registrar Movimiento Logístico</h3>
+          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'"
+            style="background:transparent; color:var(--text-muted)">✕</button>
+        </header>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-bottom: 1.5rem">
+          <div>
+            <div class="form-group">
+              <label id="log-entity-label">Entidad</label>
+              <input type="text" id="log-entity-name" readonly style="background: rgba(255,255,255,0.05)">
+            </div>
+            <div class="form-group">
+              <label>Transportista / Empresa</label>
+              <input type="text" id="log-carrier" placeholder="Ej: Starken, Blue Express, Interno...">
+            </div>
+            <div class="form-group">
+              <label>N° Seguimiento / Guía</label>
+              <input type="text" id="log-tracking" placeholder="Ej: 12345678">
+            </div>
+          </div>
+          <div>
+            <div class="form-group">
+              <label>Fecha Estimada de Arribo/Entrega</label>
+              <input type="datetime-local" id="log-eta">
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem">
+              <div class="form-group">
+                <label>Costo Transporte ($)</label>
+                <input type="number" id="log-cost-transport" value="0">
+              </div>
+              <div class="form-group">
+                <label>Gastos Handling/Pack ($)</label>
+                <input type="number" id="log-cost-handling" value="0">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Observaciones</label>
+              <textarea id="log-obs"
+                style="width:100%; height:60px; background:var(--surface-light); border:1px solid var(--border); color:var(--text); border-radius:0.5rem; padding:0.5rem; font-family:inherit"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <h4 style="margin-bottom:0.5rem; font-size:0.9rem; color:var(--primary)">📦 Detalle de Carga</h4>
+        <div class="table-container" style="max-height: 250px; overflow-y: auto">
+          <table class="item-table" style="margin-top:0">
+            <thead style="position: sticky; top:0; z-index:10; background: var(--surface-light)">
+              <tr>
+                <th>Ítem</th>
+                <th>Código</th>
+                <th>Descripción</th>
+                <th style="width: 100px; text-align: center">Cantidad</th>
+              </tr>
+            </thead>
+            <tbody id="log-items-body">
+              <!-- Items from transaction will be loaded here -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" onclick="this.closest('.modal').style.display='none'"
+            style="background: var(--surface-light)">Cancelar</button>
+          <button id="btn-submit-logistics" style="background: var(--secondary)">📌 Registrar en Cadena de
+            Valor</button>
+        </div>
+      </div>
+    </div>
 
     <main class="main-content" id="main-content">
       <!-- Content will be injected here -->

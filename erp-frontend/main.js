@@ -80,7 +80,9 @@ let state = {
   ledgerFilter: {
     type: 'all',
     order: 'asc'
-  }
+  },
+  logistics: [],
+  pendingLogistics: []
 };
 
 async function fetchUsers() {
@@ -118,7 +120,9 @@ async function fetchData() {
       apiFetch('/clients'),
       apiFetch('/payment-machines'),
       apiFetch('/accounting/accounts'),
-      apiFetch('/accounting/ledger')
+      apiFetch('/accounting/ledger'),
+      apiFetch('/logistics'),
+      apiFetch('/logistics/pending')
     ]);
 
     // Data assignments with default empty arrays/objects to prevent crashes if an endpoint fails
@@ -137,6 +141,8 @@ async function fetchData() {
     state.paymentMachines = Array.isArray(pmachines) ? pmachines : [];
     state.accountingAccounts = Array.isArray(aAccounts) ? aAccounts : [];
     state.ledger = Array.isArray(aLedger) ? aLedger : [];
+    state.logistics = Array.isArray(logHistory) ? logHistory : [];
+    state.pendingLogistics = Array.isArray(pendingLog) ? pendingLog : [];
     state.pendingTransfersLoaded = false; // Reset flag to allow reload
 
 
@@ -1607,6 +1613,104 @@ const views = {
         </div>
       </div>
     `;
+  },
+  logistics: () => {
+    const activeTab = window.currentLogisticsTab || 'pending';
+    return `
+    <header class="animate-fade">
+      <h1>Logística y Cadena de Valor</h1>
+      <div style="display: flex; gap: 0.5rem">
+        <button onclick="fetchData()" style="background: var(--surface-light)">🔄 Sincronizar</button>
+      </div>
+    </header>
+
+    <div class="card animate-fade" style="margin-bottom: 2rem">
+      <div class="tabs" style="display: flex; gap: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 1.5rem">
+        <button class="tab-btn ${activeTab === 'pending' ? 'active' : ''}" onclick="window.setLogisticsTab('pending')">⏳ Pendientes de Proceso</button>
+        <button class="tab-btn ${activeTab === 'history' ? 'active' : ''}" onclick="window.setLogisticsTab('history')">📜 Historial Logístico</button>
+      </div>
+
+      ${activeTab === 'pending' ? `
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha Doc</th>
+                <th>Tipo</th>
+                <th>Transacción</th>
+                <th>Entidad (Cli/Prov)</th>
+                <th style="text-align: center">Acción Física</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.pendingLogistics.map(p => `
+                <tr>
+                  <td>${p.date ? p.date.split('T')[0] : '-'}</td>
+                  <td>
+                    <span class="badge ${p.type === 'inbound' ? 'badge-success' : 'badge-warning'}">
+                      ${p.type === 'inbound' ? '⬇️ ENTRADA' : '⬆️ SALIDA'}
+                    </span>
+                  </td>
+                  <td><strong>#${p.id}</strong> (${p.transaction_type.toUpperCase()})</td>
+                  <td>${p.entity || '-'}</td>
+                  <td style="text-align: center">
+                    <button class="btn-sm" onclick="window.openLogisticsModal('${p.type}', '${p.id}', '${p.transaction_type}')" 
+                      style="background:${p.type === 'inbound' ? 'var(--secondary)' : 'var(--accent)'}">
+                      📦 Registrar ${p.type === 'inbound' ? 'Recepción' : 'Despacho'}
+                    </button>
+                  </td>
+                </tr>
+              `).join('')}
+              ${state.pendingLogistics.length === 0 ? '<tr><td colspan="5" style="text-align:center; opacity:0.5; padding: 2rem">No hay movimientos pendientes. Todo al día ✅</td></tr>' : ''}
+            </tbody>
+          </table>
+        </div>
+      ` : `
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>ID Log.</th>
+                <th>Fecha Registro</th>
+                <th>Tipo</th>
+                <th>Transporte</th>
+                <th>Seguimiento</th>
+                <th style="text-align: right">Costos Log.</th>
+                <th>Estado</th>
+                <th style="text-align: center">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.logistics.map(l => {
+      const totalCost = (l.transport_cost || 0) + (l.handling_cost || 0);
+      return `
+                <tr>
+                  <td><strong>#${l.id}</strong></td>
+                  <td>${l.date ? l.date.split('T')[0] : '-'}</td>
+                  <td style="font-size: 0.8rem">
+                    <span class="badge ${l.type === 'inbound' ? 'badge-success' : 'badge-warning'}" style="padding: 2px 6px">
+                      ${l.type === 'inbound' ? 'IN' : 'OUT'}
+                    </span>
+                    <br><small>${l.transaction_type.toUpperCase()} #${l.transaction_id}</small>
+                  </td>
+                  <td>${l.carrier_name || '-'}</td>
+                  <td><code>${l.tracking_id || '-'}</code></td>
+                  <td style="text-align: right; color: var(--danger)">$${totalCost.toLocaleString()}</td>
+                  <td>
+                    <span style="font-size:0.75rem; font-weight:700; color:var(--primary)">${l.status.toUpperCase()}</span>
+                  </td>
+                  <td style="text-align: center">
+                     <button class="btn-sm" onclick="window.viewTransactionDetails('${l.transaction_type}', ${l.transaction_id})">👁️ Doc</button>
+                  </td>
+                </tr>
+              `}).join('')}
+              ${state.logistics.length === 0 ? '<tr><td colspan="8" style="text-align:center; opacity:0.5; padding: 2rem">No hay historial registrado.</td></tr>' : ''}
+            </tbody>
+          </table>
+        </div>
+      `}
+    </div>
+    `
   }
 };
 
@@ -4034,9 +4138,9 @@ function renderView(viewName) {
 
     // Definimos qué puede ver cada uno
     const permissions = {
-      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
-      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
-      user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'history', 'quotations', 'pipeline', 'clients_management', 'providers_management', 'direct_sales', 'profile'],
+      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
+      user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'logistics', 'history', 'quotations', 'pipeline', 'clients_management', 'providers_management', 'direct_sales', 'profile'],
       viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
 
@@ -5497,5 +5601,90 @@ function logout() {
 }
 
 document.getElementById('btn-logout')?.addEventListener('click', logout);
+
+// --- Logistics Functions ---
+window.setLogisticsTab = (tab) => {
+  window.currentLogisticsTab = tab;
+  renderView('logistics');
+};
+
+window.openLogisticsModal = async (type, id, transaction_type) => {
+  const modal = document.getElementById('logistics-modal');
+  const title = document.getElementById('log-modal-title');
+  const entityLabel = document.getElementById('log-entity-label');
+  const itemsBody = document.getElementById('log-items-body');
+  const submitBtn = document.getElementById('btn-submit-logistics');
+
+  title.innerText = type === 'inbound' ? '⬇️ Registrar Recepción de Mercaderia' : '⬆️ Registrar Despacho a Cliente';
+  entityLabel.innerText = type === 'inbound' ? 'Proveedor' : 'Cliente';
+  submitBtn.innerText = type === 'inbound' ? '📌 Confirmar Recepción' : '📌 Confirmar Despacho';
+
+  // Clear modal attributes
+  modal.dataset.type = type;
+  modal.dataset.transaction_type = transaction_type;
+  modal.dataset.transaction_id = id;
+
+  // Reset form
+  document.getElementById('log-carrier').value = '';
+  document.getElementById('log-tracking').value = '';
+  document.getElementById('log-eta').value = '';
+  document.getElementById('log-cost-transport').value = '0';
+  document.getElementById('log-cost-handling').value = '0';
+  document.getElementById('log-obs').value = '';
+
+  itemsBody.innerHTML = '<tr><td colspan="4" style="text-align:center">Cargando ítems...</td></tr>';
+  modal.style.display = 'flex';
+
+  // Get transaction details for items and entity
+  let endpoint = transaction_type === 'compra' ? `/purchases/${id}` : (transaction_type === 'venta' ? `/sales/${id}` : `/production/${id}`);
+  const details = await apiFetch(endpoint);
+
+  if (details) {
+    document.getElementById('log-entity-name').value = details.proveedores?.name || details.clientela?.name || details.project_name || 'Varios';
+
+    // Save items in the modal for submission
+    window.currentLogItems = details.items.map(it => ({
+      item_code: it.product_code || it.mp_code,
+      quantity: it.quantity
+    }));
+
+    itemsBody.innerHTML = details.items.map((it, idx) => `
+      <tr>
+        <td style="text-align:center; color:var(--text-muted)">${idx + 1}</td>
+        <td><code>${it.product_code || it.mp_code}</code></td>
+        <td>${it.product_name || it.mp_name || 'Item'}</td>
+        <td style="text-align:center"><strong>${it.quantity}</strong></td>
+      </tr>
+    `).join('');
+  }
+};
+
+document.getElementById('btn-submit-logistics')?.addEventListener('click', async () => {
+  const modal = document.getElementById('logistics-modal');
+  const body = {
+    type: modal.dataset.type,
+    transaction_type: modal.dataset.transaction_type,
+    transaction_id: modal.dataset.transaction_id,
+    entity_name: document.getElementById('log-entity-name').value,
+    carrier_name: document.getElementById('log-carrier').value,
+    tracking_id: document.getElementById('log-tracking').value,
+    estimated_arrival: document.getElementById('log-eta').value,
+    transport_cost: parseFloat(document.getElementById('log-cost-transport').value) || 0,
+    handling_cost: parseFloat(document.getElementById('log-cost-handling').value) || 0,
+    observations: document.getElementById('log-obs').value,
+    items: window.currentLogItems || []
+  };
+
+  if (!body.carrier_name) {
+    alert('Por favor ingrese el transportista');
+    return;
+  }
+
+  const res = await postData('/logistics', body);
+  if (res.success) {
+    modal.style.display = 'none';
+    fetchData();
+  }
+});
 
 fetchData();

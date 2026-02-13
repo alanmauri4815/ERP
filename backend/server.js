@@ -29,7 +29,9 @@ const T = {
     PAYMENT_MACHINES: 'payment_machines',
     ACCOUNTING_ENTRIES: 'asientos_contables',
     ACCOUNTING_ACCOUNTS: 'accounting_accounts',
-    ACCOUNTING_LINES: 'accounting_lines'
+    ACCOUNTING_LINES: 'accounting_lines',
+    LOGISTICS: 'logistica',
+    LOGISTICS_ITEMS: 'logistica_items'
 };
 
 // Accounting Helper
@@ -1336,6 +1338,151 @@ app.delete('/api/production/:id', authenticateToken, async (req, res) => {
         res.json({ success: true, message: 'Producción eliminada y stock revertido correctamente.' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// --- Logistics Routes ---
+app.get('/api/logistics', authenticateToken, async (req, res) => {
+    const { data, error } = await supabase
+        .from(T.LOGISTICS)
+        .select('*')
+        .order('created_at', { ascending: false });
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    const fullHistory = [];
+    for (const l of data) {
+        const { data: items } = await supabase
+            .from(T.LOGISTICS_ITEMS)
+            .select('*')
+            .eq('logistics_id', l.id);
+        fullHistory.push({ ...l, items: items || [] });
+    }
+    res.json(fullHistory);
+});
+
+app.post('/api/logistics', authenticateToken, async (req, res) => {
+    const { type, transaction_type, transaction_id, entity_name, carrier_name, tracking_id, transport_cost, handling_cost, estimated_arrival, observations, items } = req.body;
+
+    try {
+        const { data: log, error: lError } = await supabase
+            .from(T.LOGISTICS)
+            .insert({
+                type,
+                transaction_type,
+                transaction_id,
+                entity_name,
+                carrier_name,
+                tracking_id,
+                transport_cost,
+                handling_cost,
+                estimated_arrival,
+                observations
+            })
+            .select()
+            .single();
+
+        if (lError) throw lError;
+
+        if (items && items.length > 0) {
+            const logisticsItems = items.map(it => ({
+                logistics_id: log.id,
+                item_code: it.item_code,
+                quantity: it.quantity
+            }));
+            const { error: iError } = await supabase.from(T.LOGISTICS_ITEMS).insert(logisticsItems);
+            if (iError) throw iError;
+        }
+
+        // Create Accounting Entry for Logistics Costs if any
+        const totalLogisticsCost = (parseFloat(transport_cost) || 0) + (parseFloat(handling_cost) || 0);
+        if (totalLogisticsCost > 0) {
+            const desc = `Gastos de Logística ${type === 'inbound' ? 'Entrada' : 'Salida'} - Doc #${log.id}`;
+            await createAccountingEntry({
+                date: new Date().toISOString().split('T')[0],
+                description: desc,
+                type: 'gasto',
+                userId: req.user.id,
+                lines: [
+                    { account_code: '4.1.01.07', debit: totalLogisticsCost, glosa: desc }, // Gasto Transporte (Assume code)
+                    { account_code: '1.1.01.01', credit: totalLogisticsCost, glosa: desc } // Caja/Banco
+                ]
+            });
+        }
+
+        res.json({ success: true, id: log.id });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.put('/api/logistics/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const body = req.body;
+    const items = body.items;
+    delete body.items;
+
+    try {
+        const { error: uError } = await supabase.from(T.LOGISTICS).update(body).eq('id', id);
+        if (uError) throw uError;
+
+        if (items) {
+            await supabase.from(T.LOGISTICS_ITEMS).delete().eq('logistics_id', id);
+            const logisticsItems = items.map(it => ({
+                logistics_id: id,
+                item_code: it.item_code,
+                quantity: it.quantity
+            }));
+            await supabase.from(T.LOGISTICS_ITEMS).insert(logisticsItems);
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.delete('/api/logistics/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    const { error } = await supabase.from(T.LOGISTICS).delete().eq('id', id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true });
+});
+
+app.get('/api/logistics/pending', authenticateToken, async (req, res) => {
+    try {
+        // Fetch all logistics to know which transactions are already covered
+        const { data: logs } = await supabase.from(T.LOGISTICS).select('transaction_type, transaction_id');
+        const covered = { compra: new Set(), venta: new Set(), produccion: new Set() };
+        logs?.forEach(l => {
+            if (l.transaction_type && l.transaction_id) {
+                covered[l.transaction_type].add(l.transaction_id);
+            }
+        });
+
+        // Pending Purchases
+        const { data: purchases } = await supabase.from(T.PURCHASES).select('id, date, proveedores(name)').order('date', { ascending: false }).limit(50);
+        const pendingPurchases = (purchases || []).filter(p => !covered.compra.has(p.id)).map(p => ({
+            id: p.id,
+            date: p.date,
+            entity: p.proveedores?.name,
+            type: 'inbound',
+            transaction_type: 'compra'
+        }));
+
+        // Pending Sales
+        const { data: sales } = await supabase.from(T.SALES).select('id, date, clientela(name)').order('date', { ascending: false }).limit(50);
+        const pendingSales = (sales || []).filter(s => !covered.venta.has(s.id)).map(s => ({
+            id: s.id,
+            date: s.date,
+            entity: s.clientela?.name,
+            type: 'outbound',
+            transaction_type: 'venta'
+        }));
+
+        res.json([...pendingPurchases, ...pendingSales]);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
