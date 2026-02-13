@@ -608,7 +608,7 @@ const views = {
             <select id="pur-project" style="border: 1px solid var(--secondary)">
               <option value="">Gasto General (Sin Proyecto)</option>
               <optgroup label="Cotizaciones Aprobadas / En Producción">
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''}</option>`).join('')}
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — 👤 ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
               </optgroup>
               <optgroup label="Ventas Realizadas">
                 ${state.history.sales.slice(0, 10).map(s => `<option value="S-${s.id}">💰 Venta #${s.id} - ${s.client_name || 'Vta Directa'}</option>`).join('')}

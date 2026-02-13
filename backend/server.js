@@ -504,12 +504,19 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
         const [provs, accs, quotes] = await Promise.all([
             supabase.from(T.PROVIDERS).select('id, name'),
             supabase.from(T.ACCOUNTS).select('id, name'),
-            supabase.from(T.QUOTATIONS).select('id, name, purchase_order_id').limit(1000)
+            supabase.from(T.QUOTATIONS).select(`id, name, purchase_order_id, clients:${T.CLIENTS}(name)`).limit(1000)
         ]);
 
         const provMap = {}; provs.data?.forEach(p => provMap[p.id] = p.name);
         const accMap = {}; accs.data?.forEach(a => accMap[a.id] = a.name);
-        const quoteMap = {}; quotes.data?.forEach(q => quoteMap[q.id] = { name: q.name, oc: q.purchase_order_id });
+        const quoteMap = {}; quotes.data?.forEach(q => {
+            const clientName = Array.isArray(q.clients) ? q.clients[0]?.name : q.clients?.name;
+            quoteMap[q.id] = {
+                name: q.name,
+                oc: q.purchase_order_id,
+                client: clientName
+            };
+        });
 
         const fullHistory = [];
         for (const p of history) {
@@ -528,12 +535,19 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
                 }));
             }
 
+            const qData = quoteMap[p.quotation_id];
+            let projectName = p.project_ref || 'N/A';
+            if (qData) {
+                projectName = qData.name;
+                if (qData.client) projectName += ` — 👤 ${qData.client}`;
+            }
+
             fullHistory.push({
                 ...p,
                 provider_name: provMap[p.provider_id] || 'Sin Proveedor',
                 account_name: accMap[p.account_id] || 'N/A',
-                project_name: quoteMap[p.quotation_id]?.name || p.project_ref || 'N/A',
-                purchase_order_id: quoteMap[p.quotation_id]?.oc || null,
+                project_name: projectName,
+                purchase_order_id: qData?.oc || null,
                 items: items
             });
         }
