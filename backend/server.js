@@ -1357,22 +1357,35 @@ app.delete('/api/production/:id', authenticateToken, async (req, res) => {
 
 // --- Logistics Routes ---
 app.get('/api/logistics', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase
-        .from(T.LOGISTICS)
-        .select('*')
-        .order('created_at', { ascending: false });
+    try {
+        // Fetch logistics and include the purchase type if transaction_type matches 'compra'
+        const { data, error } = await supabase
+            .from(T.LOGISTICS)
+            .select(`*, ${T.PURCHASES}(type)`)
+            .order('created_at', { ascending: false });
 
-    if (error) return res.status(500).json({ error: error.message });
+        if (error) return res.status(500).json({ error: error.message });
 
-    const fullHistory = [];
-    for (const l of data) {
-        const { data: items } = await supabase
-            .from(T.LOGISTICS_ITEMS)
-            .select('*')
-            .eq('logistics_id', l.id);
-        fullHistory.push({ ...l, items: items || [] });
+        // Filter: Only show if it's not a 'compra' OR if the source purchase is of type 'mp'
+        const filteredData = (data || []).filter(l => {
+            if (l.transaction_type === 'compra') {
+                return l.compras?.type === 'mp';
+            }
+            return true; // Keep sales and other types
+        });
+
+        const fullHistory = [];
+        for (const l of filteredData) {
+            const { data: items } = await supabase
+                .from(T.LOGISTICS_ITEMS)
+                .select('*')
+                .eq('logistics_id', l.id);
+            fullHistory.push({ ...l, items: items || [] });
+        }
+        res.json(fullHistory);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
-    res.json(fullHistory);
 });
 
 app.post('/api/logistics', authenticateToken, async (req, res) => {
@@ -1474,8 +1487,14 @@ app.get('/api/logistics/pending', authenticateToken, async (req, res) => {
             }
         });
 
-        // Pending Purchases
-        const { data: purchases } = await supabase.from(T.PURCHASES).select('id, date, proveedores(name)').order('date', { ascending: false }).limit(50);
+        // Pending Purchases (Only tangible Raw Materials, excluding broad expenses)
+        const { data: purchases } = await supabase
+            .from(T.PURCHASES)
+            .select('id, date, type, proveedores(name)')
+            .eq('type', 'mp')
+            .order('date', { ascending: false })
+            .limit(50);
+
         const pendingPurchases = (purchases || []).filter(p => !covered.compra.has(p.id)).map(p => ({
             id: p.id,
             date: p.date,
