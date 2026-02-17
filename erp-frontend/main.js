@@ -1470,6 +1470,8 @@ const views = {
         if (state.ledgerFilter.type !== 'all') {
           if (state.ledgerFilter.type === 'venta') {
             filtered = filtered.filter(e => e.entry_type.startsWith('venta'));
+          } else if (state.ledgerFilter.type === 'compra') {
+            filtered = filtered.filter(e => e.entry_type.startsWith('compra'));
           } else {
             filtered = filtered.filter(e => e.entry_type === state.ledgerFilter.type);
           }
@@ -5552,6 +5554,8 @@ window.exportLedger = function () {
   if (state.ledgerFilter.type !== 'all') {
     if (state.ledgerFilter.type === 'venta') {
       filtered = filtered.filter(e => e.entry_type.startsWith('venta'));
+    } else if (state.ledgerFilter.type === 'compra') {
+      filtered = filtered.filter(e => e.entry_type.startsWith('compra'));
     } else {
       filtered = filtered.filter(e => e.entry_type === state.ledgerFilter.type);
     }

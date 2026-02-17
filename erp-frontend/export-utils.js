@@ -172,12 +172,22 @@ export function formatProductionForExport(production) {
  * @returns {Array} Libro diario formateado para Excel
  */
 export function formatLedgerForExport(ledger) {
+    const typeLabels = {
+        'compra_pull': 'Compra PULL',
+        'compra_push': 'Compra PUSH',
+        'venta_pull': 'Venta PULL',
+        'venta_push': 'Venta PUSH',
+        'gasto': 'GASTO',
+        'transferencia': 'TRANSFERENCIA',
+        'consumo': 'PRODUCCIÓN'
+    };
     const formatted = [];
     ledger.forEach(entry => {
+        const typeLabel = typeLabels[entry.entry_type] || entry.entry_type.toUpperCase();
         entry.lines.forEach(line => {
             formatted.push({
                 'Fecha': entry.date,
-                'Tipo': entry.entry_type.toUpperCase(),
+                'Tipo': typeLabel,
                 'Descripción': entry.description,
                 'Documento': entry.document_number || '-',
                 'Código Cuenta': line.account_code,

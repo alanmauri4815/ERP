@@ -725,7 +725,7 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         await createAccountingEntry({
             date,
             description: glosa,
-            type: type === 'expense' ? 'gasto' : 'compra',
+            type: type === 'expense' ? 'gasto' : ((quotation_id || project_ref) ? 'compra_pull' : 'compra_push'),
             document_number: purchase.id.toString(),
             userId: req.user.id,
             lines: journalLines
@@ -809,7 +809,7 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             .from(T.ACCOUNTING_ENTRIES)
             .select('id')
             .eq('document_number', purchaseId.toString())
-            .in('entry_type', ['compra', 'gasto']);
+            .in('entry_type', ['compra', 'compra_push', 'compra_pull', 'gasto']);
 
         if (oldEntries && oldEntries.length > 0) {
             const entryIds = oldEntries.map(e => e.id);
@@ -844,7 +844,7 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
         await createAccountingEntry({
             date,
             description: glosa,
-            type: type === 'expense' ? 'gasto' : 'compra',
+            type: type === 'expense' ? 'gasto' : ((quotation_id || project_ref) ? 'compra_pull' : 'compra_push'),
             document_number: purchaseId.toString(),
             userId: req.user.id,
             lines: journalLines
