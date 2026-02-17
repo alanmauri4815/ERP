@@ -447,6 +447,9 @@ app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, asyn
             ALTER TABLE purchase_items ADD COLUMN IF NOT EXISTS custom_name text;
             ALTER TABLE quotations ADD COLUMN IF NOT EXISTS external_quote_id text;
             ALTER TABLE quotations ADD COLUMN IF NOT EXISTS purchase_order_id text;
+            ALTER TABLE ventas ADD COLUMN IF NOT EXISTS commission numeric DEFAULT 0;
+            ALTER TABLE ventas ADD COLUMN IF NOT EXISTS discount numeric DEFAULT 0;
+            ALTER TABLE ventas ADD COLUMN IF NOT EXISTS category text;
         `;
         const { error } = await supabase.rpc('exec_sql', { sql });
         if (error) throw error;
@@ -858,23 +861,31 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
     const date = new Date().toISOString().split('T')[0];
 
     try {
-        const { data: sale, error: sError } = await supabase
-            .from(T.SALES)
-            .insert({
-                date,
-                client_id: clientId || null,
-                net, iva, total,
-                discount: discount || 0,
-                commission: commission || 0,
-                payment_method: payment_method || null,
-                account_id: account_id || null,
-                is_iva_exempt: is_iva_exempt || false,
-                machine_id: machine_id || null,
-                event_name: event_name || null,
-                transferred: false
-            })
-            .select()
-            .single();
+        let payload = {
+            date,
+            client_id: clientId || null,
+            net, iva, total,
+            discount: discount || 0,
+            commission: commission || 0,
+            payment_method: payment_method || null,
+            account_id: account_id || null,
+            is_iva_exempt: is_iva_exempt || false,
+            machine_id: machine_id || null,
+            event_name: event_name || null,
+            transferred: false
+        };
+
+        let { data: sale, error: sError } = await supabase.from(T.SALES).insert(payload).select().single();
+
+        // If commission or discount columns are missing, retry without them
+        if (sError && sError.message.includes('column') && (sError.message.includes('commission') || sError.message.includes('discount'))) {
+            console.warn("Retrying sale insert without commission/discount columns...");
+            delete payload.commission;
+            delete payload.discount;
+            const retryReq = await supabase.from(T.SALES).insert(payload).select().single();
+            sale = retryReq.data;
+            sError = retryReq.error;
+        }
 
         if (sError) throw sError;
 
@@ -944,7 +955,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
         const date = existingSale?.date || new Date().toISOString().split('T')[0];
 
         // 2. Update sale record
-        const { error: updateError } = await supabase.from(T.SALES).update({
+        let updatePayload = {
             client_id: clientId || null,
             net, iva, total,
             discount: discount || 0,
@@ -954,7 +965,17 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             is_iva_exempt: is_iva_exempt || false,
             machine_id: machine_id || null,
             event_name: event_name || null
-        }).eq('id', saleId);
+        };
+
+        let { error: updateError } = await supabase.from(T.SALES).update(updatePayload).eq('id', saleId);
+
+        if (updateError && updateError.message.includes('column') && (updateError.message.includes('commission') || updateError.message.includes('discount'))) {
+            console.warn("Retrying sale update without commission/discount columns...");
+            delete updatePayload.commission;
+            delete updatePayload.discount;
+            const retryReq = await supabase.from(T.SALES).update(updatePayload).eq('id', saleId);
+            updateError = retryReq.error;
+        }
 
         if (updateError) throw updateError;
 
