@@ -85,15 +85,6 @@ let state = {
   pendingLogistics: []
 };
 
-window.toggleSaleType = function () {
-  const cat = document.getElementById('sale-category')?.value;
-  const group = document.getElementById('sale-quotation-group');
-  console.log('[Global] Toggling sale type. Category:', cat, 'Group found:', !!group);
-  if (group) {
-    group.style.display = (cat === 'pull') ? 'block' : 'none';
-  }
-};
-
 window.openSaleModal = function () {
   const modal = document.getElementById('sale-modal');
   if (!modal) return;
@@ -112,9 +103,6 @@ window.openSaleModal = function () {
 
   const clientEl = document.getElementById('sale-client');
   if (clientEl) clientEl.value = '';
-
-  // Force toggle
-  window.toggleSaleType();
 
   modal.style.display = 'flex';
 };
@@ -2241,13 +2229,6 @@ window.editTransaction = (type, id) => {
       const saleQuoteEl = document.getElementById('sale-quotation');
       if (saleCategoryEl) {
         saleCategoryEl.value = transaction.category || (transaction.quotation_id ? 'pull' : 'push');
-        console.log('[Edit] Setting sale category to:', saleCategoryEl.value);
-        // Force immediate toggle
-        const group = document.getElementById('sale-quotation-group');
-        if (group) group.style.display = (saleCategoryEl.value === 'pull') ? 'block' : 'none';
-
-        // Also call global function if it exists
-        if (typeof window.toggleSaleType === 'function') window.toggleSaleType();
       }
       if (saleQuoteEl) {
         saleQuoteEl.value = transaction.quotation_id || '';
