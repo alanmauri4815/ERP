@@ -772,7 +772,7 @@ const views = {
         <input type="hidden" id="sale-edit-mode" value="false">
         <input type="hidden" id="sale-edit-id" value="">
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem">
           <div class="form-group">
             <label>Cliente</label>
             <select id="sale-client">
@@ -795,11 +795,15 @@ const views = {
               <option value="pull">PULL (Cotización/Encargo)</option>
             </select>
           </div>
+        </div>
+        <div style="margin-bottom: 1.5rem">
           <div class="form-group" id="sale-quotation-group">
             <label style="font-weight: 600; color: var(--secondary)">📁 Asociar a Proyecto (ABC)</label>
             <select id="sale-quotation" style="border: 1px solid var(--secondary)">
               <option value="">Sin Proyecto / Venta Directa</option>
-              ${(() => { try { return (state.quotations || []).filter(q => ['approved', 'accepted', 'production', 'invoiced'].includes(q.status)).map(q => '<option value="' + q.id + '">📋 ' + (q.name || 'Cotización') + '</option>').join(''); } catch (e) { return ''; } })()}
+              <optgroup label="Cotizaciones Aprobadas / En Producción">
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — 👤 ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
+              </optgroup>
             </select>
             <small style="font-size: 0.7rem; opacity: 0.7">Vincula esta venta a un proyecto para cerrar el ciclo PULL.</small>
           </div>
