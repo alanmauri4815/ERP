@@ -5694,7 +5694,33 @@ window.exportLedger = function () {
       : new Date(b.date) - new Date(a.date);
   });
 
-  const formatted = formatLedgerForExport(filtered);
+  const enriched = filtered.map(e => {
+    let projName = null;
+
+    if (e.entry_type.startsWith('venta')) {
+      // Find sale
+      const sale = state.history.sales.find(s => s.id == e.document_number);
+      if (sale && sale.quotation_id) {
+        const q = state.quotations.find(q => q.id == sale.quotation_id);
+        projName = q ? (q.name || `Cotización #${q.id}`) : `Cotización #${sale.quotation_id}`;
+      }
+    } else if (e.entry_type.startsWith('compra')) {
+      // Find purchase
+      const pur = state.history.purchases.find(p => p.id == e.document_number);
+      if (pur) {
+        if (pur.project_ref && String(pur.project_ref).startsWith('S-')) {
+          const saleId = String(pur.project_ref).replace('S-', '');
+          projName = `Venta #${saleId}`;
+        } else if (pur.quotation_id) {
+          const q = state.quotations.find(q => q.id == pur.quotation_id);
+          projName = q ? (q.name || `Cotización #${q.id}`) : `Cotización #${pur.quotation_id}`;
+        }
+      }
+    }
+    return { ...e, project_name: projName };
+  });
+
+  const formatted = formatLedgerForExport(enriched);
   exportToExcel(formatted, 'Libro_Diario', 'Libro Diario');
   alert('✅ Libro Diario exportado a Excel exitosamente');
 };

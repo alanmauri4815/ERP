@@ -190,6 +190,7 @@ export function formatLedgerForExport(ledger) {
                 'Tipo': typeLabel,
                 'Descripción': entry.description,
                 'Documento': entry.document_number || '-',
+                'Proyecto': entry.project_name || '-',
                 'Código Cuenta': line.account_code,
                 'Cuenta': line.account_name,
                 'Glosa Línea': line.glosa || '-',
