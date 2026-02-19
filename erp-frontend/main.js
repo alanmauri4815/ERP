@@ -800,7 +800,10 @@ const views = {
             <select id="sale-quotation" style="border: 1px solid var(--secondary)">
               <option value="">Sin Proyecto / Venta Directa</option>
               <optgroup label="Cotizaciones Aprobadas / En Producción">
-                ${state.quotations?.filter(q => ['approved', 'accepted', 'production', 'invoiced'].includes(q.status)).map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — 👤 ${state.clients.find(c => c.id == q.client_id)?.name || 'Cliente Particular'}</option>`).join('') || ''}
+                ${(state.quotations || []).filter(q => ['approved', 'accepted', 'production', 'invoiced'].includes(q.status)).map(q => {
+    const cName = (state.clients || []).find(c => String(c.id) === String(q.client_id));
+    return `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — 👤 ${cName ? cName.name : 'Cliente'}</option>`;
+  }).join('')}
               </optgroup>
             </select>
             <small style="font-size: 0.7rem; opacity: 0.7">Vincula esta venta a un proyecto para cerrar el ciclo PULL.</small>
