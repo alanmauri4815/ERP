@@ -85,6 +85,40 @@ let state = {
   pendingLogistics: []
 };
 
+window.toggleSaleType = function () {
+  const cat = document.getElementById('sale-category')?.value;
+  const group = document.getElementById('sale-quotation-group');
+  console.log('[Global] Toggling sale type. Category:', cat, 'Group found:', !!group);
+  if (group) {
+    group.style.display = (cat === 'pull') ? 'block' : 'none';
+  }
+};
+
+window.openSaleModal = function () {
+  const modal = document.getElementById('sale-modal');
+  if (!modal) return;
+
+  // Reset modes
+  const modeEl = document.getElementById('sale-edit-mode');
+  const idEl = document.getElementById('sale-edit-id');
+  const titleEl = document.getElementById('sale-modal-title');
+  if (modeEl) modeEl.value = 'false';
+  if (idEl) idEl.value = '';
+  if (titleEl) titleEl.textContent = 'Nueva Venta de Productos';
+
+  // Reset first row
+  const catEl = document.getElementById('sale-category');
+  if (catEl) catEl.value = 'push';
+
+  const clientEl = document.getElementById('sale-client');
+  if (clientEl) clientEl.value = '';
+
+  // Force toggle
+  window.toggleSaleType();
+
+  modal.style.display = 'flex';
+};
+
 async function fetchUsers() {
   if (currentUser?.role !== 'superadmin') return;
   state.users = await apiFetch('/users');
@@ -716,7 +750,7 @@ const views = {
       <h1>Ventas (Salida PT)</h1>
       <div style="display: flex; gap: 0.5rem">
         <button onclick="window.exportSales()" style="background: var(--accent)">📊 Exportar a Excel</button>
-        <button onclick="document.getElementById('sale-modal').style.display='flex'" style="background: var(--secondary)">+ Registrar Venta</button>
+        <button onclick="window.openSaleModal()" style="background: var(--secondary)">+ Registrar Venta</button>
       </div>
     </header>
 
@@ -738,28 +772,38 @@ const views = {
         <input type="hidden" id="sale-edit-mode" value="false">
         <input type="hidden" id="sale-edit-id" value="">
 
-        <div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
-           <div class="form-group" style="flex: 1">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem">
+          <div class="form-group">
             <label>Cliente</label>
             <select id="sale-client">
               <option value="">Venta Directa</option>
               ${state.clients.map(c => `<option value="${c.id}">${c.name || 'Cliente ' + c.id}</option>`).join('')}
             </select>
           </div>
-          <div class="form-group" style="flex: 1">
+          <div class="form-group">
             <label>Fecha</label>
             <input type="date" id="sale-date" value="${new Date().toISOString().split('T')[0]}">
           </div>
-          <div class="form-group" style="flex: 1">
+          <div class="form-group">
             <label>Evento/Feria</label>
             <input type="text" id="sale-event-name" placeholder="Ej: Feria Navideña">
           </div>
-          <div class="form-group" style="flex: 1">
+          <div class="form-group">
             <label>Categoría (PUSH/PULL)</label>
             <select id="sale-category">
               <option value="push">PUSH (Venta Directa/Stock)</option>
               <option value="pull">PULL (Cotización/Encargo)</option>
             </select>
+          </div>
+          <div class="form-group" id="sale-quotation-group">
+            <label style="font-weight: 600; color: var(--secondary)">📁 Asociar a Proyecto (ABC)</label>
+            <select id="sale-quotation" style="border: 1px solid var(--secondary)">
+              <option value="">Sin Proyecto / Venta Directa</option>
+              <optgroup label="Cotizaciones Aprobadas / En Producción">
+                ${state.quotations?.filter(q => ['approved', 'accepted', 'production', 'invoiced'].includes(q.status)).map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — 👤 ${state.clients.find(c => c.id == q.client_id)?.name || 'Cliente Particular'}</option>`).join('') || ''}
+              </optgroup>
+            </select>
+            <small style="font-size: 0.7rem; opacity: 0.7">Vincula esta venta a un proyecto para cerrar el ciclo PULL.</small>
           </div>
         </div>
         <div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
@@ -2190,6 +2234,22 @@ window.editTransaction = (type, id) => {
         const machineEl = document.getElementById('sale-machine');
         if (machineEl) machineEl.value = transaction.machine_id || '';
       }
+
+      const saleCategoryEl = document.getElementById('sale-category');
+      const saleQuoteEl = document.getElementById('sale-quotation');
+      if (saleCategoryEl) {
+        saleCategoryEl.value = transaction.category || (transaction.quotation_id ? 'pull' : 'push');
+        console.log('[Edit] Setting sale category to:', saleCategoryEl.value);
+        // Force immediate toggle
+        const group = document.getElementById('sale-quotation-group');
+        if (group) group.style.display = (saleCategoryEl.value === 'pull') ? 'block' : 'none';
+
+        // Also call global function if it exists
+        if (typeof window.toggleSaleType === 'function') window.toggleSaleType();
+      }
+      if (saleQuoteEl) {
+        saleQuoteEl.value = transaction.quotation_id || '';
+      }
     } else {
       const typeEl = document.getElementById('pur-type');
       const categoryEl = document.getElementById('pur-category');
@@ -3395,7 +3455,7 @@ window.calculateQuotation = () => {
   let generalFixedIVA = 0;
 
   window.quotationItems.forEach(item => {
-    const raw = (item.unit_value_net || 0) * (item.quantity || 0);
+    const raw = (parseFloat(item.unit_value_net) || 0) * (parseFloat(item.quantity) || 0);
     const isFixed = item.calculation_type === 'fixed';
 
     let lineCost = raw;
@@ -3411,25 +3471,26 @@ window.calculateQuotation = () => {
         generalFixedNet += (item.document_type === 'factura' ? raw : 0);
         generalFixedIVA += lineIVA;
       } else {
-        // Unitario General: Escala por la suma de todos los productos
-        const totalQty = window.quotationProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
-        generalFixedCost += lineCost * (totalQty || 1);
-        generalFixedNet += (item.document_type === 'factura' ? raw * (totalQty || 1) : 0);
-        generalFixedIVA += lineIVA * (totalQty || 1);
+        const totalQty = window.quotationProducts.reduce((sum, p) => sum + (parseFloat(p.quantity) || 0), 0);
+        generalFixedCost += lineCost * totalQty;
+        generalFixedNet += (item.document_type === 'factura' ? raw * totalQty : 0);
+        generalFixedIVA += lineIVA * totalQty;
       }
     } else {
-      const p = products[item.linked_to];
+      // Robust product lookup
+      const targetProductId = String(item.linked_to);
+      const p = Object.values(products).find(x => String(x.id) === targetProductId);
+
       if (p) {
         if (isFixed) {
           p.cost += lineCost;
           p.net += (item.document_type === 'factura' ? raw : 0);
           p.iva += lineIVA;
         } else {
-          // Si es unitario, se multiplica por la cantidad del producto
-          const totalLine = lineCost * (p.quantity || 1);
-          p.cost += totalLine;
-          p.net += (item.document_type === 'factura' ? raw * p.quantity : 0);
-          p.iva += lineIVA * (p.quantity || 1);
+          const prodQty = parseFloat(p.quantity) || 0;
+          p.cost += lineCost * prodQty;
+          p.net += (item.document_type === 'factura' ? raw * prodQty : 0);
+          p.iva += lineIVA * prodQty;
         }
       }
     }
@@ -3501,19 +3562,23 @@ window.calculateQuotation = () => {
 
 // Función auxiliar para calcular el impacto total de una fila de costo en el proyecto
 window.getItemProjectTotal = (item) => {
-  const raw = (item.unit_value_net || 0) * (item.quantity || 0);
+  const lineQty = parseFloat(item.quantity) || 0;
+  const unitNet = parseFloat(item.unit_value_net) || 0;
+  const raw = unitNet * lineQty;
   const lineCost = item.document_type === 'boleta' ? raw * 1.19 : raw;
   const isFixed = item.calculation_type === 'fixed';
 
   if (item.linked_to === 'general') {
     if (isFixed) return Math.round(lineCost);
-    const totalQty = window.quotationProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
-    return Math.round(lineCost * (totalQty || 1));
+    const totalQty = window.quotationProducts.reduce((sum, p) => sum + (parseFloat(p.quantity) || 0), 0);
+    return Math.round(lineCost * totalQty);
   } else {
-    const p = window.quotationProducts.find(x => x.id === item.linked_to);
-    if (!p) return Math.round(lineCost);
+    const targetPid = String(item.linked_to);
+    const p = window.quotationProducts.find(x => String(x.id) === targetPid);
+    if (!p) return isFixed ? Math.round(lineCost) : 0;
     if (isFixed) return Math.round(lineCost);
-    return Math.round(lineCost * (p.quantity || 1));
+    const prodQty = parseFloat(p.quantity) || 0;
+    return Math.round(lineCost * prodQty);
   }
 };
 
@@ -3711,6 +3776,81 @@ window.viewQuotation = async (id) => {
           </tbody>
         </table>
       `;
+    } else if (viewType === 'circuit') {
+      const totalEstimatedCost = q.items.reduce((sum, it) => sum + (it.total_cost || 0), 0);
+      const totalRealPurchase = (q.related_purchases || []).reduce((sum, p) => sum + (p.total || 0), 0);
+      const totalRealSales = (q.related_sales || []).reduce((sum, s) => sum + (s.total || 0), 0);
+      const balance = totalRealSales - totalRealPurchase;
+
+      tableHtml = `
+        <div class="circuit-monitoring animate-fade">
+          <div class="grid-3" style="gap: 1.5rem; margin-bottom: 2rem">
+            <div class="card" style="border-left: 4px solid var(--secondary)">
+              <small style="opacity:0.7">Presupuesto (Costo Estimado)</small>
+              <div style="font-size:1.5rem; font-weight:700">$ ${Math.round(totalEstimatedCost).toLocaleString()}</div>
+            </div>
+            <div class="card" style="border-left: 4px solid var(--accent)">
+              <small style="opacity:0.7">Gasto Real (Compras)</small>
+              <div style="font-size:1.5rem; font-weight:700">$ ${Math.round(totalRealPurchase).toLocaleString()}</div>
+            </div>
+            <div class="card" style="border-left: 4px solid var(--success)">
+              <small style="opacity:0.7">Ingreso Real (Ventas)</small>
+              <div style="font-size:1.5rem; font-weight:700">$ ${Math.round(totalRealSales).toLocaleString()}</div>
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem">
+            <div>
+              <h4 style="margin-bottom:0.8rem">📦 Compras Asociadas</h4>
+              ${(q.related_purchases || []).length === 0 ? '<p style="opacity:0.5; font-size:0.9rem">No hay compras vinculadas.</p>' : `
+                <table style="font-size:0.85rem">
+                  <thead><tr><th>ID</th><th>Fecha</th><th>Proveedor</th><th>Total</th></tr></thead>
+                  <tbody>
+                    ${q.related_purchases.map(p => `
+                      <tr>
+                        <td>#${p.id}</td>
+                        <td>${p.date ? p.date.split('T')[0] : '-'}</td>
+                        <td>${state.providers.find(prov => prov.id == p.provider_id)?.name || 'Varios'}</td>
+                        <td style="text-align:right">$ ${p.total.toLocaleString()}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              `}
+            </div>
+            <div>
+              <h4 style="margin-bottom:0.8rem">💰 Ventas Realizadas</h4>
+              ${(q.related_sales || []).length === 0 ? '<p style="opacity:0.5; font-size:0.9rem">No hay ventas vinculadas.</p>' : `
+                <table style="font-size:0.85rem">
+                  <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th></tr></thead>
+                  <tbody>
+                    ${q.related_sales.map(s => `
+                      <tr>
+                        <td>#${s.id}</td>
+                        <td>${s.date ? s.date.split('T')[0] : '-'}</td>
+                        <td>${state.clients.find(c => c.id == s.clientId)?.name || 'Venta Directa'}</td>
+                        <td style="text-align:right">$ ${s.total.toLocaleString()}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              `}
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:2rem; background: ${balance >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; border: 1px solid ${balance >= 0 ? 'var(--success)' : 'var(--danger)'}">
+            <div style="display:flex; justify-content:space-between; align-items:center">
+              <div>
+                <h4 style="margin:0">Balance del Proyecto (Margen Bruto Real)</h4>
+                <p style="font-size:0.85rem; opacity:0.8">Ingresos totales menos gastos reales vinculados.</p>
+              </div>
+              <div style="font-size:2rem; font-weight:800; color:${balance >= 0 ? 'var(--success)' : 'var(--danger)'}">
+                $ ${Math.round(balance).toLocaleString()}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
     } else {
       // Client view: Multi-product table with Item, Detalle, Precio Unit, Cant, Sub Tot
       const products = q.products_list || [{ id: 'p1', name: q.name, quantity: q.quantity || 1 }];
@@ -3812,6 +3952,7 @@ window.viewQuotation = async (id) => {
           <div class="tab-group">
             <button class="tab-btn ${viewType === 'internal' ? 'active' : ''}" onclick="window.updateViewQuoteType('internal')">Vista Interna</button>
             <button class="tab-btn ${viewType === 'client' ? 'active' : ''}" onclick="window.updateViewQuoteType('client')">Vista Cliente (PVP)</button>
+            <button class="tab-btn ${viewType === 'circuit' ? 'active' : ''}" onclick="window.updateViewQuoteType('circuit')" style="border-color: var(--secondary); color: var(--secondary)">📊 Monitoréo de Circuito</button>
           </div>
         </div>
 
@@ -4434,6 +4575,9 @@ function renderView(viewName) {
       window.recalculateSaleTotals();
     };
 
+    // window.toggleSaleType is now defined globally for better availability.
+    // Logic removed here to avoid duplication.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.p
+
     // Recalculate totals when IVA exempt changes
     window.recalculateSaleTotals = function () {
       calculateTotals('sale');
@@ -4458,7 +4602,8 @@ function renderView(viewName) {
         is_iva_exempt: document.getElementById('sale-iva-exempt').checked,
         machine_id: paymentMethod === 'machine' ? (document.getElementById('sale-machine').value || null) : null,
         event_name: document.getElementById('sale-event-name').value || null,
-        category: document.getElementById('sale-category')?.value || 'push'
+        category: document.getElementById('sale-category')?.value || 'push',
+        quotation_id: document.getElementById('sale-quotation')?.value || null
       };
 
       if (body.items.length === 0) return alert('Debe agregar al menos un ítem');

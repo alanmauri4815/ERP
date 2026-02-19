@@ -857,8 +857,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/sales', authenticateToken, async (req, res) => {
-    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category } = req.body;
-    const date = new Date().toISOString().split('T')[0];
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id } = req.body;
+    const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
         let payload = {
@@ -875,14 +875,13 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             transferred: false
         };
 
-        let { data: sale, error: sError } = await supabase.from(T.SALES).insert(payload).select().single();
+        let { data: sale, error: sError } = await supabase.from(T.SALES).insert({ ...payload, category, quotation_id }).select().single();
 
-        // If commission or discount columns are missing, retry without them
-        if (sError && sError.message.includes('column') && (sError.message.includes('commission') || sError.message.includes('discount'))) {
-            console.warn("Retrying sale insert without commission/discount columns...");
-            delete payload.commission;
-            delete payload.discount;
-            const retryReq = await supabase.from(T.SALES).insert(payload).select().single();
+        // If some columns are missing, retry without them
+        if (sError && sError.message.includes('column')) {
+            console.warn("Retrying sale insert without extended columns...", sError.message);
+            const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, ...fallbackPayload } = payload;
+            const retryReq = await supabase.from(T.SALES).insert(fallbackPayload).select().single();
             sale = retryReq.data;
             sError = retryReq.error;
         }
@@ -947,7 +946,8 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 // ========== UPDATE SALE (with accounting recalculation) ==========
 app.put('/api/sales/:id', authenticateToken, async (req, res) => {
     const saleId = req.params.id;
-    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category } = req.body;
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id } = req.body;
+    const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
         // 1. Get current sale date for accounting
@@ -967,13 +967,12 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             event_name: event_name || null
         };
 
-        let { error: updateError } = await supabase.from(T.SALES).update(updatePayload).eq('id', saleId);
+        let { error: updateError } = await supabase.from(T.SALES).update({ ...updatePayload, category, quotation_id }).eq('id', saleId);
 
-        if (updateError && updateError.message.includes('column') && (updateError.message.includes('commission') || updateError.message.includes('discount'))) {
-            console.warn("Retrying sale update without commission/discount columns...");
-            delete updatePayload.commission;
-            delete updatePayload.discount;
-            const retryReq = await supabase.from(T.SALES).update(updatePayload).eq('id', saleId);
+        if (updateError && updateError.message.includes('column')) {
+            console.warn("Retrying sale update without extended columns...", updateError.message);
+            const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, ...fallbackUpdate } = updatePayload;
+            const retryReq = await supabase.from(T.SALES).update(fallbackUpdate).eq('id', saleId);
             updateError = retryReq.error;
         }
 
@@ -1821,13 +1820,22 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
         .single();
     if (qError) return res.status(500).json({ error: qError.message });
 
-    const { data: items, error: iError } = await supabase.from(T.QUOTE_ITEMS).select('*').eq('quotation_id', id);
-    if (iError) return res.status(500).json({ error: iError.message });
+    const [itemsRes, salesRes, purchasesRes] = await Promise.all([
+        supabase.from(T.QUOTE_ITEMS).select('*').eq('quotation_id', id),
+        supabase.from(T.SALES).select('*').eq('quotation_id', id),
+        supabase.from(T.PURCHASES).select('*').eq('quotation_id', id)
+    ]);
 
-    // Flatten clients if it's an array
+    if (itemsRes.error) return res.status(500).json({ error: itemsRes.error.message });
+
     const clientData = Array.isArray(quotation.clients) ? quotation.clients[0] : quotation.clients;
-    console.log('API_DEBUG_QUOTE_DETAIL:', { id: quotation.id, clients: clientData });
-    res.json({ ...quotation, clients: clientData, items });
+    res.json({
+        ...quotation,
+        clients: clientData,
+        items: itemsRes.data,
+        related_sales: salesRes.data || [],
+        related_purchases: purchasesRes.data || []
+    });
 });
 
 // --- Accounting System Endpoints ---
