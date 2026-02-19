@@ -5702,7 +5702,11 @@ window.exportLedger = function () {
       const sale = state.history.sales.find(s => s.id == e.document_number);
       if (sale && sale.quotation_id) {
         const q = state.quotations.find(q => q.id == sale.quotation_id);
-        projName = q ? (q.name || `Cotización #${q.id}`) : `Cotización #${sale.quotation_id}`;
+        if (q) {
+          projName = q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotización #${q.id}`);
+        } else {
+          projName = `Cotización #${sale.quotation_id}`;
+        }
       }
     } else if (e.entry_type.startsWith('compra')) {
       // Find purchase
@@ -5710,10 +5714,25 @@ window.exportLedger = function () {
       if (pur) {
         if (pur.project_ref && String(pur.project_ref).startsWith('S-')) {
           const saleId = String(pur.project_ref).replace('S-', '');
-          projName = `Venta #${saleId}`;
+          // Try to find the sale to see if it has a quotation with OC
+          const relatedSale = state.history.sales.find(s => s.id == saleId);
+          if (relatedSale && relatedSale.quotation_id) {
+            const q = state.quotations.find(q => q.id == relatedSale.quotation_id);
+            if (q) {
+              projName = q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotización #${q.id}`);
+            } else {
+              projName = `Venta #${saleId}`;
+            }
+          } else {
+            projName = `Venta #${saleId}`;
+          }
         } else if (pur.quotation_id) {
           const q = state.quotations.find(q => q.id == pur.quotation_id);
-          projName = q ? (q.name || `Cotización #${q.id}`) : `Cotización #${pur.quotation_id}`;
+          if (q) {
+            projName = q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotización #${q.id}`);
+          } else {
+            projName = `Cotización #${pur.quotation_id}`;
+          }
         }
       }
     }
