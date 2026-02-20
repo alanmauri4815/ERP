@@ -120,7 +120,24 @@ function calculateTax(netPrice, taxRate = 0.19) {
     return { iva, total };
 }
 
-app.use(cors());
+// --- CORS: Only allow known origins ---
+const allowedOrigins = [
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'https://erp-dun.vercel.app',
+    'https://erp-git-main-alanmauri4815.vercel.app',
+    'http://localhost:3001'
+];
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, Postman)
+        if (!origin || allowedOrigins.some(o => origin.startsWith(o))) {
+            callback(null, true);
+        } else {
+            console.warn(`CORS blocked request from: ${origin}`);
+            callback(new Error('CORS no permitido'));
+        }
+    }
+}));
 app.use(express.json({ limit: '5mb' }));
 
 // Request logger
@@ -129,7 +146,42 @@ app.use((req, res, next) => {
     next();
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
+// --- JWT Secret: Fail-fast if not configured ---
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+    console.error('FATAL: JWT_SECRET is not set in .env. Server cannot start securely.');
+    process.exit(1);
+}
+
+// --- Rate Limiting for Login (in-memory) ---
+const loginAttempts = new Map();
+function loginRateLimiter(req, res, next) {
+    const ip = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
+    const windowMs = 15 * 60 * 1000; // 15 minutes
+    const maxAttempts = 10;
+
+    if (!loginAttempts.has(ip)) {
+        loginAttempts.set(ip, []);
+    }
+    const attempts = loginAttempts.get(ip).filter(t => now - t < windowMs);
+    loginAttempts.set(ip, attempts);
+
+    if (attempts.length >= maxAttempts) {
+        return res.status(429).json({ error: 'Demasiados intentos de login. Intente de nuevo en 15 minutos.' });
+    }
+    attempts.push(now);
+    next();
+}
+// Clean up rate limit map every 30 minutes
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, times] of loginAttempts) {
+        const valid = times.filter(t => now - t < 15 * 60 * 1000);
+        if (valid.length === 0) loginAttempts.delete(ip);
+        else loginAttempts.set(ip, valid);
+    }
+}, 30 * 60 * 1000);
 
 // Auth Middleware
 const authenticateToken = (req, res, next) => {
@@ -162,7 +214,7 @@ const checkSuperAdmin = (req, res, next) => {
 };
 
 // Auth Routes
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authenticateToken, checkAdmin, async (req, res) => {
     const { username, password } = req.body;
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -174,7 +226,7 @@ app.post('/api/auth/register', async (req, res) => {
     }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     const { username, password } = req.body;
     try {
         const { data: user, error } = await supabase.from(T.USERS).select('*').eq('username', username).single();
@@ -2091,7 +2143,22 @@ app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
     }
 });
 
+// --- Health Check ---
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() });
+});
+
+// --- Global Error Handler ---
+app.use((err, req, res, next) => {
+    console.error(`[ERROR] ${req.method} ${req.url}:`, err.message);
+    res.status(err.status || 500).json({
+        success: false,
+        error: process.env.NODE_ENV === 'production' ? 'Error interno del servidor' : err.message
+    });
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
     console.log(`ERP Backend running on port ${PORT} (Connected to Supabase)`);
+    console.log(`CORS origins: ${allowedOrigins.join(', ')}`);
 });
