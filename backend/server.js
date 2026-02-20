@@ -123,8 +123,9 @@ function calculateTax(netPrice, taxRate = 0.19) {
 // --- CORS: Only allow known origins ---
 const allowedOrigins = [
     process.env.FRONTEND_URL || 'http://localhost:5173',
-    'https://erp-dun.vercel.app',
-    'https://erp-git-main-alanmauri4815.vercel.app',
+    'https://erp-rho-nine.vercel.app',
+    'https://erp-git-main-alanmauri4815s-proyectos.vercel.app',
+    'https://erp-54l4owhov-alanmauri4815s-proyectos.vercel.app',
     'http://localhost:3001'
 ];
 app.use(cors({
