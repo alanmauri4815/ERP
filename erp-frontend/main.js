@@ -13,7 +13,7 @@ import {
 
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
-  : 'https://erp-backend-0fis.onrender.com/api';
+  : 'https://erp-universal-backend.onrender.com/api';
 
 const mainContent = document.getElementById('main-content');
 const navItems = document.querySelectorAll('.nav-item');
