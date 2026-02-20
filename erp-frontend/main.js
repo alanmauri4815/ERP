@@ -928,36 +928,75 @@ const views = {
       <div class="date-display">Análisis de Ganancias y Rendimiento</div>
     </header>
 
-    <div class="grid-2 animate-fade">
-      <div class="card">
-        <h2>Ingresos vs Costos Mensuales</h2>
-        <canvas id="monthlyProfitChart" style="max-height: 400px;"></canvas>
+    <div class="tabs" style="display: flex; gap: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 2rem">
+      <button class="tab-btn active" onclick="window.showReportTab('general', this)">General Mensual</button>
+      <button class="tab-btn" onclick="window.showReportTab('profitability', this)">Rentabilidad por Proyecto</button>
+    </div>
+
+    <!-- TAB GENERAL -->
+    <div id="report-tab-general" class="report-tab animate-fade">
+      <div class="grid-2 animate-fade">
+        <div class="card">
+          <h2>Ingresos vs Costos Mensuales</h2>
+          <canvas id="monthlyProfitChart" style="max-height: 400px;"></canvas>
+        </div>
+        <div class="card">
+          <h2>Evolución de Ganancia Neta</h2>
+          <canvas id="netProfitChart" style="max-height: 400px;"></canvas>
+        </div>
       </div>
-      <div class="card">
-        <h2>Evolución de Ganancia Neta</h2>
-        <canvas id="netProfitChart" style="max-height: 400px;"></canvas>
+
+      <div class="card animate-fade" style="margin-top: 2rem">
+        <h2>Resumen Mensual</h2>
+        <div class="table-container">
+          <table id="monthly-report-table">
+            <thead>
+              <tr>
+                <th>Mes</th>
+                <th>Operaciones</th>
+                <th>Ingresos</th>
+                <th>Costos Estimados</th>
+                <th>Ganancia Neta</th>
+                <th>Margen %</th>
+              </tr>
+            </thead>
+            <tbody id="monthly-report-body">
+              <tr><td colspan="6" style="text-align: center">Cargando datos...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
-    <div class="card animate-fade" style="margin-top: 2rem">
-      <h2>Resumen Mensual</h2>
-      <div class="table-container">
-        <table id="monthly-report-table">
-          <thead>
-            <tr>
-              <th>Mes</th>
-              <th>Operaciones</th>
-              <th>Ingresos</th>
-              <th>Costos Estimados</th>
-              <th>Ganancia Neta</th>
-              <th>Margen %</th>
-            </tr>
-          </thead>
-          <tbody id="monthly-report-body">
-            <tr><td colspan="6" style="text-align: center">Cargando datos...</td></tr>
-          </tbody>
-        </table>
-      </div>
+    <!-- TAB RENTABILIDAD -->
+    <div id="report-tab-profitability" class="report-tab animate-fade" style="display:none">
+       <div class="card animate-fade">
+         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
+           <h2>Rentabilidad por Proyecto / Cotización</h2>
+           <button class="btn-sm" onclick="window.calculateProfitabilityByProject()" title="Recalcular">🔄</button>
+         </div>
+         <p style="font-size: 0.9rem; opacity: 0.8; margin-bottom: 1rem">
+           Ingresos (Ventas PULL) menos Costos Directos (Compras MP, Gastos) asociados al proyecto.
+         </p>
+         <div class="table-container">
+           <table class="data-table">
+             <thead>
+               <tr>
+                 <th>Proyecto / OC</th>
+                 <th>Cliente</th>
+                 <th style="text-align:right">Ingresos ($)</th>
+                 <th style="text-align:right">Costos/Gastos ($)</th>
+                 <th style="text-align:right">Utilidad ($)</th>
+                 <th style="text-align:right">Margen (%)</th>
+                 <th>Estado</th>
+               </tr>
+             </thead>
+             <tbody id="profitability-report-body">
+               <tr><td colspan="7" style="text-align:center; padding: 2rem">Cargando análisis...</td></tr>
+             </tbody>
+           </table>
+         </div>
+       </div>
     </div>
   `,
 
@@ -5308,6 +5347,122 @@ window.saveThreshold = async (code, btn) => {
     btn.textContent = '✅';
     setTimeout(() => btn.textContent = 'Set', 2000);
   } else alert('Error al guardar límite');
+};
+
+// --- Report Helpers ---
+window.showReportTab = function (tabName, btn) {
+  document.querySelectorAll('.report-tab').forEach(t => t.style.display = 'none');
+  const target = document.getElementById(`report-tab-${tabName}`);
+  if (target) target.style.display = 'block';
+
+  if (btn) {
+    btn.parentNode.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  if (tabName === 'profitability') {
+    window.calculateProfitabilityByProject();
+  }
+};
+
+window.calculateProfitabilityByProject = function () {
+  const tbody = document.getElementById('profitability-report-body');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 2rem">Calculando rentabilidad...</td></tr>';
+
+  // 1. Initialize Projects based on Quotations
+  const projects = {};
+
+  (state.quotations || []).forEach(q => {
+    // Consider a project if it has status that implies activity
+    projects[q.id] = {
+      id: q.id,
+      name: q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotización #${q.id}`),
+      client: q.clients ? q.clients.name : 'Desconocido',
+      status: q.status,
+      income: 0,
+      expenses: 0
+    };
+  });
+
+  // 2. Process Sales (Income - NETO)
+  (state.history.sales || []).forEach(s => {
+    const netAmount = s.net || Math.round(s.total / 1.19);
+    if (s.quotation_id && projects[s.quotation_id]) {
+      projects[s.quotation_id].income += netAmount;
+    }
+  });
+
+  // 3. Process Purchases (Expenses - NETO)
+  (state.history.purchases || []).forEach(p => {
+    const netAmount = p.net || Math.round(p.total / 1.19);
+    let qId = null;
+
+    if (p.quotation_id) {
+      qId = p.quotation_id;
+    } else if (p.project_ref && String(p.project_ref).startsWith('S-')) {
+      const saleId = String(p.project_ref).replace('S-', '');
+      const sale = state.history.sales.find(s => s.id == saleId);
+      if (sale && sale.quotation_id) {
+        qId = sale.quotation_id;
+      }
+    }
+
+    if (qId && projects[qId]) {
+      projects[qId].expenses += netAmount;
+    }
+  });
+
+  // 4. Convert to Array, Filter and Sort
+  const reportData = Object.values(projects)
+    .filter(p => p.income > 0 || p.expenses > 0)
+    .map(p => {
+      const profit = p.income - p.expenses;
+      const margin = p.income > 0 ? (profit / p.income) * 100 : 0;
+      return { ...p, profit, margin };
+    })
+    .sort((a, b) => b.income - a.income);
+
+  // 5. Render
+  if (reportData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 2rem; opacity: 0.6">No hay datos de proyectos con movimientos financieros.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = reportData.map(p => {
+    const statusMap = {
+      'draft': 'Borrador',
+      'sent': 'Enviada',
+      'approved': 'Aprobada',
+      'production': 'En Producción',
+      'ready': 'Lista',
+      'delivered': 'Entregada',
+      'rejected': 'Rechazada'
+    };
+
+    // Color logic for profit
+    const profitColor = p.profit >= 0 ? 'var(--success)' : 'var(--danger)';
+
+    // Color logic for margin
+    let marginBadge = 'badge-danger';
+    if (p.margin > 30) marginBadge = 'badge-success';
+    else if (p.margin > 15) marginBadge = 'badge-warning';
+
+    return `
+       <tr>
+         <td>
+            <div style="font-weight:600">${p.name}</div>
+            <div style="font-size:0.75rem; opacity:0.6">ID: ${p.id}</div>
+         </td>
+         <td>${p.client}</td>
+         <td style="text-align:right">$${Math.round(p.income).toLocaleString()}</td>
+         <td style="text-align:right">$${Math.round(p.expenses).toLocaleString()}</td>
+         <td style="text-align:right; font-weight:bold; color: ${profitColor}">$${Math.round(p.profit).toLocaleString()}</td>
+         <td style="text-align:right"><span class="badge ${marginBadge}">${p.margin.toFixed(1)}%</span></td>
+         <td><span class="badge status-${p.status}">${statusMap[p.status] || p.status}</span></td>
+       </tr>
+     `;
+  }).join('');
 };
 
 async function initReports() {
