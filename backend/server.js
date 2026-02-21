@@ -231,7 +231,10 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     const { username, password } = req.body;
     try {
         const { data: user, error } = await supabase.from(T.USERS).select('*').eq('username', username).single();
-        if (error) return res.status(401).json({ error: 'Error de base de datos', details: error.message, code: error.code });
+        if (error) {
+            console.error('Login DB Error:', error.message, 'Code:', error.code);
+            return res.status(401).json({ error: 'Error de base de datos', details: error.message, code: error.code });
+        }
         if (!user) return res.status(401).json({ error: 'Usuario no encontrado.' });
 
         const validPassword = await bcrypt.compare(password, user.password);
@@ -2147,6 +2150,20 @@ app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
 // --- Health Check ---
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() });
+});
+
+app.get('/api/debug-db', async (req, res) => {
+    try {
+        const { data, error } = await supabase.from(T.USERS).select('count', { count: 'exact', head: true });
+        res.json({
+            connected: !error,
+            table: T.USERS,
+            error: error ? error.message : null,
+            count: data || 0
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // --- Global Error Handler ---
