@@ -1304,8 +1304,18 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
         updateData.material_cost = material_cost || 0;
         updateData.general_expenses = general_expenses || 0;
 
-        const { error: updateError } = await supabase.from(T.PRODUCTION).update(updateData).eq('id', prodId);
-        if (updateError) throw updateError;
+        let updateResult = await supabase.from(T.PRODUCTION).update(updateData).eq('id', prodId);
+
+        // Fallback if new columns don't exist yet
+        if (updateResult.error && updateResult.error.message.includes('column')) {
+            console.warn('Retrying production update without new columns...', updateResult.error.message);
+            const fallbackData = { date: productionDate };
+            if (production_category) fallbackData.production_category = production_category;
+            if (quotation_id && !isNaN(quotation_id)) fallbackData.quotation_id = parseInt(quotation_id);
+            updateResult = await supabase.from(T.PRODUCTION).update(fallbackData).eq('id', prodId);
+        }
+
+        if (updateResult.error) throw updateResult.error;
 
         // 4. INSERT NEW ITEMS AND APPLY NEW STOCK IMPACT
         let totalProductionCost = 0;
