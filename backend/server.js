@@ -2154,15 +2154,21 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/debug-db', async (req, res) => {
     try {
+        const fetchTest = await fetch(`${process.env.SUPABASE_URL}/rest/v1/usuarios?select=count`, {
+            headers: { 'apikey': process.env.SUPABASE_KEY, 'Authorization': `Bearer ${process.env.SUPABASE_KEY}` }
+        }).then(r => r.status).catch(e => e.message);
+
         const { data, error } = await supabase.from(T.USERS).select('count', { count: 'exact', head: true });
         res.json({
+            url: process.env.SUPABASE_URL,
+            rawFetchStatus: fetchTest,
             connected: !error,
             table: T.USERS,
             error: error ? error.message : null,
-            count: data || 0
+            count: data
         });
     } catch (e) {
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: e.message, stack: e.stack });
     }
 });
 
