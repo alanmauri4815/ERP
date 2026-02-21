@@ -4319,6 +4319,13 @@ function renderView(viewName) {
       }
     });
 
+    // Handle group visibility (hide group if all items inside are hidden)
+    document.querySelectorAll('.nav-group').forEach(group => {
+      const hasVisibleItems = Array.from(group.querySelectorAll('.nav-item'))
+        .some(item => item.style.display !== 'none');
+      group.style.display = hasVisibleItems ? 'block' : 'none';
+    });
+
     // Si el usuario intenta entrar a una vista no permitida (por link manual o error)
     if (!allowedViews.includes(viewName) && viewName !== 'login') {
       return renderView('dashboard');
@@ -4327,7 +4334,17 @@ function renderView(viewName) {
 
   if (!views[viewName]) return;
   mainContent.innerHTML = views[viewName]();
-  navItems.forEach(item => item.classList.toggle('active', item.dataset.view === viewName));
+
+  navItems.forEach(item => {
+    const isActive = item.dataset.view === viewName;
+    item.classList.toggle('active', isActive);
+
+    // Auto-expand the group of the active item
+    if (isActive) {
+      const group = item.closest('.nav-group');
+      if (group) group.classList.add('open');
+    }
+  });
 
   // Actualizar nombre de usuario en el sidebar si no estamos en login
   if (viewName !== 'login') {
@@ -5907,6 +5924,14 @@ window.exportProduction = function () {
 };
 
 navItems.forEach(item => item.addEventListener('click', () => renderView(item.dataset.view)));
+
+// Sidebar Collapsible Logic
+document.querySelectorAll('.nav-group-header').forEach(header => {
+  header.addEventListener('click', () => {
+    const group = header.parentElement;
+    group.classList.toggle('open');
+  });
+});
 
 function logout() {
   token = null;
