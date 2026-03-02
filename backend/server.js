@@ -563,12 +563,12 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
 
         // Fetch lookup tables
         const [provs, accs, quotes] = await Promise.all([
-            supabase.from(T.PROVIDERS).select('id, name'),
+            supabase.from(T.PROVIDERS).select('id, name, rut'),
             supabase.from(T.ACCOUNTS).select('id, name'),
             supabase.from(T.QUOTATIONS).select(`id, name, purchase_order_id, clients:${T.CLIENTS}(name)`).limit(1000)
         ]);
 
-        const provMap = {}; provs.data?.forEach(p => provMap[p.id] = p.name);
+        const provMap = {}; provs.data?.forEach(p => provMap[p.id] = { name: p.name, rut: p.rut });
         const accMap = {}; accs.data?.forEach(a => accMap[a.id] = a.name);
         const quoteMap = {}; quotes.data?.forEach(q => {
             const clientName = Array.isArray(q.clients) ? q.clients[0]?.name : q.clients?.name;
@@ -581,6 +581,7 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
 
         const fullHistory = [];
         for (const p of history) {
+            const provInfo = provMap[p.provider_id] || { name: '?', rut: '76.000.000-1' };
             let items = [];
             const { data: itemData } = await supabase
                 .from(T.PURCHASE_ITEMS)
@@ -605,7 +606,8 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
 
             fullHistory.push({
                 ...p,
-                provider_name: provMap[p.provider_id] || 'Sin Proveedor',
+                provider_name: provInfo.name,
+                provider_rut: provInfo.rut,
                 account_name: accMap[p.account_id] || 'N/A',
                 project_name: projectName,
                 purchase_order_id: qData?.oc || null,
@@ -621,7 +623,7 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
 app.get(['/api/history/sales', '/api/sales'], authenticateToken, async (req, res) => {
     const { data: history, error } = await supabase
         .from(T.SALES)
-        .select(`*, clients:"${T.CLIENTS}"(name)`)
+        .select(`*, clients:"${T.CLIENTS}"(name, rut)`)
         .order('date', { ascending: false });
 
     if (error) return res.status(500).json({ error: error.message });
@@ -636,6 +638,7 @@ app.get(['/api/history/sales', '/api/sales'], authenticateToken, async (req, res
         fullHistory.push({
             ...s,
             client_name: s.clients?.name,
+            client_rut: s.clients?.rut,
             items: items?.map(i => ({
                 ...i,
                 product_name: i.products?.name,

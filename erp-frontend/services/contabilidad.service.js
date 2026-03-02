@@ -247,7 +247,7 @@ export async function getLibroMayor(cuenta_codigo) {
 }
 
 export async function registrarCompra(data) {
-    const neto = parseInt(data.neto);
+    const neto = Math.round(parseFloat(data.neto) || 0);
     const iva = Math.round(neto * IVA_RATE);
     const total = neto + iva;
 
@@ -275,7 +275,7 @@ export async function registrarCompra(data) {
 }
 
 export async function registrarVenta(data) {
-    const neto = parseInt(data.neto);
+    const neto = Math.round(parseFloat(data.neto) || 0);
     const iva = Math.round(neto * IVA_RATE);
     const total = neto + iva;
 
@@ -318,17 +318,20 @@ export async function sincronizarOperacionesERP(hSales, hPurch) {
     // 1. Sincronizar Compras (Raw Materials)
     for (const p of hPurch) {
         if (!p || !p.id) continue;
-        const alreadySynced = existingCompras.some(c => c.referencia_id === String(p.id));
+        const alreadySynced = existingCompras.some(c => String(c.referencia_id) === String(p.id));
         if (!alreadySynced) {
-            const fechaStr = p.created_at || new Date().toISOString();
+            const fechaStr = p.date || p.created_at || new Date().toISOString();
+            const totalCompra = parseFloat(p.total) || 0;
+            const netCompra = parseFloat(p.net) || Math.round(totalCompra / 1.19);
+
             await registrarCompra({
                 fecha: fechaStr.split('T')[0],
                 tipo_dte: '33',
                 numero: String(p.id),
-                rut: p.providers?.rut || '76.000.000-1',
-                nombre: p.providers?.name || 'Proveedor ERP',
-                neto: p.total_price || 0,
-                glosa: `Sincronizado desde ERP: ${p.raw_materials?.name || 'Material'}`,
+                rut: p.provider_rut || '76.000.000-1',
+                nombre: p.provider_name || 'Proveedor ERP',
+                neto: netCompra,
+                glosa: `Sincronizado desde ERP: Compra #${p.id}`,
                 referencia_id: String(p.id)
             });
             syncedCount++;
@@ -338,18 +341,20 @@ export async function sincronizarOperacionesERP(hSales, hPurch) {
     // 2. Sincronizar Ventas (Products)
     for (const s of hSales) {
         if (!s || !s.id) continue;
-        const alreadySynced = existingVentas.some(v => v.referencia_id === String(s.id));
+        const alreadySynced = existingVentas.some(v => String(v.referencia_id) === String(s.id));
         if (!alreadySynced) {
-            const fechaStr = s.created_at || new Date().toISOString();
-            const neto = Math.round((s.total_price || 0) / 1.19);
+            const fechaStr = s.date || s.created_at || new Date().toISOString();
+            const totalVenta = parseFloat(s.total) || 0;
+            const neto = Math.round(totalVenta / 1.19);
+
             await registrarVenta({
                 fecha: fechaStr.split('T')[0],
                 tipo_dte: '33',
                 numero: String(s.id),
-                rut: s.clients?.rut || '6.666.666-6',
-                nombre: s.clients?.name || 'Cliente ERP',
+                rut: s.client_rut || '6.666.666-6',
+                nombre: s.client_name || 'Cliente ERP',
                 neto: neto,
-                glosa: `Sincronizado desde ERP: ${s.products?.name || 'Producto'}`,
+                glosa: `Sincronizado desde ERP: Venta #${s.id}`,
                 referencia_id: String(s.id)
             });
             syncedCount++;
