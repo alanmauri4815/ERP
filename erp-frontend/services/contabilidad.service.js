@@ -225,7 +225,7 @@ export async function getLibroDiario(periodo = 'todos') {
 
     return filteredAsientos.map(a => ({
         ...a,
-        lineas: movimientos.filter(m => m.asiento_id === a.id)
+        lineas: movimientos.filter(m => String(m.asiento_id) === String(a.id))
     })).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 }
 export async function getLibroMayor(cuenta_codigo) {
@@ -237,7 +237,7 @@ export async function getLibroMayor(cuenta_codigo) {
     const movsCuenta = movimientos.filter(m => m.cuenta_codigo === cuenta_codigo);
 
     return movsCuenta.map(m => {
-        const asiento = asientos.find(a => a.id === m.asiento_id);
+        const asiento = asientos.find(a => String(a.id) === String(m.asiento_id));
         return {
             ...m,
             fecha: asiento?.fecha || '-',
@@ -261,13 +261,13 @@ export async function registrarCompra(data) {
     // Contabilización Automática
     await crearAsiento({
         fecha: data.fecha,
-        glosa: `Compra: ${data.nombre} - Doc ${data.numero}`,
+        glosa: `Registro Compra: ${data.nombre} - Doc ${data.numero}`,
         tipo_origen: 'compra',
-        referencia_id: compra.id,
+        referencia_id: String(compra.id),
         lineas: [
-            { cuenta_codigo: '1.1.04', debe: neto, haber: 0 }, // Mercaderías / Existencias (Ejemplo)
+            { cuenta_codigo: '1.1.09', debe: neto, haber: 0 }, // Existencias (Estandard ContaChile)
             { cuenta_codigo: '1.1.06', debe: iva, haber: 0 },  // IVA Crédito Fiscal
-            { cuenta_codigo: '2.1.01', debe: 0, haber: total } // Cuentas por Pagar / Proveedores
+            { cuenta_codigo: '2.1.01', debe: 0, haber: total } // Proveedores
         ]
     });
 
@@ -289,12 +289,12 @@ export async function registrarVenta(data) {
     // Contabilización Automática
     await crearAsiento({
         fecha: data.fecha,
-        glosa: `Venta: ${data.nombre} - Doc ${data.numero}`,
+        glosa: `Registro Venta: ${data.nombre} - Doc ${data.numero}`,
         tipo_origen: 'venta',
-        referencia_id: venta.id,
+        referencia_id: String(venta.id),
         lineas: [
             { cuenta_codigo: '1.1.01', debe: total, haber: 0 }, // Caja/Banco
-            { cuenta_codigo: '4.1.01', debe: 0, haber: neto },  // Ingresos por Ventas
+            { cuenta_codigo: '4.1.01', debe: 0, haber: neto },  // Ventas Afectas
             { cuenta_codigo: '2.1.02', debe: 0, haber: iva }   // IVA Débito Fiscal
         ]
     });
