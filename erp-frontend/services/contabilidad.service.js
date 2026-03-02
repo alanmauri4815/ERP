@@ -1,4 +1,6 @@
-export { db } from './datastore.js';
+import { db } from './datastore.js';
+export { db };
+
 
 // --- Constantes del Sistema (Valores Chile 2024-2025) ---
 const IVA_RATE = 0.19;
@@ -243,3 +245,60 @@ export async function getLibroMayor(cuenta_codigo) {
         };
     }).sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
 }
+
+export async function registrarCompra(data) {
+    const neto = parseInt(data.neto);
+    const iva = Math.round(neto * IVA_RATE);
+    const total = neto + iva;
+
+    const compra = await db.insert('compras', {
+        ...data,
+        neto,
+        iva,
+        total
+    });
+
+    // Contabilización Automática
+    await crearAsiento({
+        fecha: data.fecha,
+        glosa: `Compra: ${data.nombre} - Doc ${data.numero}`,
+        tipo_origen: 'compra',
+        referencia_id: compra.id,
+        lineas: [
+            { cuenta_codigo: '1.1.04', debe: neto, haber: 0 }, // Mercaderías / Existencias (Ejemplo)
+            { cuenta_codigo: '1.1.06', debe: iva, haber: 0 },  // IVA Crédito Fiscal
+            { cuenta_codigo: '2.1.01', debe: 0, haber: total } // Cuentas por Pagar / Proveedores
+        ]
+    });
+
+    return compra;
+}
+
+export async function registrarVenta(data) {
+    const neto = parseInt(data.neto);
+    const iva = Math.round(neto * IVA_RATE);
+    const total = neto + iva;
+
+    const venta = await db.insert('ventas', {
+        ...data,
+        neto,
+        iva,
+        total
+    });
+
+    // Contabilización Automática
+    await crearAsiento({
+        fecha: data.fecha,
+        glosa: `Venta: ${data.nombre} - Doc ${data.numero}`,
+        tipo_origen: 'venta',
+        referencia_id: venta.id,
+        lineas: [
+            { cuenta_codigo: '1.1.01', debe: total, haber: 0 }, // Caja/Banco
+            { cuenta_codigo: '4.1.01', debe: 0, haber: neto },  // Ingresos por Ventas
+            { cuenta_codigo: '2.1.02', debe: 0, haber: iva }   // IVA Débito Fiscal
+        ]
+    });
+
+    return venta;
+}
+
