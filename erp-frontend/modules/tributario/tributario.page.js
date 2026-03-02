@@ -1,187 +1,77 @@
-/* ============================================
-   TRIBUTARIO — F29, IVA, PPM
-   ============================================ */
-
 import { getResumenIVA, getEstadoResultados } from '../../services/contabilidad.service.js';
-import { db } from '../../services/datastore.js';
-import { formatCLP, formatNumber, formatPercent } from '../../utils/formatters.js';
-import { PPM_TASA_BASE, TASA_PRIMERA_CATEGORIA, MESES } from '../../utils/constants.js';
-import { showToast } from '../../components/ui-helpers.js';
 
-export function renderTributario(container) {
-    const now = new Date();
-    const periodo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const mesActual = MESES[now.getMonth()];
-    const iva = getResumenIVA(periodo);
-    const er = getEstadoResultados();
+export async function renderTributario(container) {
+  container.innerHTML = `<div class="skeleton-loader">Calculando Impuestos Mensuales...</div>`;
 
-    // PPM calculation
-    const ppmBase = Math.round(iva.totalVentasNeto * PPM_TASA_BASE);
+  const now = new Date();
+  const periodo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const iva = await getResumenIVA(periodo);
+  const er = await getEstadoResultados();
+  const ppmBase = Math.round(iva.totalVentasNeto * 0.0125); // PPM 1.25%
 
-    container.innerHTML = `
-    <div class="section-header">
-      <div>
-        <h2 class="section-title">Gestión Tributaria</h2>
-        <p style="color:var(--text-muted);font-size:var(--font-size-sm);margin-top:4px;">
-          Formularios y cálculos tributarios SII — IVA, PPM, Impuesto Renta
-        </p>
-      </div>
-    </div>
-
-    <!-- Tabs -->
-    <div class="tabs" id="tributario-tabs">
-      <div class="tab active" data-tab="f29">F29 Mensual</div>
-      <div class="tab" data-tab="f22">F22 Anual</div>
-      <div class="tab" data-tab="balance8">Balance 8 Columnas</div>
-    </div>
-
-    <!-- F29 -->
-    <div id="tab-f29" class="tab-content animate-fade-in">
-      <div class="card" style="max-width:900px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-xl);">
-          <h3 style="font-size:var(--font-size-lg);">
-            <i class="fas fa-file-lines" style="color:var(--accent-primary);margin-right:8px;"></i>
-            Formulario 29 — Declaración Mensual
-          </h3>
-          <span class="badge badge-info" style="padding:6px 14px;">${mesActual} ${now.getFullYear()}</span>
-        </div>
-
-        <!-- IVA Section -->
-        <div style="margin-bottom:var(--space-2xl);">
-          <h4 style="color:var(--status-info);margin-bottom:var(--space-md);">
-            <i class="fas fa-receipt"></i> Impuesto al Valor Agregado (IVA)
-          </h4>
-          <div style="background:var(--bg-tertiary);border-radius:var(--radius-md);padding:var(--space-lg);">
-            <div style="display:grid;grid-template-columns:1fr auto;gap:var(--space-md);font-size:var(--font-size-sm);">
-              <span>Ventas Netas del período</span>
-              <span class="cell-mono" style="text-align:right;">${formatCLP(iva.totalVentasNeto)}</span>
-
-              <span>Débito Fiscal (19% sobre ventas)</span>
-              <span class="cell-mono" style="text-align:right;">${formatCLP(iva.debitoFiscal)}</span>
-
-              <span style="border-top:1px solid var(--border-primary);padding-top:var(--space-sm);">Compras Netas del período</span>
-              <span class="cell-mono" style="text-align:right;border-top:1px solid var(--border-primary);padding-top:var(--space-sm);">${formatCLP(iva.totalComprasNeto)}</span>
-
-              <span>Crédito Fiscal (19% sobre compras)</span>
-              <span class="cell-mono" style="text-align:right;">- ${formatCLP(iva.creditoFiscal)}</span>
-            </div>
-            <div style="border-top:2px solid var(--border-primary);margin-top:var(--space-md);padding-top:var(--space-md);display:flex;justify-content:space-between;align-items:center;">
-              <strong style="font-size:var(--font-size-md);">IVA ${iva.ivaPorPagar >= 0 ? 'a Pagar' : 'Remanente a Favor'}</strong>
-              <strong class="cell-mono ${iva.ivaPorPagar >= 0 ? 'cell-negative' : 'cell-positive'}" style="font-size:var(--font-size-xl);">
-                ${formatCLP(Math.abs(iva.ivaPorPagar))}
-              </strong>
-            </div>
-          </div>
-        </div>
-
-        <!-- PPM Section -->
-        <div style="margin-bottom:var(--space-2xl);">
-          <h4 style="color:var(--status-warning);margin-bottom:var(--space-md);">
-            <i class="fas fa-coins"></i> Pagos Provisionales Mensuales (PPM)
-          </h4>
-          <div style="background:var(--bg-tertiary);border-radius:var(--radius-md);padding:var(--space-lg);">
-            <div style="display:grid;grid-template-columns:1fr auto;gap:var(--space-md);font-size:var(--font-size-sm);">
-              <span>Base imponible (ventas netas)</span>
-              <span class="cell-mono" style="text-align:right;">${formatCLP(iva.totalVentasNeto)}</span>
-
-              <span>Tasa PPM vigente</span>
-              <span class="cell-mono" style="text-align:right;">${formatPercent(PPM_TASA_BASE)}</span>
-            </div>
-            <div style="border-top:2px solid var(--border-primary);margin-top:var(--space-md);padding-top:var(--space-md);display:flex;justify-content:space-between;align-items:center;">
-              <strong>PPM a Pagar</strong>
-              <strong class="cell-mono" style="font-size:var(--font-size-xl);color:var(--status-warning);">${formatCLP(ppmBase)}</strong>
-            </div>
-          </div>
-        </div>
-
-        <!-- Total F29 -->
-        <div style="background:var(--gradient-primary);padding:var(--space-xl);border-radius:var(--radius-md);color:white;">
-          <div style="display:flex;justify-content:space-between;align-items:center;">
+  container.innerHTML = `
+        <div class="section-header">
             <div>
-              <div style="font-size:var(--font-size-lg);font-weight:var(--font-weight-bold);">Total a Pagar F29</div>
-              <div style="font-size:var(--font-size-xs);opacity:0.8;">IVA + PPM correspondiente a ${mesActual}</div>
+                <h2 class="section-title">Gestión Tributaria & Impuestos</h2>
+                <p style="color:var(--text-muted); font-size: 13px;">Cálculos automáticos para Formulario 29 (SII Chile)</p>
             </div>
-            <div style="font-family:var(--font-mono);font-size:var(--font-size-3xl);font-weight:var(--font-weight-bold);">
-              ${formatCLP(Math.max(0, iva.ivaPorPagar) + ppmBase)}
+        </div>
+
+        <div class="grid-2 animate-fade" style="margin-top:20px;">
+            <div class="card">
+                <header style="margin-bottom:1.5rem;">
+                    <h3><i class="fas fa-receipt" style="color:var(--secondary)"></i> Resumen IVA - ${periodo}</h3>
+                </header>
+                <div style="display:grid; gap:0.8rem;">
+                    <div style="display:flex; justify-content:space-between;"><span>Ventas Netas:</span><strong>$${iva.totalVentasNeto.toLocaleString()}</strong></div>
+                    <div style="display:flex; justify-content:space-between; color:var(--secondary)"><span>Débito Fiscal (19%):</span><strong>$$${iva.debitoFiscal.toLocaleString()}</strong></div>
+                    <hr style="opacity:0.1">
+                    <div style="display:flex; justify-content:space-between;"><span>Compras Netas:</span><strong>$${iva.totalComprasNeto.toLocaleString()}</strong></div>
+                    <div style="display:flex; justify-content:space-between; color:var(--accent)"><span>Crédito Fiscal (19%):</span><strong>$${iva.creditoFiscal.toLocaleString()}</strong></div>
+                    <hr style="border:1px solid rgba(255,255,255,0.05)">
+                    <div style="display:flex; justify-content:space-between; font-size:1.2rem; font-weight:700;">
+                        <span>IVA a Pagar</span>
+                        <span style="color:${iva.ivaPorPagar >= 0 ? 'var(--danger)' : 'var(--success)'}">$${Math.abs(iva.ivaPorPagar).toLocaleString()}</span>
+                    </div>
+                </div>
             </div>
-          </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- F22 Annual -->
-    <div id="tab-f22" class="tab-content" style="display:none;">
-      <div class="card" style="max-width:900px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-xl);">
-          <h3 style="font-size:var(--font-size-lg);">
-            <i class="fas fa-file-contract" style="color:var(--accent-secondary);margin-right:8px;"></i>
-            Formulario 22 — Declaración Anual de Renta
-          </h3>
-          <span class="badge badge-primary" style="padding:6px 14px;">AT ${now.getFullYear()}</span>
-        </div>
-
-        <div style="background:var(--bg-tertiary);border-radius:var(--radius-md);padding:var(--space-lg);">
-          <div style="display:grid;grid-template-columns:1fr auto;gap:var(--space-md);font-size:var(--font-size-sm);">
-            <span>Ingresos Totales</span>
-            <span class="cell-mono" style="text-align:right;">${formatCLP(er.totalIngresos)}</span>
-
-            <span>Costo de Ventas</span>
-            <span class="cell-mono cell-negative" style="text-align:right;">- ${formatCLP(er.totalCostos)}</span>
-
-            <span style="font-weight:var(--font-weight-semibold);padding-top:var(--space-sm);border-top:1px solid var(--border-primary);">Utilidad Bruta</span>
-            <span class="cell-mono" style="text-align:right;font-weight:var(--font-weight-semibold);padding-top:var(--space-sm);border-top:1px solid var(--border-primary);">${formatCLP(er.utilidadBruta)}</span>
-
-            <span>Gastos Necesarios para Producir la Renta</span>
-            <span class="cell-mono cell-negative" style="text-align:right;">- ${formatCLP(er.totalGastos)}</span>
-
-            <span style="font-weight:var(--font-weight-bold);padding-top:var(--space-sm);border-top:1px solid var(--border-primary);">Renta Líquida Imponible</span>
-            <span class="cell-mono" style="text-align:right;font-weight:var(--font-weight-bold);padding-top:var(--space-sm);border-top:1px solid var(--border-primary);">${formatCLP(Math.max(0, er.utilidadNeta))}</span>
-
-            <span>Tasa Impuesto 1ª Categoría (Régimen Pro-Pyme)</span>
-            <span class="cell-mono" style="text-align:right;">${formatPercent(TASA_PRIMERA_CATEGORIA.PRO_PYME)}</span>
-          </div>
-
-          <div style="border-top:2px solid var(--border-primary);margin-top:var(--space-md);padding-top:var(--space-md);display:flex;justify-content:space-between;align-items:center;">
-            <strong style="font-size:var(--font-size-md);">Impuesto 1ª Categoría</strong>
-            <strong class="cell-mono" style="font-size:var(--font-size-xl);color:var(--status-error);">
-              ${formatCLP(Math.round(Math.max(0, er.utilidadNeta) * TASA_PRIMERA_CATEGORIA.PRO_PYME))}
-            </strong>
-          </div>
+            <div class="card">
+                <header style="margin-bottom:1.5rem;">
+                    <h3><i class="fas fa-coins" style="color:var(--accent)"></i> PPM & Otros</h3>
+                </header>
+                <div style="display:grid; gap:0.8rem;">
+                    <div style="display:flex; justify-content:space-between;"><span>Tasa PPM Vigente:</span><strong>1.25%</strong></div>
+                    <div style="display:flex; justify-content:space-between;"><span>PPM Determinado:</span><strong>$${ppmBase.toLocaleString()}</strong></div>
+                    <hr style="opacity:0.1">
+                    <div style="background:var(--secondary); color:white; padding:1.2rem; border-radius:0.5rem; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-size:0.8rem; opacity:0.8;">Total Estimado F29</div>
+                            <div style="font-size:1.6rem; font-weight:700;">$${(Math.max(0, iva.ivaPorPagar) + ppmBase).toLocaleString()}</div>
+                        </div>
+                        <i class="fas fa-file-invoice" style="font-size:2rem; opacity:0.3"></i>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div style="margin-top:var(--space-lg);padding:var(--space-md);background:var(--status-info-bg);border-radius:var(--radius-sm);font-size:var(--font-size-sm);color:var(--status-info);">
-          <i class="fas fa-info-circle"></i> Este es un cálculo simplificado. La declaración real requiere ajustes por corrección monetaria, depreciación tributaria, y otros agregados/deducciones.
+        <div class="card" style="margin-top:20px;">
+           <h3><i class="fas fa-chart-line" style="color:var(--success)"></i> Proyección de Renta (F22)</h3>
+           <p style="opacity:0.6; font-size:0.9rem; margin-bottom:1rem;">Cálculo basado en Estado de Resultados acumulado al día de hoy.</p>
+           <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:1rem;">
+                <div style="background:var(--surface-light); padding:1rem; border-radius:0.5rem;">
+                    <small>Utilidad Bruta</small>
+                    <div style="font-size:1.1rem; font-weight:600;">$${er.utilidadBruta.toLocaleString()}</div>
+                </div>
+                <div style="background:var(--surface-light); padding:1rem; border-radius:0.5rem;">
+                    <small>Gastos Operacionales</small>
+                    <div style="font-size:1.1rem; font-weight:600; color:var(--danger)">$${er.totalGastos.toLocaleString()}</div>
+                </div>
+                <div style="background:var(--primary); padding:1rem; border-radius:0.5rem; color:white;">
+                    <small>Utilidad Neta Estimada</small>
+                    <div style="font-size:1.1rem; font-weight:600;">$${er.utilidadNeta.toLocaleString()}</div>
+                </div>
+           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Balance 8 Columnas -->
-    <div id="tab-balance8" class="tab-content" style="display:none;">
-      <div class="card">
-        <h3 style="margin-bottom:var(--space-lg);">
-          <i class="fas fa-table" style="color:var(--accent-primary);margin-right:8px;"></i>
-          Balance de 8 Columnas
-        </h3>
-        <p style="color:var(--text-muted);font-size:var(--font-size-sm);margin-bottom:var(--space-xl);">
-          Balance clasificado: Sumas + Saldos + Inventario + Resultados
-        </p>
-        <div class="empty-state">
-          <i class="fas fa-hammer"></i>
-          <h3>En construcción</h3>
-          <p>El Balance de 8 columnas será implementado en la próxima fase.</p>
-        </div>
-      </div>
-    </div>
-  `;
-
-    // Tab switching
-    container.querySelectorAll('.tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            container.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
-            tab.classList.add('active');
-            const target = tab.dataset.tab;
-            container.querySelector(`#tab-${target}`).style.display = '';
-        });
-    });
+    `;
 }

@@ -1,44 +1,96 @@
 import { db } from './datastore.js';
 
-// Constantes Legales Chile 2024-2025
+// --- Constantes del Sistema (Valores Chile 2024-2025) ---
 const IVA_RATE = 0.19;
 const RETENCION_HONORARIOS = 0.1375;
 const TASA_SALUD_FONASA = 0.07;
+const SUELDO_MINIMO = 500000;
+const TASA_AFC_TRABAJADOR = 0.006; // Ejemplo Ley de 40 Horas
 
-export async function getCuentas() {
-    return await db.getAll('plan_cuentas');
+const NATURALEZA_CUENTA = {
+    'activo': 'deudora',
+    'pasivo': 'acreedora',
+    'patrimonio': 'acreedora',
+    'ingreso': 'acreedora',
+    'gasto': 'deudora',
+    'costo': 'deudora'
+};
+
+/* --- MOTOR DE LIBRO DIARIO Y ASIENTOS --- */
+
+export async function crearAsiento({ fecha, glosa, lineas, periodo, tipo_origen = 'manual', referencia_id = null }) {
+    const totalDebe = lineas.reduce((sum, l) => sum + (parseInt(l.debe) || 0), 0);
+    const totalHaber = lineas.reduce((sum, l) => sum + (parseInt(l.haber) || 0), 0);
+
+    if (Math.abs(totalDebe - totalHaber) > 1) {
+        throw new Error(`Partida doble no cuadra: Total Debe $${totalDebe} vs Total Haber $${totalHaber}`);
+    }
+
+    // 1. Insertar Cabecera
+    const asiento = await db.insert('asientos', {
+        fecha,
+        glosa,
+        periodo: periodo || fecha.substring(0, 7),
+        tipo_origen,
+        referencia_id
+    });
+
+    // 2. Insertar Movimientos
+    for (const linea of lineas) {
+        await db.insert('asiento_movimientos', {
+            asiento_id: asiento.id,
+            cuenta_codigo: linea.cuenta_codigo,
+            debe: parseInt(linea.debe) || 0,
+            haber: parseInt(linea.haber) || 0,
+            centro_costo_id: linea.centro_costo_id || null
+        });
+    }
+
+    return asiento;
 }
 
-/* --- MOTOR DE HONORARIOS --- */
+/* --- MOTOR DE HONORARIOS (Retención 13.75%) --- */
+
 export async function registrarHonorario(data) {
     const bruto = parseInt(data.bruto);
     const retencion = Math.round(bruto * RETENCION_HONORARIOS);
     const liquido = bruto - retencion;
 
-    const record = {
+    const honorario = await db.insert('honorarios', {
         ...data,
         bruto,
         retencion,
         liquido
-    };
+    });
 
-    return await db.insert('honorarios', record);
+    // Auditoría Contable Automática
+    await crearAsiento({
+        fecha: data.fecha,
+        glosa: `Honorario: ${data.profesional} - ${data.glosa || 'Boleta de Honorarios'}`,
+        tipo_origen: 'honorario',
+        referencia_id: honorario.id,
+        lineas: [
+            { cuenta_codigo: '6.1.02', debe: bruto, haber: 0 }, // Gasto Honorarios
+            { cuenta_codigo: '2.1.03', debe: 0, haber: retencion }, // Retención SII
+            { cuenta_codigo: '1.1.01', debe: 0, haber: liquido } // Caja/Banco
+        ]
+    });
+
+    return honorario;
 }
 
-/* --- MOTOR DE REMUNERACIONES --- */
+/* --- MOTOR DE REMUNERACIONES PRO (Chile) --- */
+
 export async function calcularLiquidacion(trabajador, periodo) {
     const sueldoBase = parseInt(trabajador.sueldo_base);
-
-    // Gratificación Legal (25% con tope 4.75 IMM)
-    const gratificacion = Math.min(Math.round(sueldoBase * 0.25), 182000); // Ejemplo tope
-
+    const gratificacion = Math.min(Math.round(sueldoBase * 0.25), 182000); // Tope 4.75 IMM / 12 (Referencia)
     const imponible = sueldoBase + gratificacion;
-    const descAFP = Math.round(imponible * (trabajador.afp_tasa / 100));
+
+    const descAFP = Math.round(imponible * (parseFloat(trabajador.afp_tasa || 11.45) / 100));
     const descSalud = Math.round(imponible * TASA_SALUD_FONASA);
+    const liquido = imponible - descAFP - descSalud;
 
-    const liquido = imponible - descAFP - descSalud + parseInt(trabajador.movilizacion || 0) + parseInt(trabajador.colacion || 0);
-
-    return {
+    const liq = {
         trabajador_id: trabajador.id,
         periodo,
         sueldo_base: sueldoBase,
@@ -48,12 +100,107 @@ export async function calcularLiquidacion(trabajador, periodo) {
         descuento_salud: descSalud,
         alcance_liquido: liquido
     };
+
+    return liq;
 }
 
-export async function getHonorarios() {
-    return await db.getAll('honorarios');
+/* --- MOTOR DE REPORTES (Tributario & Balances) --- */
+
+export async function getResumenIVA(periodo) {
+    const [compras, ventas] = await Promise.all([db.getAll('compras'), db.getAll('ventas')]);
+
+    const cMes = compras.filter(c => c.fecha.startsWith(periodo));
+    const vMes = ventas.filter(v => v.fecha.startsWith(periodo));
+
+    const totalVentasNeto = vMes.reduce((s, v) => s + (v.neto || 0), 0);
+    const debitoFiscal = Math.round(totalVentasNeto * IVA_RATE);
+
+    const totalComprasNeto = cMes.reduce((s, c) => s + (c.neto || 0), 0);
+    const creditoFiscal = Math.round(totalComprasNeto * IVA_RATE);
+
+    return {
+        totalVentasNeto,
+        debitoFiscal,
+        totalComprasNeto,
+        creditoFiscal,
+        ivaPorPagar: debitoFiscal - creditoFiscal
+    };
 }
 
-export async function getTrabajadores() {
-    return await db.getAll('trabajadores');
+export async function getBalance8Columnas() {
+    const [cuentas, movimientos] = await Promise.all([
+        db.getAll('plan_cuentas'),
+        db.getAll('asiento_movimientos')
+    ]);
+
+    // Solo cuentas de detalle (nivel 3 o las que no tengan hijos)
+    const cuentasDetalle = cuentas.filter(c => c.nivel >= 3);
+
+    return cuentasDetalle.map(c => {
+        const movs = movimientos.filter(m => m.cuenta_codigo === c.codigo);
+        const sumaDebe = movs.reduce((s, m) => s + m.debe, 0);
+        const sumaHaber = movs.reduce((s, m) => s + m.haber, 0);
+
+        const nat = NATURALEZA_CUENTA[c.tipo] || 'deudora';
+        const saldoDeudor = nat === 'deudora' ? Math.max(0, sumaDebe - sumaHaber) : 0;
+        const saldoAcreedor = nat === 'acreedora' ? Math.max(0, sumaHaber - sumaDebe) : 0;
+
+        let activo = 0, pasivo = 0, perdida = 0, ganancia = 0;
+        if (c.tipo === 'activo') activo = saldoDeudor;
+        if (c.tipo === 'pasivo' || c.tipo === 'patrimonio') pasivo = saldoAcreedor;
+        if (c.tipo === 'gasto' || c.tipo === 'costo') perdida = saldoDeudor;
+        if (c.tipo === 'ingreso') ganancia = saldoAcreedor;
+
+        return {
+            codigo: c.codigo,
+            nombre: c.nombre,
+            tipo: c.tipo,
+            suma_debe: sumaDebe,
+            suma_haber: sumaHaber,
+            saldo_deudor: saldoDeudor,
+            saldo_acreedor: saldoAcreedor,
+            activo,
+            pasivo,
+            perdida,
+            ganancia
+        };
+    }).filter(c => c.suma_debe > 0 || c.suma_haber > 0);
 }
+
+export async function getEstadoResultados() {
+    const data = await getBalance8Columnas();
+    const ingresos = data.reduce((s, c) => s + c.ganancia, 0);
+    const costos = data.reduce((s, c) => s + (c.tipo === 'costo' ? c.perdida : 0), 0);
+    const gastos = data.reduce((s, c) => s + (c.tipo === 'gasto' ? c.perdida : 0), 0);
+
+    return {
+        totalIngresos: ingresos,
+        totalCostos: costos,
+        totalGastos: gastos,
+        utilidadBruta: ingresos - costos,
+        utilidadNeta: ingresos - costos - gastos
+    };
+}
+
+export async function getBalanceGeneral() {
+    const data = await getBalance8Columnas();
+    const totalActivos = data.reduce((s, c) => s + c.activo, 0);
+    const totalPasivos = data.reduce((s, c) => s + (c.tipo === 'pasivo' ? c.pasivo : 0), 0);
+    const totalPatrimonio = data.reduce((s, c) => s + (c.tipo === 'patrimonio' ? c.pasivo : 0), 0);
+
+    return {
+        activos: data.filter(c => c.activo > 0).map(c => ({ ...c, saldo: c.activo })),
+        pasivos: data.filter(c => c.tipo === 'pasivo' && c.pasivo > 0).map(c => ({ ...c, saldo: c.pasivo })),
+        patrimonio: data.filter(c => c.tipo === 'patrimonio' && c.pasivo > 0).map(c => ({ ...c, saldo: c.pasivo })),
+        totalActivos,
+        totalPasivos,
+        totalPatrimonio,
+        cuadra: Math.abs(totalActivos - (totalPasivos + totalPatrimonio)) < 5
+    };
+}
+
+/* --- OTROS HELPERS --- */
+
+export async function getHonorarios() { return await db.getAll('honorarios'); }
+export async function getTrabajadores() { return await db.getAll('trabajadores'); }
+export async function getCuentas() { return await db.getAll('plan_cuentas'); }

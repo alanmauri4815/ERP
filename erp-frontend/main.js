@@ -18,6 +18,9 @@ import { renderLibroMayor } from './modules/libro-mayor/libro-mayor.page.js'
 import { renderBalanceComprobacion as renderEstadosFinancieros } from './modules/estados-financieros/estados-financieros.page.js'
 import { renderRemuneraciones } from './modules/rrhh/remuneraciones.page.js'
 import { renderHonorarios } from './modules/libros-auxiliares/honorarios.page.js'
+import { renderTributario } from './modules/tributario/tributario.page.js'
+import { renderActivoFijo } from './modules/financiero/activo-fijo.page.js'
+import { renderAnalisisFinanciero } from './modules/financiero/analisis.page.js'
 import { db } from './services/datastore.js'
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -1805,7 +1808,10 @@ const views = {
   acc_libro_mayor: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
   acc_balance_8: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
   acc_remuneraciones: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
-  acc_honorarios: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>'
+  acc_honorarios: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
+  acc_tributario: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
+  acc_activo_fijo: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
+  acc_analisis: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>'
 };
 
 // ========== PIPELINE VIEW ==========
@@ -4467,6 +4473,9 @@ function renderView(viewName) {
   if (viewName === 'acc_balance_8') renderEstadosFinancieros(document.getElementById('accounting-container'));
   if (viewName === 'acc_remuneraciones') renderRemuneraciones(document.getElementById('accounting-container'));
   if (viewName === 'acc_honorarios') renderHonorarios(document.getElementById('accounting-container'));
+  if (viewName === 'acc_tributario') renderTributario(document.getElementById('accounting-container'));
+  if (viewName === 'acc_activo_fijo') renderActivoFijo(document.getElementById('accounting-container'));
+  if (viewName === 'acc_analisis') renderAnalisisFinanciero(document.getElementById('accounting-container'));
 
   if (viewName === 'accounts_management') {
     // Handler para guardar cuentas
