@@ -17,7 +17,7 @@ export async function renderLibroDiario(container) {
 
   // Mostrar todo si el mes actual está vacío
   if (asientos.length === 0) {
-    asientos = await getLibroDiario('todos');
+    asientos = await getLibroDiario('force');
   }
 
   container.innerHTML = `

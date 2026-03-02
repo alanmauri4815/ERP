@@ -42,8 +42,8 @@ export async function crearAsiento({ fecha, glosa, lineas, periodo, tipo_origen 
         await db.insert('asiento_movimientos', {
             asiento_id: asiento.id,
             cuenta_codigo: linea.cuenta_codigo,
-            debe: parseInt(linea.debe) || 0,
-            haber: parseInt(linea.haber) || 0,
+            debe: parseFloat(linea.debe) || 0,
+            haber: parseFloat(linea.haber) || 0,
             centro_costo_id: linea.centro_costo_id || null
         });
     }
@@ -219,7 +219,7 @@ export async function getLibroDiario(periodo = 'todos') {
     ]);
 
     let filteredAsientos = asientos;
-    if (periodo !== 'todos') {
+    if (periodo !== 'todos' && periodo !== 'force') {
         filteredAsientos = asientos.filter(a => a.periodo === periodo);
     }
 
@@ -252,10 +252,16 @@ export async function registrarCompra(data) {
     const total = neto + iva;
 
     const compra = await db.insert('libro_compras', {
-        ...data,
-        neto,
-        iva,
-        total
+        fecha: data.fecha,
+        tipo_dte: data.tipo_dte,
+        numero: data.numero,
+        rut: data.rut,
+        nombre: data.nombre,
+        neto: parseFloat(neto),
+        iva: parseFloat(iva),
+        total: parseFloat(total),
+        glosa: data.glosa || `Compra Doc ${data.numero}`,
+        referencia_id: String(data.referencia_id || '')
     });
 
     // Contabilización Automática
@@ -280,10 +286,16 @@ export async function registrarVenta(data) {
     const total = neto + iva;
 
     const venta = await db.insert('libro_ventas', {
-        ...data,
-        neto,
-        iva,
-        total
+        fecha: data.fecha,
+        tipo_dte: data.tipo_dte,
+        numero: data.numero,
+        rut: data.rut,
+        nombre: data.nombre,
+        neto: parseFloat(neto),
+        iva: parseFloat(iva),
+        total: parseFloat(total),
+        glosa: data.glosa || `Venta Doc ${data.numero}`,
+        referencia_id: String(data.referencia_id || '')
     });
 
     // Contabilización Automática
