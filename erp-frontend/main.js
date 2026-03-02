@@ -21,6 +21,7 @@ import { renderHonorarios } from './modules/libros-auxiliares/honorarios.page.js
 import { renderTributario } from './modules/tributario/tributario.page.js'
 import { renderActivoFijo } from './modules/financiero/activo-fijo.page.js'
 import { renderAnalisisFinanciero } from './modules/financiero/analisis.page.js'
+import { sincronizarOperacionesERP } from './services/contabilidad.service.js'
 import { db } from './services/datastore.js'
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -249,7 +250,11 @@ const views = {
         <div style="display: grid; gap: 1rem; margin-top: 1rem;">
           <button onclick="document.querySelector('[data-view=\'sales\']').click()" style="background: var(--secondary)">Nueva Venta</button>
           <button onclick="document.querySelector('[data-view=\'production\']').click()">Iniciar Producción</button>
+
           <button onclick="document.querySelector('[data-view=\'purchases\']').click()" style="background: var(--accent)">Registrar Compra</button>
+          <button id="btn-sync-conta" style="background: var(--status-success); margin-top: 10px;">
+            <i class="fas fa-sync"></i> Sincronizar Operaciones -> Contabilidad
+          </button>
         </div>
       </div>
     </div>
@@ -4460,6 +4465,28 @@ function renderView(viewName) {
       }
     });
     return;
+  }
+
+  if (viewName === 'dashboard') {
+    initSalesChart();
+    const btnSync = document.getElementById('btn-sync-conta');
+    if (btnSync) {
+      btnSync.onclick = async () => {
+        btnSync.disabled = true;
+        btnSync.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sincronizando...';
+        try {
+          const count = await sincronizarOperacionesERP(state.history.sales, state.history.purchases);
+          alert(`Sincronización exitosa: ${count} nuevos registros contabilizados.`);
+          await fetchData();
+        } catch (e) {
+          console.error(e);
+          alert('Error: ' + e.message);
+        } finally {
+          btnSync.disabled = false;
+          btnSync.innerHTML = '<i class="fas fa-sync"></i> Sincronizar Operaciones -> Contabilidad';
+        }
+      };
+    }
   }
 
   if (viewName === 'quotations') {

@@ -101,4 +101,22 @@ function setupActivoEvents(container) {
       };
     });
   };
+
+  // 2. Procesar Depreciación
+  container.querySelector('#btn-depreciar').onclick = async () => {
+    if (!confirm('¿Desea procesar la depreciación de todos los activos del mes en curso? This generará un asiento contable automático.')) return;
+
+    try {
+      const { procesarDepreciacionMensual } = await import('../../services/contabilidad.service.js');
+      const periodo = new Date().toISOString().substring(0, 7);
+      const total = await procesarDepreciacionMensual(periodo);
+
+      const { showToast } = await import('../../components/ui-helpers.js');
+      showToast(`Depreciación procesada: $${total.toLocaleString()}`, 'success');
+      renderActivoFijo(container);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  };
 }
+

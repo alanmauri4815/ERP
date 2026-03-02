@@ -118,6 +118,39 @@ CREATE TABLE IF NOT EXISTS activo_fijo (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 9. Libro de Compras (Contable)
+CREATE TABLE IF NOT EXISTS compras (
+    id BIGSERIAL PRIMARY KEY,
+    fecha DATE NOT NULL,
+    tipo_dte TEXT DEFAULT '33', -- 33: Factura, 39: Boleta
+    numero TEXT NOT NULL,
+    rut TEXT NOT NULL,
+    nombre TEXT NOT NULL,
+    neto NUMERIC NOT NULL,
+    iva NUMERIC NOT NULL,
+    total NUMERIC NOT NULL,
+    glosa TEXT,
+    referencia_id TEXT UNIQUE, -- Para evitar duplicados al sincronizar
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 10. Libro de Ventas (Contable)
+CREATE TABLE IF NOT EXISTS ventas (
+    id BIGSERIAL PRIMARY KEY,
+    fecha DATE NOT NULL,
+    tipo_dte TEXT DEFAULT '33',
+    numero TEXT NOT NULL,
+    rut TEXT NOT NULL,
+    nombre TEXT NOT NULL,
+    neto NUMERIC NOT NULL,
+    iva NUMERIC NOT NULL,
+    total NUMERIC NOT NULL,
+    glosa TEXT,
+    referencia_id TEXT UNIQUE, -- Para evitar duplicados al sincronizar
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+
 -- Indices para Performance
 CREATE INDEX idx_asientos_periodo ON asientos(periodo);
 CREATE INDEX idx_movimientos_asiento ON asiento_movimientos(asiento_id);

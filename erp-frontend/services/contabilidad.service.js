@@ -302,3 +302,82 @@ export async function registrarVenta(data) {
     return venta;
 }
 
+const VIDA_UTIL_MESES = {
+    'Vehículos': 84,
+    'Maquinaría': 120,
+    'Equipos de Computación': 36,
+    'Muebles y Útiles': 84
+};
+
+export async function sincronizarOperacionesERP(hSales, hPurch) {
+    const existingCompras = await db.getAll('compras');
+    const existingVentas = await db.getAll('ventas');
+
+    let syncedCount = 0;
+
+    // 1. Sincronizar Compras (Raw Materials)
+    for (const p of hPurch) {
+        const alreadySynced = existingCompras.some(c => c.referencia_id === String(p.id));
+        if (!alreadySynced) {
+            await registrarCompra({
+                fecha: p.created_at.split('T')[0],
+                tipo_dte: '33',
+                numero: String(p.id),
+                rut: p.providers?.rut || '76.000.000-1',
+                nombre: p.providers?.name || 'Proveedor ERP',
+                neto: p.total_price || 0,
+                glosa: `Sincronizado desde ERP: ${p.raw_materials?.name || 'Material'}`,
+                referencia_id: String(p.id)
+            });
+            syncedCount++;
+        }
+    }
+
+    // 2. Sincronizar Ventas (Products)
+    for (const s of hSales) {
+        const alreadySynced = existingVentas.some(v => v.referencia_id === String(s.id));
+        if (!alreadySynced) {
+            const neto = Math.round((s.total_price || 0) / 1.19);
+            await registrarVenta({
+                fecha: s.created_at.split('T')[0],
+                tipo_dte: '33',
+                numero: String(s.id),
+                rut: s.clients?.rut || '6.666.666-6',
+                nombre: s.clients?.name || 'Cliente ERP',
+                neto: neto,
+                glosa: `Sincronizado desde ERP: ${s.products?.name || 'Producto'}`,
+                referencia_id: String(s.id)
+            });
+            syncedCount++;
+        }
+    }
+
+    return syncedCount;
+}
+
+export async function procesarDepreciacionMensual(periodo) {
+    const activos = await db.getAll('activo_fijo');
+    let totalDep = 0;
+
+    for (const a of activos) {
+        const mesesVida = VIDA_UTIL_MESES[a.categoria] || 60;
+        const depMensual = Math.round(parseInt(a.valor_compra) / mesesVida);
+        totalDep += depMensual;
+    }
+
+    if (totalDep > 0) {
+        await crearAsiento({
+            fecha: `${periodo}-28`,
+            glosa: `Depreciación Mensual Activos Fijos - ${periodo}`,
+            tipo_origen: 'depreciacion',
+            lineas: [
+                { cuenta_codigo: '6.1.03', debe: totalDep, haber: 0 },
+                { cuenta_codigo: '1.2.01', debe: 0, haber: totalDep }
+            ]
+        });
+    }
+
+    return totalDep;
+}
+
+
