@@ -317,10 +317,12 @@ export async function sincronizarOperacionesERP(hSales, hPurch) {
 
     // 1. Sincronizar Compras (Raw Materials)
     for (const p of hPurch) {
+        if (!p || !p.id) continue;
         const alreadySynced = existingCompras.some(c => c.referencia_id === String(p.id));
         if (!alreadySynced) {
+            const fechaStr = p.created_at || new Date().toISOString();
             await registrarCompra({
-                fecha: p.created_at.split('T')[0],
+                fecha: fechaStr.split('T')[0],
                 tipo_dte: '33',
                 numero: String(p.id),
                 rut: p.providers?.rut || '76.000.000-1',
@@ -335,11 +337,13 @@ export async function sincronizarOperacionesERP(hSales, hPurch) {
 
     // 2. Sincronizar Ventas (Products)
     for (const s of hSales) {
+        if (!s || !s.id) continue;
         const alreadySynced = existingVentas.some(v => v.referencia_id === String(s.id));
         if (!alreadySynced) {
+            const fechaStr = s.created_at || new Date().toISOString();
             const neto = Math.round((s.total_price || 0) / 1.19);
             await registrarVenta({
-                fecha: s.created_at.split('T')[0],
+                fecha: fechaStr.split('T')[0],
                 tipo_dte: '33',
                 numero: String(s.id),
                 rut: s.clients?.rut || '6.666.666-6',
