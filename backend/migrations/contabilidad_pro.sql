@@ -105,6 +105,19 @@ CREATE TABLE IF NOT EXISTS honorarios (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 8. Activo Fijo (Inventario y Depreciación)
+CREATE TABLE IF NOT EXISTS activo_fijo (
+    id BIGSERIAL PRIMARY KEY,
+    codigo TEXT UNIQUE NOT NULL,
+    nombre TEXT NOT NULL,
+    categoria TEXT,
+    fecha_adquisicion DATE NOT NULL,
+    valor_compra NUMERIC NOT NULL,
+    vida_util_meses INTEGER,
+    valor_residual NUMERIC DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Indices para Performance
 CREATE INDEX idx_asientos_periodo ON asientos(periodo);
 CREATE INDEX idx_movimientos_asiento ON asiento_movimientos(asiento_id);

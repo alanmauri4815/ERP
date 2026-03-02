@@ -1,4 +1,4 @@
-import { db } from './datastore.js';
+export { db } from './datastore.js';
 
 // --- Constantes del Sistema (Valores Chile 2024-2025) ---
 const IVA_RATE = 0.19;
@@ -204,3 +204,42 @@ export async function getBalanceGeneral() {
 export async function getHonorarios() { return await db.getAll('honorarios'); }
 export async function getTrabajadores() { return await db.getAll('trabajadores'); }
 export async function getCuentas() { return await db.getAll('plan_cuentas'); }
+
+export async function getCuentasDetalle() {
+    const cuentas = await getCuentas();
+    return cuentas.filter(c => c.nivel >= 3 || !cuentas.some(h => String(h.padre_id || '').trim() === String(c.codigo).trim()));
+}
+
+export async function getLibroDiario(periodo = 'todos') {
+    const [asientos, movimientos] = await Promise.all([
+        db.getAll('asientos'),
+        db.getAll('asiento_movimientos')
+    ]);
+
+    let filteredAsientos = asientos;
+    if (periodo !== 'todos') {
+        filteredAsientos = asientos.filter(a => a.periodo === periodo);
+    }
+
+    return filteredAsientos.map(a => ({
+        ...a,
+        lineas: movimientos.filter(m => m.asiento_id === a.id)
+    })).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+}
+export async function getLibroMayor(cuenta_codigo) {
+    const [asientos, movimientos] = await Promise.all([
+        db.getAll('asientos'),
+        db.getAll('asiento_movimientos')
+    ]);
+
+    const movsCuenta = movimientos.filter(m => m.cuenta_codigo === cuenta_codigo);
+
+    return movsCuenta.map(m => {
+        const asiento = asientos.find(a => a.id === m.asiento_id);
+        return {
+            ...m,
+            fecha: asiento?.fecha || '-',
+            glosa: asiento?.glosa || '-'
+        };
+    }).sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+}
