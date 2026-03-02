@@ -11,6 +11,14 @@ import {
   formatLedgerForExport
 } from './export-utils.js'
 
+// Módulos de Contabilidad ContaChile
+import { renderPlanCuentas } from './modules/plan-cuentas/plan-cuentas.page.js'
+import { renderLibroDiario } from './modules/libro-diario/libro-diario.page.js'
+import { renderLibroMayor } from './modules/libro-mayor/libro-mayor.page.js'
+import { renderBalanceComprobacion as renderEstadosFinancieros } from './modules/estados-financieros/estados-financieros.page.js'
+import { renderRemuneraciones } from './modules/rrhh/remuneraciones.page.js'
+import { db } from './services/datastore.js'
+
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : 'https://erp-universal-backend.onrender.com/api';
@@ -122,12 +130,18 @@ async function fetchData() {
   mainContent.innerHTML = `
     <div style="height: 100%; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1rem; opacity: 0.6">
       <div class="spinner"></div>
-      <p>Sincronizando datos...</p>
+      <p>Sincronizando Sistema de Contabilidad Pro...</p>
     </div>
   `;
 
   try {
-    const [prods, rms, provs, hSales, hPurch, hProd, st, usrs, recipes, accs, quotes, clis, pmachines, aAccounts, aLedger, logHistory, pendingLog] = await Promise.all([
+    const [
+      prods, rms, provs, hSales, hPurch, hProd, st, usrs,
+      recipes, accs, quotes, clis, pmachines, aAccounts,
+      aLedger, logHistory, pendingLog,
+      // Nuevas tablas profesionalizadas
+      proPlanCuentas, proAsientos, proMovimientos
+    ] = await Promise.all([
       apiFetch('/products'),
       apiFetch('/raw-materials'),
       apiFetch('/providers'),
@@ -144,10 +158,14 @@ async function fetchData() {
       apiFetch('/accounting/accounts'),
       apiFetch('/accounting/ledger'),
       apiFetch('/logistics'),
-      apiFetch('/logistics/pending')
+      apiFetch('/logistics/pending'),
+      // Consultas directas a las tablas nuevas via Datastore (con fallback)
+      db.getAll('plan_cuentas').catch(e => { console.error(e); return []; }),
+      db.getAll('asientos').catch(e => { console.error(e); return []; }),
+      db.getAll('asiento_movimientos').catch(e => { console.error(e); return []; })
     ]);
 
-    // Data assignments with default empty arrays/objects to prevent crashes if an endpoint fails
+    // Asignaciones estándar
     state.products = Array.isArray(prods) ? prods : [];
     state.rawMaterials = Array.isArray(rms) ? rms : [];
     state.providers = Array.isArray(provs) ? provs : [];
@@ -161,17 +179,25 @@ async function fetchData() {
     state.quotations = Array.isArray(quotes) ? quotes : [];
     state.clients = Array.isArray(clis) ? clis : [];
     state.paymentMachines = Array.isArray(pmachines) ? pmachines : [];
-    state.accountingAccounts = Array.isArray(aAccounts) ? aAccounts : [];
-    state.ledger = Array.isArray(aLedger) ? aLedger : [];
     state.logistics = Array.isArray(logHistory) ? logHistory : [];
     state.pendingLogistics = Array.isArray(pendingLog) ? pendingLog : [];
-    state.pendingTransfersLoaded = false; // Reset flag to allow reload
 
+    // Asignaciones de Contabilidad Profesional (Sincronizadas con Supabase)
+    state.accounting = {
+      plan: Array.isArray(proPlanCuentas) ? proPlanCuentas : [],
+      asientos: Array.isArray(proAsientos) ? proAsientos : [],
+      movimientos: Array.isArray(proMovimientos) ? proMovimientos : []
+    };
+
+    // Compatibilidad con vistas antiguas si existieran
+    state.accountingAccounts = state.accounting.plan;
+    state.ledger = state.accounting.asientos;
 
     const activeView = document.querySelector('.nav-item.active')?.dataset.view || 'dashboard';
     renderView(activeView);
   } catch (error) {
     console.error('Error fetching data:', error);
+    alert('Error al sincronizar con Supabase. Verifique su conexión.');
   }
 }
 
@@ -625,6 +651,10 @@ const views = {
             <label style="font-weight: 600">Fecha de Registro</label>
             <input type="date" id="pur-date" value="${new Date().toISOString().split('T')[0]}">
           </div>
+          <div class="form-group">
+            <label style="font-weight: 600">N° Documento (Boleta/Factura)</label>
+            <input type="text" id="pur-doc-number" placeholder="Ej: 12345">
+          </div>
           <div class="form-group" id="pur-project-group">
             <label style="font-weight: 600; color: var(--secondary)">📁 Asociar a Proyecto (ABC)</label>
             <select id="pur-project" style="border: 1px solid var(--secondary)">
@@ -771,6 +801,10 @@ const views = {
           <div class="form-group">
             <label>Fecha</label>
             <input type="date" id="sale-date" value="${new Date().toISOString().split('T')[0]}">
+          </div>
+          <div class="form-group">
+            <label>N° Documento (Boleta/Factura)</label>
+            <input type="text" id="sale-doc-number" placeholder="Ej: 98765">
           </div>
           <div class="form-group">
             <label>Evento/Feria</label>
@@ -1764,7 +1798,12 @@ const views = {
       `}
     </div>
     `
-  }
+  },
+  acc_plan_cuentas: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
+  acc_libro_diario: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
+  acc_libro_mayor: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
+  acc_balance_8: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
+  acc_remuneraciones: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>'
 };
 
 // ========== PIPELINE VIEW ==========
@@ -1904,6 +1943,12 @@ views.pipeline = () => {
 `;
 };
 
+views.acc_plan_cuentas = () => `<header class="animate-fade"><h1>Plan de Cuentas</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_libro_diario = () => `<header class="animate-fade"><h1>Libro Diario (Adv)</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_libro_mayor = () => `<header class="animate-fade"><h1>Libro Mayor</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_balance_8 = () => `<header class="animate-fade"><h1>Balance 8 Columnas</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_remuneraciones = () => `<header class="animate-fade"><h1>Remuneraciones</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+
 function renderHistoryTable(type) {
   const data = state.history[type];
   if (type === 'sales') {
@@ -1914,6 +1959,7 @@ function renderHistoryTable(type) {
         <tr>
           <th>ID</th>
           <th>Fecha</th>
+          <th>Doc</th>
           <th>Cliente</th>
           <th>Método Pago</th>
           <th>Total Bruto</th>
@@ -1925,6 +1971,7 @@ function renderHistoryTable(type) {
               <tr>
                 <td><strong>#${h.id}</strong></td>
                 <td>${h.date ? h.date.split('T')[0] : '-'}</td>
+                <td><small style="font-weight:700; color:var(--text-muted)">${h.document_number || '-'}</small></td>
                 <td><strong>${h.client_name || 'Venta Directa'}</strong></td>
                 <td>${h.payment_method === 'cash' ? '💵 Efectivo' : h.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transferencia'}</td>
                 <td>$${(h.total || 0).toLocaleString()} ${h.is_iva_exempt ? '<small style="color:var(--warning)">(Exento)</small>' : ''}</td>
@@ -2012,7 +2059,7 @@ function renderHistoryTable(type) {
     return `
   <div class="table-container">
     <table>
-      <thead><tr><th>ID</th><th>Fecha</th><th>Tipo/Proyecto</th><th>Categoría</th><th>Ref / OC</th><th>Proveedor/Glosa</th><th>Total</th><th>Acción</th></tr></thead>
+      <thead><tr><th>ID</th><th>Fecha</th><th>Tipo/Proyecto</th><th>Categoría</th><th>Ref / OC</th><th>Doc</th><th>Proveedor/Glosa</th><th>Total</th><th>Acción</th></tr></thead>
       <tbody>
         ${data.map(h => {
       const cat = h.purchase_category || 'general';
@@ -2032,6 +2079,7 @@ function renderHistoryTable(type) {
                   </span>
                 </td>
                 <td><small style="font-weight:700; color:var(--secondary)">${h.purchase_order_id || '-'}</small></td>
+                <td><small style="font-weight:700; color:var(--text-muted)">${h.document_number || '-'}</small></td>
                 <td>
                   <strong>${h.type === 'expense' ? (h.description || 'Gasto General') : (h.provider_name || 'Sin Proveedor')}</strong>
                 </td>
@@ -2085,6 +2133,10 @@ window.showTransactionDetails = (type, id) => {
             <strong style="color:var(--secondary)">🏦 ${transaction.account_name}</strong>
           </div>
           ` : ''}
+          <div>
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">N° Documento</label>
+            <strong style="color:var(--accent)">${transaction.document_number || '-'}</strong>
+          </div>
           <div>
             <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Método de Pago</label>
             <span>${transaction.payment_method === 'cash' ? '💵 Efectivo' : transaction.payment_method === 'machine' ? '💳 Máquina' : transaction.payment_method === 'credit' ? '💳 Crédito' : '🔄 Transferencia'}</span>
@@ -4302,8 +4354,8 @@ function renderView(viewName) {
 
     // Definimos qué puede ver cada uno
     const permissions = {
-      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
-      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile'],
+      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones'],
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones'],
       user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'logistics', 'history', 'quotations', 'pipeline', 'clients_management', 'providers_management', 'direct_sales', 'profile'],
       viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
@@ -4405,6 +4457,13 @@ function renderView(viewName) {
   if (viewName === 'quotations') {
     // Initialization for quotations view
   }
+
+  // Inicialización de Módulos de Contabilidad
+  if (viewName === 'acc_plan_cuentas') renderPlanCuentas(document.getElementById('accounting-container'));
+  if (viewName === 'acc_libro_diario') renderLibroDiario(document.getElementById('accounting-container'));
+  if (viewName === 'acc_libro_mayor') renderLibroMayor(document.getElementById('accounting-container'));
+  if (viewName === 'acc_balance_8') renderEstadosFinancieros(document.getElementById('accounting-container'));
+  if (viewName === 'acc_remuneraciones') renderRemuneraciones(document.getElementById('accounting-container'));
 
   if (viewName === 'accounts_management') {
     // Handler para guardar cuentas
@@ -4552,7 +4611,8 @@ function renderView(viewName) {
         account_id: document.getElementById('pur-account')?.value || null,
         document_type: document.getElementById('pur-doc-type')?.value,
         quotation_id: (projectVal && !projectVal.includes('S-')) ? parseInt(projectVal) : null,
-        project_ref: (projectVal && projectVal.includes('S-')) ? projectVal : (projectVal || null)
+        project_ref: (projectVal && projectVal.includes('S-')) ? projectVal : (projectVal || null),
+        document_number: document.getElementById('pur-doc-number')?.value || null
       };
 
       if (type === 'mp') {
@@ -4642,7 +4702,8 @@ function renderView(viewName) {
         machine_id: paymentMethod === 'machine' ? (document.getElementById('sale-machine').value || null) : null,
         event_name: document.getElementById('sale-event-name').value || null,
         category: document.getElementById('sale-category')?.value || 'push',
-        quotation_id: document.getElementById('sale-quotation')?.value || null
+        quotation_id: document.getElementById('sale-quotation')?.value || null,
+        document_number: document.getElementById('sale-doc-number')?.value || null
       };
 
       if (body.items.length === 0) return alert('Debe agregar al menos un ítem');

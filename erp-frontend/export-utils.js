@@ -87,26 +87,28 @@ export function formatSalesForExport(sales) {
                 formatted.push({
                     'ID Venta': sale.id,
                     'Fecha': sale.date,
-                    'Cliente': sale.client,
+                    'Documento': sale.document_number || '-',
+                    'Cliente': sale.client_name || sale.client || '-',
                     'Producto': item.product_code,
                     'Cantidad': item.quantity,
-                    'Precio': item.price,
-                    'Subtotal': item.quantity * item.price,
+                    'Precio': item.unit_price || item.price,
+                    'Subtotal': item.subtotal || (item.quantity * item.price),
                     'Total Venta': sale.total,
-                    'Estado': sale.status
+                    'Estado': sale.status || 'Completada'
                 });
             });
         } else {
             formatted.push({
                 'ID Venta': sale.id,
                 'Fecha': sale.date,
-                'Cliente': sale.client,
+                'Documento': sale.document_number || '-',
+                'Cliente': sale.client_name || sale.client || '-',
                 'Producto': '-',
                 'Cantidad': '-',
                 'Precio': '-',
                 'Subtotal': '-',
                 'Total Venta': sale.total,
-                'Estado': sale.status
+                'Estado': sale.status || 'Completada'
             });
         }
     });
@@ -126,26 +128,28 @@ export function formatPurchasesForExport(purchases) {
                 formatted.push({
                     'ID Compra': purchase.id,
                     'Fecha': purchase.date,
-                    'Proveedor': purchase.provider,
+                    'Documento': purchase.document_number || '-',
+                    'Proveedor': purchase.provider_name || purchase.provider || '-',
                     'Materia Prima': item.mp_code,
                     'Cantidad': item.quantity,
-                    'Precio': item.price,
-                    'Subtotal': item.quantity * item.price,
+                    'Precio': item.unit_price || item.price,
+                    'Subtotal': item.subtotal || (item.quantity * item.price),
                     'Total Compra': purchase.total,
-                    'Estado': purchase.status
+                    'Estado': purchase.status || 'Registrada'
                 });
             });
         } else {
             formatted.push({
                 'ID Compra': purchase.id,
                 'Fecha': purchase.date,
-                'Proveedor': purchase.provider,
+                'Documento': purchase.document_number || '-',
+                'Proveedor': purchase.provider_name || purchase.provider || '-',
                 'Materia Prima': '-',
                 'Cantidad': '-',
                 'Precio': '-',
                 'Subtotal': '-',
                 'Total Compra': purchase.total,
-                'Estado': purchase.status
+                'Estado': purchase.status || 'Registrada'
             });
         }
     });

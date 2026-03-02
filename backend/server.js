@@ -27,46 +27,46 @@ const T = {
     QUOTATIONS: 'quotations',
     QUOTE_ITEMS: 'quotation_items',
     PAYMENT_MACHINES: 'payment_machines',
-    ACCOUNTING_ENTRIES: 'asientos_contables',
-    ACCOUNTING_ACCOUNTS: 'accounting_accounts',
-    ACCOUNTING_LINES: 'accounting_lines',
     LOGISTICS: 'logistica',
-    LOGISTICS_ITEMS: 'logistica_items'
+    LOGISTICS_ITEMS: 'logistica_items',
+    // Nuevas Tablas Contabilidad Pro
+    PC_PLAN: 'plan_cuentas',
+    PC_ASIENTOS: 'asientos',
+    PC_MOVIMIENTOS: 'asiento_movimientos'
 };
 
 // Accounting Helper
+// Accounting Helper (Versión Pro compatible con ContaChile)
 async function createAccountingEntry({ date, description, type, document_number, lines, userId }) {
     try {
-        // 1. Create Header
+        const periodo = (date ? new Date(date) : new Date()).toISOString().substring(0, 7);
+
+        // 1. Crear Cabecera del Asiento (Voucher)
         const { data: header, error: hError } = await supabase
-            .from(T.ACCOUNTING_ENTRIES)
+            .from(T.PC_ASIENTOS)
             .insert({
-                date: date || new Date().toISOString().split('T')[0],
-                description,
-                entry_type: type,
-                document_number,
-                created_by: userId
+                fecha: date || new Date().toISOString().split('T')[0],
+                glosa: description,
+                periodo: periodo,
+                tipo_origen: type,
+                referencia_id: document_number,
+                usuario_id: userId
             })
             .select()
             .single();
 
         if (hError) throw hError;
 
-        // 2. Resolve account codes to IDs (Utility)
-        const { data: accs } = await supabase.from(T.ACCOUNTING_ACCOUNTS).select('id, code');
-        const codeMap = {};
-        accs.forEach(a => codeMap[a.code] = a.id);
-
-        // 3. Create Lines
+        // 2. Crear las Líneas de Movimiento
         const journalLines = lines.map(line => ({
             asiento_id: header.id,
-            account_id: codeMap[line.account_code] || line.account_id,
-            debit: line.debit || 0,
-            credit: line.credit || 0,
-            glosa: line.glosa || description
+            cuenta_codigo: line.account_code,
+            debe: line.debit || 0,
+            haber: line.credit || 0,
+            glosa_linea: line.glosa || description
         }));
 
-        const { error: lError } = await supabase.from(T.ACCOUNTING_LINES).insert(journalLines);
+        const { error: lError } = await supabase.from(T.PC_MOVIMIENTOS).insert(journalLines);
         if (lError) throw lError;
 
         return { success: true, id: header.id };
@@ -506,6 +506,8 @@ app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, asyn
             ALTER TABLE ventas ADD COLUMN IF NOT EXISTS commission numeric DEFAULT 0;
             ALTER TABLE ventas ADD COLUMN IF NOT EXISTS discount numeric DEFAULT 0;
             ALTER TABLE ventas ADD COLUMN IF NOT EXISTS category text;
+            ALTER TABLE compras ADD COLUMN IF NOT EXISTS document_number text;
+            ALTER TABLE ventas ADD COLUMN IF NOT EXISTS document_number text;
         `;
         const { error } = await supabase.rpc('exec_sql', { sql });
         if (error) throw error;
@@ -684,7 +686,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 });
 
 app.post('/api/purchases', authenticateToken, async (req, res) => {
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category, document_number } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -695,7 +697,8 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             net, iva, total,
             payment_method: payment_method || null,
             account_id: account_id || null,
-            document_type: document_type || 'factura'
+            document_type: document_type || 'factura',
+            document_number: document_number || null
         };
 
         // Try to insert with ALL columns first
@@ -766,7 +769,8 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01.05';
         else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.01.02';
 
-        const glosa = type === 'expense' ? `Gasto: ${description}` : `Compra a proveedor (Factura #${purchase.id})`;
+        const docRef = document_number || purchase.id;
+        const glosa = type === 'expense' ? `Gasto: ${description} (Doc #${docRef})` : `Compra a proveedor (Doc #${docRef})`;
         const inventoryAccount = type === 'expense' ? '5.1.02.01' : '1.1.02.01'; // Gasto Operacional vs Inventario
 
         const journalLines = [
@@ -775,7 +779,7 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         ];
 
         if (iva > 0) {
-            journalLines.push({ account_code: '1.1.03.01', debit: iva, glosa: `IVA Crédito #${purchase.id}` });
+            journalLines.push({ account_code: '1.1.03.01', debit: iva, glosa: `IVA Crédito #${docRef}` });
         }
 
         await createAccountingEntry({
@@ -817,7 +821,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             net, iva, total,
             payment_method: payment_method || null,
             account_id: account_id || null,
-            document_type: document_type || 'factura'
+            document_type: document_type || 'factura',
+            document_number: req.body.document_number || null
         };
 
         const fullUpdate = {
@@ -860,17 +865,17 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             }
         }
 
-        // 4. DELETE old accounting entry (could be 'compra' or 'gasto')
-        const { data: oldEntries } = await supabase
-            .from(T.ACCOUNTING_ENTRIES)
+        // 4. ELIMINAR asiento contable Pro antiguo para esta compra
+        const { data: oldEntriesPro } = await supabase
+            .from(T.PC_ASIENTOS)
             .select('id')
-            .eq('document_number', purchaseId.toString())
-            .in('entry_type', ['compra', 'compra_push', 'compra_pull', 'gasto']);
+            .eq('referencia_id', purchaseId.toString())
+            .in('tipo_origen', ['compra', 'compra_push', 'compra_pull', 'gasto']);
 
-        if (oldEntries && oldEntries.length > 0) {
-            const entryIds = oldEntries.map(e => e.id);
-            await supabase.from(T.ACCOUNTING_LINES).delete().in('asiento_id', entryIds);
-            await supabase.from(T.ACCOUNTING_ENTRIES).delete().in('id', entryIds);
+        if (oldEntriesPro && oldEntriesPro.length > 0) {
+            const proIds = oldEntriesPro.map(e => e.id);
+            await supabase.from(T.PC_MOVIMIENTOS).delete().in('asiento_id', proIds);
+            await supabase.from(T.PC_ASIENTOS).delete().in('id', proIds);
         }
 
         // 5. CREATE new accounting entry with updated values
@@ -885,7 +890,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
         if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01.05';
         else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.01.02';
 
-        const glosa = type === 'expense' ? `Gasto: ${description}` : `Compra a proveedor (Factura #${purchaseId})`;
+        const docRef = req.body.document_number || purchaseId;
+        const glosa = type === 'expense' ? `Gasto: ${description} (Doc #${docRef})` : `Compra a proveedor (Doc #${docRef})`;
         const inventoryAccount = type === 'expense' ? '5.1.02.01' : '1.1.02.01';
 
         const journalLines = [
@@ -894,7 +900,7 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
         ];
 
         if (iva > 0) {
-            journalLines.push({ account_code: '1.1.03.01', debit: iva, glosa: `IVA Crédito #${purchaseId}` });
+            journalLines.push({ account_code: '1.1.03.01', debit: iva, glosa: `IVA Crédito #${docRef}` });
         }
 
         await createAccountingEntry({
@@ -913,7 +919,7 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/sales', authenticateToken, async (req, res) => {
-    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id } = req.body;
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -928,7 +934,8 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             is_iva_exempt: is_iva_exempt || false,
             machine_id: machine_id || null,
             event_name: event_name || null,
-            transferred: false
+            transferred: false,
+            document_number: document_number || null
         };
 
         let { data: sale, error: sError } = await supabase.from(T.SALES).insert({ ...payload, category, quotation_id }).select().single();
@@ -970,18 +977,19 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             paymentAccount = '1.1.01.03'; // Tarjeta Débito Privada (Socio)
         }
 
+        const docRef = document_number || sale.id;
         const journalLines = [
-            { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Venta #${sale.id} (${payment_method})` },
-            { account_code: '4.1.01.01', credit: net - discountAmount, glosa: `Ingreso neto venta #${sale.id}` }
+            { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Venta #${docRef} (${payment_method})` },
+            { account_code: '4.1.01.01', credit: net - discountAmount, glosa: `Ingreso neto venta #${docRef}` }
         ];
 
         if (commissionAmount > 0) {
-            journalLines.push({ account_code: '5.1.02.02', debit: commissionAmount, glosa: `Comisión máquina venta #${sale.id}` });
+            journalLines.push({ account_code: '5.1.02.02', debit: commissionAmount, glosa: `Comisión máquina venta #${docRef}` });
         }
 
         // Only include IVA in ledger if NOT cash (as per user: cash doesn't go to ledger accounts)
         if (payment_method !== 'cash' && !is_iva_exempt && iva > 0) {
-            journalLines.push({ account_code: '2.1.02.01', credit: iva, glosa: `IVA Débito venta #${sale.id}` });
+            journalLines.push({ account_code: '2.1.02.01', credit: iva, glosa: `IVA Débito venta #${docRef}` });
         }
 
         await createAccountingEntry({
@@ -1002,7 +1010,7 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 // ========== UPDATE SALE (with accounting recalculation) ==========
 app.put('/api/sales/:id', authenticateToken, async (req, res) => {
     const saleId = req.params.id;
-    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id } = req.body;
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -1020,7 +1028,8 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             account_id: account_id || null,
             is_iva_exempt: is_iva_exempt || false,
             machine_id: machine_id || null,
-            event_name: event_name || null
+            event_name: event_name || null,
+            document_number: document_number || null
         };
 
         let { error: updateError } = await supabase.from(T.SALES).update({ ...updatePayload, category, quotation_id }).eq('id', saleId);
@@ -1051,17 +1060,17 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             }
         }
 
-        // 4. DELETE old accounting entry for this sale
-        const { data: oldEntries } = await supabase
-            .from(T.ACCOUNTING_ENTRIES)
+        // 4. ELIMINAR asiento contable Pro antiguo para esta venta
+        const { data: oldEntriesPro } = await supabase
+            .from(T.PC_ASIENTOS)
             .select('id')
-            .eq('document_number', saleId.toString())
-            .in('entry_type', ['venta', 'venta_push', 'venta_pull']);
+            .eq('referencia_id', saleId.toString())
+            .in('tipo_origen', ['venta', 'venta_push', 'venta_pull']);
 
-        if (oldEntries && oldEntries.length > 0) {
-            const entryIds = oldEntries.map(e => e.id);
-            await supabase.from(T.ACCOUNTING_LINES).delete().in('asiento_id', entryIds);
-            await supabase.from(T.ACCOUNTING_ENTRIES).delete().in('id', entryIds);
+        if (oldEntriesPro && oldEntriesPro.length > 0) {
+            const proIds = oldEntriesPro.map(e => e.id);
+            await supabase.from(T.PC_MOVIMIENTOS).delete().in('asiento_id', proIds);
+            await supabase.from(T.PC_ASIENTOS).delete().in('id', proIds);
         }
 
         // 5. CREATE new accounting entry with updated values
@@ -1073,17 +1082,18 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             paymentAccount = '1.1.01.03'; // Tarjeta Débito Privada (Socio)
         }
 
+        const docRef = document_number || saleId;
         const journalLines = [
-            { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Ingreso líquido Venta #${saleId} (${payment_method})` },
-            { account_code: '4.1.01.01', credit: net - discountAmount, glosa: `Ingreso neto Venta #${saleId}` }
+            { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Ingreso líquido Venta #${docRef} (${payment_method})` },
+            { account_code: '4.1.01.01', credit: net - discountAmount, glosa: `Ingreso neto Venta #${docRef}` }
         ];
 
         if (commissionAmount > 0) {
-            journalLines.push({ account_code: '5.1.02.02', debit: commissionAmount, glosa: `Comisión máquina Venta #${saleId}` });
+            journalLines.push({ account_code: '5.1.02.02', debit: commissionAmount, glosa: `Comisión máquina Venta #${docRef}` });
         }
 
         if (payment_method !== 'cash' && !is_iva_exempt && (iva || 0) > 0) {
-            journalLines.push({ account_code: '2.1.02.01', credit: iva, glosa: `IVA Débito Venta #${saleId}` });
+            journalLines.push({ account_code: '2.1.02.01', credit: iva, glosa: `IVA Débito Venta #${docRef}` });
         }
 
         await createAccountingEntry({
