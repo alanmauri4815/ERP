@@ -26,8 +26,8 @@ export async function renderDashboard(container) {
     getEstadoResultados(),
     getResumenIVA(periodo),
     db.getAll('asientos'),
-    db.getAll('compras'),
-    db.getAll('ventas')
+    db.getAll('libro_compras'),
+    db.getAll('libro_ventas')
   ]);
 
   container.innerHTML = `
