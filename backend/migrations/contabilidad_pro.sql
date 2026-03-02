@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS activo_fijo (
 );
 
 -- 9. Libro de Compras (Contable)
-CREATE TABLE IF NOT EXISTS compras (
+CREATE TABLE IF NOT EXISTS libro_compras (
     id BIGSERIAL PRIMARY KEY,
     fecha DATE NOT NULL,
     tipo_dte TEXT DEFAULT '33', -- 33: Factura, 39: Boleta
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS compras (
 );
 
 -- 10. Libro de Ventas (Contable)
-CREATE TABLE IF NOT EXISTS ventas (
+CREATE TABLE IF NOT EXISTS libro_ventas (
     id BIGSERIAL PRIMARY KEY,
     fecha DATE NOT NULL,
     tipo_dte TEXT DEFAULT '33',
@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS ventas (
     referencia_id TEXT UNIQUE, -- Para evitar duplicados al sincronizar
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
 
 
 -- Indices para Performance

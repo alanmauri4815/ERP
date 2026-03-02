@@ -9,11 +9,11 @@ import { showToast, openModal, closeModal } from '../../components/ui-helpers.js
 import { TIPOS_DOCUMENTO } from '../../utils/constants.js';
 
 export async function renderLibroCompras(container) {
-  await renderAuxiliar(container, 'compras', 'Libro de Compras', 'Registro de facturas recibidas');
+  await renderAuxiliar(container, 'libro_compras', 'Libro de Compras', 'Registro de facturas recibidas');
 }
 
 export async function renderLibroVentas(container) {
-  await renderAuxiliar(container, 'ventas', 'Libro de Ventas', 'Registro de facturas emitidas');
+  await renderAuxiliar(container, 'libro_ventas', 'Libro de Ventas', 'Registro de facturas emitidas');
 }
 
 async function renderAuxiliar(container, tipo, titulo, subtitulo) {
@@ -32,7 +32,7 @@ async function renderAuxiliar(container, tipo, titulo, subtitulo) {
         <p style="color:var(--text-muted);font-size:var(--font-size-sm);margin-top:4px;">${subtitulo}</p>
       </div>
       <button class="btn btn-primary" id="btn-nuevo-doc">
-        <i class="fas fa-plus"></i> Registrar ${tipo === 'compras' ? 'Compra' : 'Venta'}
+        <i class="fas fa-plus"></i> Registrar ${tipo.includes('compras') ? 'Compra' : 'Venta'}
       </button>
     </div>
 
@@ -111,7 +111,7 @@ function openDocModal(tipo, container) {
           <input type="text" class="form-control" name="numero" placeholder="Ej: 1234" required>
         </div>
         <div class="form-group">
-          <label>RUT ${tipo === 'compras' ? 'Proveedor' : 'Cliente'}</label>
+          <label>RUT ${tipo.includes('compras') ? 'Proveedor' : 'Cliente'}</label>
           <input type="text" class="form-control" name="rut" placeholder="Ej: 76.123.456-7" required>
         </div>
       </div>
@@ -152,7 +152,7 @@ function openDocModal(tipo, container) {
       showToast('Documento registrado con éxito en Supabase y Libro Diario', 'success');
       closeModal();
       // Recargar la página actual
-      if (tipo === 'compras') await renderLibroCompras(container);
+      if (tipo.includes('compras')) await renderLibroCompras(container);
       else await renderLibroVentas(container);
 
     } catch (error) {

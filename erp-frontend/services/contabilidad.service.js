@@ -109,7 +109,7 @@ export async function calcularLiquidacion(trabajador, periodo) {
 /* --- MOTOR DE REPORTES (Tributario & Balances) --- */
 
 export async function getResumenIVA(periodo) {
-    const [compras, ventas] = await Promise.all([db.getAll('compras'), db.getAll('ventas')]);
+    const [compras, ventas] = await Promise.all([db.getAll('libro_compras'), db.getAll('libro_ventas')]);
 
     const cMes = compras.filter(c => c.fecha.startsWith(periodo));
     const vMes = ventas.filter(v => v.fecha.startsWith(periodo));
@@ -251,7 +251,7 @@ export async function registrarCompra(data) {
     const iva = Math.round(neto * IVA_RATE);
     const total = neto + iva;
 
-    const compra = await db.insert('compras', {
+    const compra = await db.insert('libro_compras', {
         ...data,
         neto,
         iva,
@@ -279,7 +279,7 @@ export async function registrarVenta(data) {
     const iva = Math.round(neto * IVA_RATE);
     const total = neto + iva;
 
-    const venta = await db.insert('ventas', {
+    const venta = await db.insert('libro_ventas', {
         ...data,
         neto,
         iva,
@@ -310,8 +310,8 @@ const VIDA_UTIL_MESES = {
 };
 
 export async function sincronizarOperacionesERP(hSales, hPurch) {
-    const existingCompras = await db.getAll('compras');
-    const existingVentas = await db.getAll('ventas');
+    const existingCompras = await db.getAll('libro_compras');
+    const existingVentas = await db.getAll('libro_ventas');
 
     let syncedCount = 0;
 
