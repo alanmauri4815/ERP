@@ -773,13 +773,13 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             else if (acc?.type === 'debit') finalPaymentMethod = 'transfer';
         }
 
-        let paymentAccount = '1.1.01.01'; // Default: Caja
-        if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01.05';
-        else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.01.02';
+        let paymentAccount = '1.1.01'; // Default: Caja
+        if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01';
+        else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.02';
 
         const docRef = document_number || purchase.id;
         const glosa = type === 'expense' ? `Gasto: ${description} (Doc #${docRef})` : `Compra a proveedor (Doc #${docRef})`;
-        const inventoryAccount = type === 'expense' ? '5.1.02.01' : '1.1.02.01'; // Gasto Operacional vs Inventario
+        const inventoryAccount = type === 'expense' ? '5.1.02' : '1.1.09'; // Gasto Operacional vs Inventario
 
         const journalLines = [
             { account_code: inventoryAccount, debit: net, glosa: glosa },
@@ -787,7 +787,7 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         ];
 
         if (iva > 0) {
-            journalLines.push({ account_code: '1.1.03.01', debit: iva, glosa: `IVA Crédito #${docRef}` });
+            journalLines.push({ account_code: '1.1.06', debit: iva, glosa: `IVA Crédito #${docRef}` });
         }
 
         await createAccountingEntry({
@@ -1027,13 +1027,13 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             else if (acc?.type === 'debit') finalPaymentMethod = 'transfer';
         }
 
-        let paymentAccount = '1.1.01.01'; // Default: Caja
-        if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01.05';
-        else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.01.02';
+        let paymentAccount = '1.1.01'; // Default: Caja
+        if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01';
+        else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.02';
 
         const docRef = req.body.document_number || purchaseId;
         const glosa = type === 'expense' ? `Gasto: ${description} (Doc #${docRef})` : `Compra a proveedor (Doc #${docRef})`;
-        const inventoryAccount = type === 'expense' ? '5.1.02.01' : '1.1.02.01';
+        const inventoryAccount = type === 'expense' ? '5.1.02' : '1.1.09';
 
         const journalLines = [
             { account_code: inventoryAccount, debit: net, glosa: glosa },
@@ -1041,7 +1041,7 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
         ];
 
         if (iva > 0) {
-            journalLines.push({ account_code: '1.1.03.01', debit: iva, glosa: `IVA Crédito #${docRef}` });
+            journalLines.push({ account_code: '1.1.06', debit: iva, glosa: `IVA Crédito #${docRef}` });
         }
 
         await createAccountingEntry({
@@ -1110,27 +1110,27 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
         }
 
         // Create Accounting Entry
-        let paymentAccount = '1.1.01.01'; // Default: Caja
+        let paymentAccount = '1.1.01'; // Default: Caja
         const commissionAmount = commission || 0;
         const discountAmount = discount || 0;
 
         if (payment_method === 'machine' || payment_method === 'transfer') {
-            paymentAccount = '1.1.01.03'; // Tarjeta Débito Privada (Socio)
+            paymentAccount = '1.1.03'; // Tarjeta Débito Privada (Socio)
         }
 
         const docRef = document_number || sale.id;
         const journalLines = [
             { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Venta #${docRef} (${payment_method})` },
-            { account_code: '4.1.01.01', credit: net - discountAmount, glosa: `Ingreso neto venta #${docRef}` }
+            { account_code: '4.1.01', credit: net - discountAmount, glosa: `Ingreso neto venta #${docRef}` }
         ];
 
         if (commissionAmount > 0) {
-            journalLines.push({ account_code: '5.1.02.02', debit: commissionAmount, glosa: `Comisión máquina venta #${docRef}` });
+            journalLines.push({ account_code: '5.1.01', debit: commissionAmount, glosa: `Comisión máquina venta #${docRef}` });
         }
 
         // Only include IVA in ledger if NOT cash (as per user: cash doesn't go to ledger accounts)
         if (payment_method !== 'cash' && !is_iva_exempt && iva > 0) {
-            journalLines.push({ account_code: '2.1.02.01', credit: iva, glosa: `IVA Débito venta #${docRef}` });
+            journalLines.push({ account_code: '2.1.02', credit: iva, glosa: `IVA Débito venta #${docRef}` });
         }
 
         await createAccountingEntry({
@@ -1215,26 +1215,26 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
         }
 
         // 5. CREATE new accounting entry with updated values
-        let paymentAccount = '1.1.01.01'; // Default: Caja
+        let paymentAccount = '1.1.01'; // Default: Caja
         const commissionAmount = commission || 0;
         const discountAmount = discount || 0;
 
         if (payment_method === 'machine' || payment_method === 'transfer') {
-            paymentAccount = '1.1.01.03'; // Tarjeta Débito Privada (Socio)
+            paymentAccount = '1.1.03'; // Tarjeta Débito Privada (Socio)
         }
 
         const docRef = document_number || saleId;
         const journalLines = [
             { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Ingreso líquido Venta #${docRef} (${payment_method})` },
-            { account_code: '4.1.01.01', credit: net - discountAmount, glosa: `Ingreso neto Venta #${docRef}` }
+            { account_code: '4.1.01', credit: net - discountAmount, glosa: `Ingreso neto Venta #${docRef}` }
         ];
 
         if (commissionAmount > 0) {
-            journalLines.push({ account_code: '5.1.02.02', debit: commissionAmount, glosa: `Comisión máquina Venta #${docRef}` });
+            journalLines.push({ account_code: '5.1.01', debit: commissionAmount, glosa: `Comisión máquina Venta #${docRef}` });
         }
 
         if (payment_method !== 'cash' && !is_iva_exempt && (iva || 0) > 0) {
-            journalLines.push({ account_code: '2.1.02.01', credit: iva, glosa: `IVA Débito Venta #${docRef}` });
+            journalLines.push({ account_code: '2.1.02', credit: iva, glosa: `IVA Débito Venta #${docRef}` });
         }
 
         await createAccountingEntry({
@@ -1309,8 +1309,8 @@ app.post('/api/sales/bulk-transfer', authenticateToken, async (req, res) => {
             type: 'transferencia',
             userId: req.user.id,
             lines: [
-                { account_code: '1.1.01.02', debit: totalNetTransfer },      // Entra al Banco
-                { account_code: '1.1.01.03', credit: totalNetTransfer }     // Sale de Fondos por Recaudar (ya neto)
+                { account_code: '1.1.02', debit: totalNetTransfer },      // Entra al Banco
+                { account_code: '1.1.03', credit: totalNetTransfer }     // Sale de Fondos por Recaudar (ya neto)
             ]
         });
 
@@ -1402,8 +1402,8 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                 type: 'consumo',
                 userId: req.user.id,
                 lines: [
-                    { account_code: '1.1.02.02', debit: totalProductionCost }, // Inventario PT
-                    { account_code: '1.1.02.01', credit: totalProductionCost } // Inventario MP
+                    { account_code: '1.1.09', debit: totalProductionCost }, // Inventario PT
+                    { account_code: '1.1.09', credit: totalProductionCost } // Inventario MP
                 ]
             });
         }
@@ -1525,8 +1525,8 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
                 type: 'consumo',
                 userId: req.user.id,
                 lines: [
-                    { account_code: '1.1.02.02', debit: totalProductionCost }, // Inventario PT
-                    { account_code: '1.1.02.01', credit: totalProductionCost } // Inventario MP
+                    { account_code: '1.1.09', debit: totalProductionCost }, // Inventario PT
+                    { account_code: '1.1.09', credit: totalProductionCost } // Inventario MP
                 ]
             });
         }
@@ -1668,8 +1668,8 @@ app.post('/api/logistics', authenticateToken, async (req, res) => {
                 type: 'gasto',
                 userId: req.user.id,
                 lines: [
-                    { account_code: '4.1.01.07', debit: totalLogisticsCost, glosa: desc }, // Gasto Transporte (Assume code)
-                    { account_code: '1.1.01.01', credit: totalLogisticsCost, glosa: desc } // Caja/Banco
+                    { account_code: '4.1.01', debit: totalLogisticsCost, glosa: desc }, // Gasto Transporte (Assume code)
+                    { account_code: '1.1.01', credit: totalLogisticsCost, glosa: desc } // Caja/Banco
                 ]
             });
         }
@@ -2104,8 +2104,8 @@ app.post('/api/accounting/expenses', authenticateToken, async (req, res) => {
         type: 'gasto',
         userId: req.user.id,
         lines: [
-            { account_code: category_code || '5.1.02.01', debit: amount }, // Gasto Operacional
-            { account_code: account_origin_code || '1.1.01.01', credit: amount } // Pago (Caja)
+            { account_code: category_code || '5.1.02', debit: amount }, // Gasto Operacional
+            { account_code: account_origin_code || '1.1.01', credit: amount } // Pago (Caja)
         ]
     });
 
