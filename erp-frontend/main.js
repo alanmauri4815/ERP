@@ -1,5 +1,6 @@
-console.log('ERP Universal v1.1.0 - Quotation IDs Updated');
+console.log('ERP Universal v1.2.0 - Administración y Finanzas Integrado');
 import './style.css'
+import './accounting.css'
 import Chart from 'chart.js/auto'
 import {
   exportToExcel,
@@ -15,13 +16,16 @@ import {
 import { renderPlanCuentas } from './modules/plan-cuentas/plan-cuentas.page.js'
 import { renderLibroDiario } from './modules/libro-diario/libro-diario.page.js'
 import { renderLibroMayor } from './modules/libro-mayor/libro-mayor.page.js'
-import { renderBalanceComprobacion as renderEstadosFinancieros } from './modules/estados-financieros/estados-financieros.page.js'
+import { renderBalanceComprobacion as renderEstadosFinancieros, renderBalanceGeneral, renderEstadoResultados } from './modules/estados-financieros/estados-financieros.page.js'
 import { renderRemuneraciones } from './modules/rrhh/remuneraciones.page.js'
+import { renderLibroCompras, renderLibroVentas } from './modules/libros-auxiliares/compras-ventas.page.js'
 import { renderHonorarios } from './modules/libros-auxiliares/honorarios.page.js'
 import { renderTributario } from './modules/tributario/tributario.page.js'
 import { renderActivoFijo } from './modules/financiero/activo-fijo.page.js'
 import { renderAnalisisFinanciero } from './modules/financiero/analisis.page.js'
-import { sincronizarOperacionesERP } from './services/contabilidad.service.js'
+import { renderTesoreria } from './modules/tesoreria/bancos.page.js'
+import { sincronizarOperacionesERP, initPlanCuentas } from './services/contabilidad.service.js'
+import { PLAN_CUENTAS_DEFAULT } from './utils/constants.js'
 import { db } from './services/datastore.js'
 
 const API_BASE = window.location.hostname === 'localhost'
@@ -1808,15 +1812,7 @@ const views = {
     </div>
     `
   },
-  acc_plan_cuentas: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
-  acc_libro_diario: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
-  acc_libro_mayor: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
-  acc_balance_8: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
-  acc_remuneraciones: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
-  acc_honorarios: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
-  acc_tributario: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
-  acc_activo_fijo: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>',
-  acc_analisis: () => '<div id="accounting-container" class="animate-fade" style="min-height:400px; width:100%;"></div>'
+
 };
 
 // ========== PIPELINE VIEW ==========
@@ -1957,11 +1953,19 @@ views.pipeline = () => {
 };
 
 views.acc_plan_cuentas = () => `<header class="animate-fade"><h1>Plan de Cuentas</h1></header><div id="accounting-container" class="animate-fade"></div>`;
-views.acc_libro_diario = () => `<header class="animate-fade"><h1>Libro Diario (Adv)</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_libro_diario = () => `<header class="animate-fade"><h1>Libro Diario</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_libro_mayor = () => `<header class="animate-fade"><h1>Libro Mayor</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_balance_8 = () => `<header class="animate-fade"><h1>Balance 8 Columnas</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_tesoreria = () => `<header class="animate-fade"><h1>Tesorería y Bancos</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_remuneraciones = () => `<header class="animate-fade"><h1>Remuneraciones</h1></header><div id="accounting-container" class="animate-fade"></div>`;
-
+views.acc_compras_libro = () => `<header class="animate-fade"><h1>Libro de Compras</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_ventas_libro = () => `<header class="animate-fade"><h1>Libro de Ventas</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_balance_general = () => `<header class="animate-fade"><h1>Balance General</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_estado_resultados = () => `<header class="animate-fade"><h1>Estado de Resultados</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_honorarios = () => `<header class="animate-fade"><h1>Libro de Honorarios</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_tributario = () => `<header class="animate-fade"><h1>Gestión Tributaria (F29)</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_activo_fijo = () => `<header class="animate-fade"><h1>Activo Fijo</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_analisis = () => `<header class="animate-fade"><h1>Análisis Financiero</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 function renderHistoryTable(type) {
   const data = state.history[type];
   if (type === 'sales') {
@@ -4367,8 +4371,8 @@ function renderView(viewName) {
 
     // Definimos qué puede ver cada uno
     const permissions = {
-      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones'],
-      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones'],
+      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'],
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'],
       user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'logistics', 'history', 'quotations', 'pipeline', 'clients_management', 'providers_management', 'direct_sales', 'profile'],
       viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
@@ -4493,16 +4497,21 @@ function renderView(viewName) {
     // Initialization for quotations view
   }
 
-  // Inicialización de Módulos de Contabilidad
+  // Inicialización de Módulos de Contabilidad (Administración y Finanzas)
   if (viewName === 'acc_plan_cuentas') renderPlanCuentas(document.getElementById('accounting-container'));
   if (viewName === 'acc_libro_diario') renderLibroDiario(document.getElementById('accounting-container'));
   if (viewName === 'acc_libro_mayor') renderLibroMayor(document.getElementById('accounting-container'));
   if (viewName === 'acc_balance_8') renderEstadosFinancieros(document.getElementById('accounting-container'));
+  if (viewName === 'acc_tesoreria') renderTesoreria(document.getElementById('accounting-container'));
   if (viewName === 'acc_remuneraciones') renderRemuneraciones(document.getElementById('accounting-container'));
   if (viewName === 'acc_honorarios') renderHonorarios(document.getElementById('accounting-container'));
   if (viewName === 'acc_tributario') renderTributario(document.getElementById('accounting-container'));
   if (viewName === 'acc_activo_fijo') renderActivoFijo(document.getElementById('accounting-container'));
   if (viewName === 'acc_analisis') renderAnalisisFinanciero(document.getElementById('accounting-container'));
+  if (viewName === 'acc_compras_libro') renderLibroCompras(document.getElementById('accounting-container'));
+  if (viewName === 'acc_ventas_libro') renderLibroVentas(document.getElementById('accounting-container'));
+  if (viewName === 'acc_balance_general') renderBalanceGeneral(document.getElementById('accounting-container'));
+  if (viewName === 'acc_estado_resultados') renderEstadoResultados(document.getElementById('accounting-container'));
 
   if (viewName === 'accounts_management') {
     // Handler para guardar cuentas
@@ -6129,6 +6138,12 @@ document.getElementById('btn-submit-logistics')?.addEventListener('click', async
 
 fetchData();
 
+// Initialize Plan de Cuentas for accounting modules
+initPlanCuentas(PLAN_CUENTAS_DEFAULT).then(() => {
+  console.log('✅ Plan de Cuentas inicializado correctamente');
+}).catch(err => {
+  console.warn('Plan de Cuentas no inicializado:', err.message);
+});
 // --- Provider Helpers ---
 window.refreshProviders = async () => {
   const provs = await apiFetch('/providers');

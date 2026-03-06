@@ -195,3 +195,14 @@ export const AFPS = [
   { nombre: 'Uno', tasa: 0.1069 },
 ];
 
+export const METODOS_PAGO = [
+  { id: 'transferencia', nombre: 'Transferencia Bancaria', cuenta: '1.1.02' },
+  { id: 'efectivo', nombre: 'Caja / Efectivo', cuenta: '1.1.01' },
+  { id: 'credito', nombre: 'Crédito (Cta. Corriente)', cuenta: null }
+];
+
+export const ESTADOS_PAGO = {
+  PENDIENTE: 'pendiente',
+  PAGADO: 'pagado',
+  PARCIAL: 'parcial'
+};

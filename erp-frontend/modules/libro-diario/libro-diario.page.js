@@ -3,14 +3,97 @@
    ============================================ */
 
 import { getLibroDiario, getCuentasDetalle, crearAsiento } from '../../services/contabilidad.service.js';
+import { db } from '../../services/datastore.js';
+import { erpFetch } from '../../services/erp-api.js';
 import { formatCLP } from '../../utils/formatters.js';
 import { showToast, openModal, closeModal } from '../../components/ui-helpers.js';
+import { IVA_RATE } from '../../utils/constants.js';
+
+/* -- Sincronizar operaciones ERP al abrir el Libro Diario -- */
+async function syncERPToJournal() {
+  try {
+    const [purchases, sales] = await Promise.all([
+      erpFetch('/purchases'),
+      erpFetch('/sales')
+    ]);
+
+    const existingEntries = await db.getAll('asientos').catch(() => []);
+    const existingRefs = new Set(existingEntries.map(e => `${e.tipo_origen}_${e.referencia_id}`));
+
+    let synced = 0;
+    const allItems = [
+      ...(Array.isArray(purchases) ? purchases.map(p => ({ ...p, _tipo: 'compras' })) : []),
+      ...(Array.isArray(sales) ? sales.map(s => ({ ...s, _tipo: 'ventas' })) : [])
+    ];
+
+    for (const item of allItems) {
+      const tipoOrigen = item._tipo === 'compras' ? 'erp_compra' : 'erp_venta';
+      const key = `${tipoOrigen}_${item.id}`;
+      if (existingRefs.has(key)) continue;
+
+      const total = parseFloat(item.total) || 0;
+      if (total === 0) continue;
+
+      const neto = parseFloat(item.net) || Math.round(total / (1 + IVA_RATE));
+      const iva = total - neto;
+      const fecha = item.date || new Date().toISOString().substring(0, 10);
+      const periodo = fecha.substring(0, 7);
+
+      try {
+        if (item._tipo === 'compras') {
+          const docNum = item.document_number ? `Fact. ${item.document_number}` : 'S/N';
+          const desc = item.description || (item.items?.length ? `${item.items.length} ítems` : '');
+          const glosaCompra = `Compra ${docNum} — ${item.provider_name || 'Proveedor'}${desc ? ' — ' + desc : ''}`;
+          await crearAsiento({
+            fecha, periodo,
+            glosa: glosaCompra,
+            tipo_origen: tipoOrigen,
+            referencia_id: item.id,
+            lineas: [
+              { cuenta_codigo: '5.1.01', debe: neto, haber: 0 },
+              { cuenta_codigo: '1.1.06', debe: iva, haber: 0 },
+              { cuenta_codigo: '2.1.01', debe: 0, haber: total }
+            ]
+          });
+        } else {
+          const docNumV = item.document_number ? `Boleta/Fact. ${item.document_number}` : (item.items?.length ? `${item.items.length} productos` : 'S/N');
+          const clienteV = item.client_name || 'Consumidor Final';
+          const glosaVenta = `Venta ${docNumV} — ${clienteV}`;
+          await crearAsiento({
+            fecha, periodo,
+            glosa: glosaVenta,
+            tipo_origen: tipoOrigen,
+            referencia_id: item.id,
+            lineas: [
+              { cuenta_codigo: '1.1.01', debe: total, haber: 0 },
+              { cuenta_codigo: '4.1.01', debe: 0, haber: neto },
+              { cuenta_codigo: '2.1.02', debe: 0, haber: iva }
+            ]
+          });
+        }
+        synced++;
+      } catch (e) {
+        console.warn(`Sync ${tipoOrigen} #${item.id}:`, e.message);
+      }
+    }
+
+    if (synced > 0) console.log(`✅ ${synced} operaciones ERP sincronizadas al Libro Diario`);
+  } catch (e) {
+    console.warn('Sync ERP→Diario:', e.message);
+  }
+}
 
 export async function renderLibroDiario(container) {
   const now = new Date();
   const periodo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  container.innerHTML = `<div class="skeleton-loader">Cargando Libro Diario...</div>`;
+  container.innerHTML = `<div style="text-align:center; padding:3rem; color:var(--text-muted);">
+    <div class="spinner" style="margin:0 auto 1rem;"></div>
+    Sincronizando operaciones ERP y cargando Libro Diario...
+  </div>`;
+
+  // First sync ERP purchases/sales to journal
+  await syncERPToJournal();
 
   const cuentasDetalle = await getCuentasDetalle();
   let asientos = await getLibroDiario(periodo);

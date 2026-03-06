@@ -126,7 +126,12 @@ const allowedOrigins = [
     'https://erp-rho-nine.vercel.app',
     'https://erp-git-main-alanmauri4815s-proyectos.vercel.app',
     'https://erp-54l4owhov-alanmauri4815s-proyectos.vercel.app',
-    'http://localhost:3001'
+    'http://localhost:3001',
+    'http://localhost:5174',
+    'http://localhost:5175',
+    'http://localhost:5176',
+    'http://localhost:5177',
+    'http://localhost:5178'
 ];
 app.use(cors({
     origin: (origin, callback) => {
@@ -799,6 +804,139 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         res.status(500).json({ success: false, error: e.message });
     }
 });
+
+// ========== REGISTER PAYMENT / ABONO ON PURCHASE ==========
+app.post('/api/purchases/:id/payment', authenticateToken, async (req, res) => {
+    const purchaseId = req.params.id;
+    const { amount, payment_method, date, description } = req.body;
+    const paymentDate = date || new Date().toISOString().split('T')[0];
+
+    try {
+        if (!amount || amount <= 0) throw new Error('El monto del abono debe ser mayor a 0');
+
+        // Get current purchase
+        const { data: purchase, error: fetchErr } = await supabase
+            .from(T.PURCHASES).select('*').eq('id', purchaseId).single();
+        if (fetchErr || !purchase) throw new Error('Compra no encontrada');
+
+        const currentPaid = parseFloat(purchase.paid_amount || 0);
+        const total = parseFloat(purchase.total || 0);
+        const newPaid = currentPaid + parseFloat(amount);
+        const remaining = total - newPaid;
+
+        if (remaining < -1) throw new Error(`El abono ($${amount}) excede el saldo pendiente ($${total - currentPaid})`);
+
+        const newStatus = remaining <= 0 ? 'pagado' : (newPaid > 0 ? 'parcial' : 'pendiente');
+
+        // Update purchase
+        const { error: updateErr } = await supabase.from(T.PURCHASES).update({
+            paid_amount: newPaid,
+            payment_status: newStatus
+        }).eq('id', purchaseId);
+        if (updateErr) throw updateErr;
+
+        // Determine accounting account based on payment method
+        let paymentAccount = '1.1.01'; // Default: Caja
+        if (payment_method === 'transferencia' || payment_method === 'transfer' || payment_method === 'debit') {
+            paymentAccount = '1.1.02'; // Bancos
+        }
+
+        // Get provider name for glosa
+        let provName = 'Proveedor';
+        if (purchase.provider_id) {
+            const { data: prov } = await supabase.from(T.PROVIDERS).select('name').eq('id', purchase.provider_id).single();
+            if (prov) provName = prov.name;
+        }
+
+        const docRef = purchase.document_number || purchaseId;
+        const abonoNum = remaining <= 0 ? '(Pago Total)' : `(Abono $${parseInt(amount).toLocaleString()})`;
+
+        // Create accounting entry — Debit CxP, Credit Bank/Cash
+        await createAccountingEntry({
+            date: paymentDate,
+            description: `Pago Compra ${abonoNum} — ${provName} Doc #${docRef}${description ? ' — ' + description : ''}`,
+            type: 'pago_compra',
+            document_number: purchaseId.toString(),
+            userId: req.user.id,
+            lines: [
+                { account_code: '2.1.01', debit: parseFloat(amount), glosa: `Abono a factura ${docRef}` },
+                { account_code: paymentAccount, credit: parseFloat(amount), glosa: `Pago a ${provName}` }
+            ]
+        });
+
+        res.json({
+            success: true,
+            message: remaining <= 0 ? 'Compra pagada completamente' : `Abono registrado. Saldo pendiente: $${Math.max(0, remaining).toLocaleString()}`,
+            payment_status: newStatus,
+            paid_amount: newPaid,
+            remaining: Math.max(0, remaining)
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ========== REGISTER PAYMENT / ABONO ON SALE ==========
+app.post('/api/sales/:id/payment', authenticateToken, async (req, res) => {
+    const saleId = req.params.id;
+    const { amount, payment_method, date, description } = req.body;
+    const paymentDate = date || new Date().toISOString().split('T')[0];
+
+    try {
+        if (!amount || amount <= 0) throw new Error('El monto del abono debe ser mayor a 0');
+
+        const { data: sale, error: fetchErr } = await supabase
+            .from(T.SALES).select(`*, clients:"${T.CLIENTS}"(name)`).eq('id', saleId).single();
+        if (fetchErr || !sale) throw new Error('Venta no encontrada');
+
+        const currentPaid = parseFloat(sale.paid_amount || 0);
+        const total = parseFloat(sale.total || 0);
+        const newPaid = currentPaid + parseFloat(amount);
+        const remaining = total - newPaid;
+
+        if (remaining < -1) throw new Error(`El cobro ($${amount}) excede el saldo pendiente ($${total - currentPaid})`);
+
+        const newStatus = remaining <= 0 ? 'pagado' : (newPaid > 0 ? 'parcial' : 'pendiente');
+
+        const { error: updateErr } = await supabase.from(T.SALES).update({
+            paid_amount: newPaid,
+            payment_status: newStatus
+        }).eq('id', saleId);
+        if (updateErr) throw updateErr;
+
+        let paymentAccount = '1.1.01';
+        if (payment_method === 'transferencia' || payment_method === 'transfer' || payment_method === 'debit') {
+            paymentAccount = '1.1.02';
+        }
+
+        const clientName = sale.clients?.name || 'Cliente';
+        const docRef = sale.document_number || saleId;
+        const abonoNum = remaining <= 0 ? '(Cobro Total)' : `(Cobro $${parseInt(amount).toLocaleString()})`;
+
+        await createAccountingEntry({
+            date: paymentDate,
+            description: `Cobro Venta ${abonoNum} — ${clientName} Doc #${docRef}${description ? ' — ' + description : ''}`,
+            type: 'cobro_venta',
+            document_number: saleId.toString(),
+            userId: req.user.id,
+            lines: [
+                { account_code: paymentAccount, debit: parseFloat(amount), glosa: `Cobro de ${clientName}` },
+                { account_code: '1.1.03', credit: parseFloat(amount), glosa: `Abono a cuenta por cobrar ${docRef}` }
+            ]
+        });
+
+        res.json({
+            success: true,
+            message: remaining <= 0 ? 'Venta cobrada completamente' : `Cobro registrado. Saldo pendiente: $${Math.max(0, remaining).toLocaleString()}`,
+            payment_status: newStatus,
+            paid_amount: newPaid,
+            remaining: Math.max(0, remaining)
+        });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 
 // ========== UPDATE PURCHASE (with accounting recalculation) ==========
 app.put('/api/purchases/:id', authenticateToken, async (req, res) => {

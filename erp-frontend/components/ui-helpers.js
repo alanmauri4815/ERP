@@ -58,3 +58,13 @@ export function openModal(title, bodyHtml, footerHtml = '', size = '') {
 export function closeModal() {
     document.getElementById('modal-overlay')?.classList.add('hidden');
 }
+
+export function getSelectedPeriodo() {
+    const mes = document.getElementById('periodo-mes')?.value || (new Date().getMonth() + 1);
+    const anio = document.getElementById('periodo-anio')?.value || new Date().getFullYear();
+    return {
+        mes: parseInt(mes),
+        anio: parseInt(anio),
+        string: `${anio}-${String(mes).padStart(2, '0')}`
+    };
+}
