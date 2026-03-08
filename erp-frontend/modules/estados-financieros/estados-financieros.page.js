@@ -7,8 +7,9 @@ import { formatCLP } from '../../utils/formatters.js';
 
 /* ---------- BALANCE GENERAL ---------- */
 
-export function renderBalanceGeneral(container) {
-  const bg = getBalanceGeneral();
+export async function renderBalanceGeneral(container) {
+  container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);"><div class="spinner" style="margin:0 auto 1rem;"></div>Cargando Balance General...</div>`;
+  const bg = await getBalanceGeneral();
 
   container.innerHTML = `
     <div class="section-header">
@@ -86,8 +87,9 @@ export function renderBalanceGeneral(container) {
 
 /* ---------- ESTADO DE RESULTADOS ---------- */
 
-export function renderEstadoResultados(container) {
-  const er = getEstadoResultados();
+export async function renderEstadoResultados(container) {
+  container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);"><div class="spinner" style="margin:0 auto 1rem;"></div>Cargando Estado de Resultados...</div>`;
+  const er = await getEstadoResultados();
 
   container.innerHTML = `
     <div class="section-header">
