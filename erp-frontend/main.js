@@ -13,6 +13,7 @@ import {
 } from './export-utils.js'
 
 // Módulos de Contabilidad ContaChile
+import { renderDashboard as renderProDashboard } from './modules/dashboard/dashboard.page.js'
 import { renderPlanCuentas } from './modules/plan-cuentas/plan-cuentas.page.js'
 import { renderLibroDiario } from './modules/libro-diario/libro-diario.page.js'
 import { renderLibroMayor } from './modules/libro-mayor/libro-mayor.page.js'
@@ -218,51 +219,7 @@ async function getRecipe(pid) {
 }
 
 const views = {
-  dashboard: () => `
-    <header class="animate-fade">
-      <h1>Panel de Control</h1>
-      <div class="date-display">${new Date().toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
-    </header>
-    
-    <div class="stats-grid animate-fade">
-      <div class="card stat-card">
-        <div class="label">Ingresos Totales</div>
-        <div class="value">$${state.stats.totalRevenue.toLocaleString()}</div>
-        <div class="trend up">Actualizado</div>
-      </div>
-      <div class="card stat-card">
-        <div class="label">Ventas Realizadas</div>
-        <div class="value">${state.stats.totalSales}</div>
-      </div>
-      <div class="card stat-card">
-        <div class="label">Producción Total</div>
-        <div class="value">${state.stats.totalProduction}</div>
-      </div>
-      <div class="card stat-card">
-        <div class="label">Stock Crítico MP</div>
-        <div class="value" style="color: var(--danger)">${state.stats.lowStockItems} Items</div>
-      </div>
-    </div>
-
-    <div class="grid-2 animate-fade">
-      <div class="card">
-        <h2>Ventas Últimos 7 Días</h2>
-        <canvas id="salesChart" style="max-height: 300px;"></canvas>
-      </div>
-      <div class="card">
-        <h2>Acciones Rápidas</h2>
-        <div style="display: grid; gap: 1rem; margin-top: 1rem;">
-          <button onclick="document.querySelector('[data-view=\'sales\']').click()" style="background: var(--secondary)">Nueva Venta</button>
-          <button onclick="document.querySelector('[data-view=\'production\']').click()">Iniciar Producción</button>
-
-          <button onclick="document.querySelector('[data-view=\'purchases\']').click()" style="background: var(--accent)">Registrar Compra</button>
-          <button id="btn-sync-conta" style="background: var(--status-success); margin-top: 10px;">
-            <i class="fas fa-sync"></i> Sincronizar Operaciones -> Contabilidad
-          </button>
-        </div>
-      </div>
-    </div>
-  `,
+  dashboard: () => `<div id="dashboard-pro-container"></div>`,
 
   inventory_products: () => `
     <header class="animate-fade">
@@ -4472,25 +4429,20 @@ function renderView(viewName) {
   }
 
   if (viewName === 'dashboard') {
-    initSalesChart();
-    const btnSync = document.getElementById('btn-sync-conta');
-    if (btnSync) {
-      btnSync.onclick = async () => {
-        btnSync.disabled = true;
-        btnSync.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sincronizando...';
-        try {
-          const count = await sincronizarOperacionesERP(state.history.sales, state.history.purchases);
-          alert(`Sincronización exitosa: ${count} nuevos registros contabilizados.`);
-          await fetchData();
-        } catch (e) {
-          console.error(e);
-          alert('Error: ' + e.message);
-        } finally {
-          btnSync.disabled = false;
-          btnSync.innerHTML = '<i class="fas fa-sync"></i> Sincronizar Operaciones -> Contabilidad';
-        }
-      };
-    }
+    renderProDashboard(document.getElementById('dashboard-pro-container'), state);
+
+    // Global sync function for the dashboard button
+    window.apiSyncOperations = async () => {
+      try {
+        const count = await sincronizarOperacionesERP(state.history.sales, state.history.purchases);
+        alert(`Sincronización exitosa: ${count} nuevos registros contabilizados.`);
+        await fetchData();
+      } catch (e) {
+        console.error(e);
+        alert('Error: ' + e.message);
+        throw e;
+      }
+    };
   }
 
   if (viewName === 'quotations') {
