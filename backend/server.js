@@ -723,7 +723,7 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
 
         if (result.error && result.error.message.includes('column')) {
             console.warn("Retrying purchase insert without new columns...", result.error.message);
-            const { project_ref: _p, purchase_category: _c, ...fallbackData } = fullData;
+            const { project_ref: _p, purchase_category: _c, document_number: _dn, quotation_id: _qid, ...fallbackData } = fullData;
             result = await supabase.from(T.PURCHASES).insert(fallbackData).select().single();
         }
 
@@ -1084,8 +1084,8 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
         // If some columns are missing, retry without them
         if (sError && sError.message.includes('column')) {
             console.warn("Retrying sale insert without extended columns...", sError.message);
-            const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, ...fallbackPayload } = payload;
-            const retryReq = await supabase.from(T.SALES).insert(fallbackPayload).select().single();
+            const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, document_number: _dn, ...fallbackPayload } = payload;
+            const retryReq = await supabase.from(T.SALES).insert({ ...fallbackPayload }).select().single();
             sale = retryReq.data;
             sError = retryReq.error;
         }
