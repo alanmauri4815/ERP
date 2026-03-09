@@ -4110,7 +4110,7 @@ window.printQuotation = () => {
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>Cotización Ross - ${q.id}</title>
+      <title>Cotización Ross Confecciones - ${q.id}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
         * { margin:0; padding:0; box-sizing:border-box; }

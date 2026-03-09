@@ -34,6 +34,7 @@
     --shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
 
     --gradient-card: linear-gradient(145deg, rgba(30, 30, 50, 0.8) 0%, rgba(22, 22, 37, 0.95) 100%);
+    --gradient-sidebar: linear-gradient(180deg, #161625 0%, #0f101a 100%);
 }
 
 /* ============================================
@@ -45,21 +46,22 @@
     --surface-light: #f1f3f9;
     --surface-elevated: #ffffff;
 
-    --text: #1a1a2e;
+    --text: #111827;
     --text-muted: #64748b;
     --text-inverse: #ffffff;
 
-    --border: rgba(0, 0, 0, 0.06);
-    --border-strong: rgba(0, 0, 0, 0.1);
+    --border: rgba(0, 0, 0, 0.05);
+    --border-strong: rgba(0, 0, 0, 0.08);
 
     --primary: #4f46e5;
     --primary-dark: #4338ca;
     --primary-muted: rgba(79, 70, 229, 0.1);
 
-    --glass: rgba(255, 255, 255, 0.85);
-    --shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+    --glass: rgba(255, 255, 255, 0.95);
+    --shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
 
-    --gradient-card: linear-gradient(145deg, rgba(255, 255, 255, 1) 0%, rgba(248, 249, 252, 1) 100%);
+    --gradient-card: linear-gradient(145deg, #ffffff 0%, #f9fafb 100%);
+    --gradient-sidebar: linear-gradient(180deg, #ffffff 0%, #f4f6fa 100%);
 }
 
 * {
@@ -87,6 +89,7 @@ body {
 .sidebar {
     width: var(--sidebar-width);
     background: var(--surface);
+    background: var(--gradient-sidebar, var(--surface));
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;

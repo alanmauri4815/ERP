@@ -73,8 +73,8 @@
     --text-inverse: var(--background);
 
     --border-primary: var(--border);
-    --border-secondary: rgba(255, 255, 255, 0.04);
-    --border-focus: rgba(59, 130, 246, 0.5);
+    --border-secondary: var(--border);
+    --border-focus: var(--primary-muted);
 
     --accent-primary: var(--primary);
     --accent-primary-hover: var(--primary-dark);
@@ -90,13 +90,12 @@
     --status-info: var(--primary);
     --status-info-bg: rgba(59, 130, 246, 0.12);
 
-    --glass-bg: rgba(30, 41, 59, 0.6);
-    --glass-border: rgba(255, 255, 255, 0.06);
+    --glass-bg: var(--glass);
+    --glass-border: var(--border);
     --glass-blur: blur(20px);
 
-    --gradient-primary: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
-    --gradient-surface: linear-gradient(180deg, rgba(59, 130, 246, 0.05) 0%, transparent 100%);
-    --gradient-card: linear-gradient(145deg, rgba(30, 41, 59, 0.8) 0%, rgba(15, 23, 42, 0.9) 100%);
+    --gradient-primary: linear-gradient(135deg, var(--primary) 0%, var(--accent-secondary) 100%);
+    --gradient-surface: var(--gradient-card);
 
     --chart-1: #3b82f6;
     --chart-2: #8b5cf6;
@@ -116,7 +115,7 @@
     opacity: 0.5;
     padding: 0.6rem 1rem 0.2rem;
     margin-top: 0.3rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.03);
+    border-top: 1px solid var(--border);
     user-select: none;
 }
 
