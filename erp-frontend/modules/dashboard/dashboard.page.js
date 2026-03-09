@@ -1,5 +1,5 @@
 /* ============================================
-   DASHBOARD — Panel de Control Integral (ERP + Contabilidad)
+   DASHBOARD — Panel de Control Dual (Operacional & Financiero)
    ============================================ */
 
 import { db } from '../../services/datastore.js';
@@ -18,11 +18,11 @@ export async function renderDashboard(container, state) {
   container.innerHTML = `
     <div style="display:flex;justify-content:center;align-items:center;height:400px;flex-direction:column;gap:1.5rem;">
       <div class="spinner"></div>
-      <p style="color:var(--text-muted);font-size:0.9rem;">Sincronizando el Panel de Control Integral...</p>
+      <p style="color:var(--text-muted);font-size:0.9rem;">Cargando Panel de Control Dual...</p>
     </div>
   `;
 
-  // Fetch real data in parallel
+  // Fetch data in parallel
   const [balance, resultado, iva, asientos, rawPurchases, rawSales] = await Promise.all([
     getBalanceGeneral(periodo),
     getEstadoResultados(periodo),
@@ -41,137 +41,172 @@ export async function renderDashboard(container, state) {
 
   container.innerHTML = `
     <div class="dashboard animate-fade">
-      <header style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 2rem;">
+      <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1.5rem;">
         <div>
-          <h1 style="margin:0; font-size:1.75rem; font-weight:800;">Panel de Control Integral</h1>
-          <p style="color:var(--text-muted); font-size:0.85rem; margin-top:4px;">Resumen ejecutivo operativo y financiero — ${mesActual} ${new Date().getFullYear()}</p>
-        </div>
-        <div style="display:flex; gap:0.5rem;">
-           <button class="btn btn-secondary btn-sm" id="btn-sync-dashboard">
-             <i class="fas fa-sync"></i> Sincronizar Operaciones
-           </button>
+          <h1 style="margin:0; font-size:1.75rem; font-weight:800;">Panel de Control</h1>
+          <p style="color:var(--text-muted); font-size:0.85rem; margin-top:2px;">Centro de mando operativo y contable — ${mesActual}</p>
         </div>
       </header>
 
-      <!-- Row 1: KPIs Financieros (SC Legacy) -->
-      <div class="grid-4" style="margin-bottom: 2rem; gap: 1.25rem;">
-        ${renderStatCard('Total Activos', formatCLP(balance.totalActivos), 'blue', 'fa-wallet')}
-        ${renderStatCard('Ingresos Período', formatCLP(resultado.totalIngresos), 'purple', 'fa-money-bill-trend-up')}
-        <div class="card stat-card" style="padding: 1.25rem; border-top: 3px solid ${resultado.utilidadNeta >= 0 ? '#10b981' : '#ef4444'};">
-          <div style="display:flex; justify-content:space-between; margin-bottom:0.75rem;">
-            <div style="width:38px; height:38px; border-radius:10px; background:${resultado.utilidadNeta >= 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; color:${resultado.utilidadNeta >= 0 ? '#10b981' : '#ef4444'}; display:flex; align-items:center; justify-content:center;">
-              <i class="fas ${resultado.utilidadNeta >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down'}"></i>
-            </div>
-          </div>
-          <div style="font-size:1.5rem; font-weight:800; font-family:monospace; color:${resultado.utilidadNeta >= 0 ? '#10b981' : '#ef4444'};">${formatCLP(resultado.utilidadNeta)}</div>
-          <div style="font-size:0.8rem; color:var(--text-muted); font-weight:600; margin-top:2px;">Resultado Netó</div>
-        </div>
-        ${renderStatCard(`IVA ${iva.ivaPorPagar >= 0 ? 'por Pagar' : 'a Favor'}`, formatCLP(Math.abs(iva.ivaPorPagar)), 'yellow', 'fa-receipt')}
-      </div>
-
-      <!-- Row 2: Tesorería & Dash Operativo (Mixture) -->
-      <div class="grid-2" style="margin-bottom: 2rem; gap: 1.5rem;">
-        <div class="card">
-           <h3 style="margin-bottom:1.5rem; font-size:1rem;"><i class="fas fa-chart-line" style="color:var(--accent); margin-right:8px;"></i>Tendencia de Ventas (7 Días)</h3>
-           <canvas id="salesChart" style="max-height: 250px;"></canvas>
-        </div>
-
-        <div style="display:grid; grid-template-rows: 1fr 1fr; gap:1.5rem;">
-          <div class="card" style="border-left: 5px solid #10b981; padding: 1.25rem;">
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom:0.5rem;">
-              <i class="fas fa-arrow-down" style="color:#10b981;"></i>
-              <span style="font-size:0.8rem; font-weight:600; color:var(--text-muted);">Por Cobrar (CxC)</span>
-            </div>
-            <div style="font-size:1.75rem; font-weight:800; font-family:monospace; color:#10b981;">${formatCLP(cxCPending)}</div>
-          </div>
-          <div class="card" style="border-left: 5px solid #ef4444; padding: 1.25rem;">
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom:0.5rem;">
-              <i class="fas fa-arrow-up" style="color:#ef4444;"></i>
-              <span style="font-size:0.8rem; font-weight:600; color:var(--text-muted);">Por Pagar (CxP)</span>
-            </div>
-            <div style="font-size:1.75rem; font-weight:800; font-family:monospace; color:#ef4444;">${formatCLP(cxPPending)}</div>
-          </div>
+      <!-- Dashboard Tabs -->
+      <div class="tabs-container" style="margin-bottom: 2rem;">
+        <div class="tabs-header" style="display:flex; gap:1rem; border-bottom:1px solid var(--border); padding-bottom:10px;">
+          <button class="tab-btn active" data-tab="operacional">
+            <i class="fas fa-microchip" style="margin-right:8px;"></i> Resumen Operacional
+          </button>
+          <button class="tab-btn" data-tab="financiero">
+            <i class="fas fa-vault" style="margin-right:8px;"></i> Resumen Financiero
+          </button>
         </div>
       </div>
 
-      <!-- Row 3: Actividad Operativa ERP -->
-      <div class="grid-4" style="margin-bottom: 2rem; gap: 1rem;">
-        <div class="card">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Ventas Canales</div>
-          <div style="font-size:1.5rem; font-weight:700; margin-top:5px;">${state.stats.totalSales}</div>
-          <div style="font-size:0.7rem; color:#10b981; margin-top:5px;">+${Math.round(state.stats.totalSales * 0.1)} este mes</div>
+      <!-- Tab Content: OPERACIONAL -->
+      <div id="tab-operacional" class="tab-pane active">
+        <div class="stats-grid" style="margin-bottom: 2rem;">
+          <div class="card stat-card">
+            <div class="label">Ingresos Totales (Ventas)</div>
+            <div class="value">${formatCLP(state.stats.totalRevenue)}</div>
+            <div class="trend up">Operativo</div>
+          </div>
+          <div class="card stat-card">
+            <div class="label">Ventas Realizadas</div>
+            <div class="value">${state.stats.totalSales}</div>
+            <div class="trend up">Docs</div>
+          </div>
+          <div class="card stat-card">
+            <div class="label">Producción Total</div>
+            <div class="value">${state.stats.totalProduction}</div>
+            <div class="trend up">Unidades</div>
+          </div>
+          <div class="card stat-card">
+            <div class="label">Stock Crítico MP</div>
+            <div class="value" style="color: var(--danger)">${state.stats.lowStockItems} Items</div>
+            <div class="trend down">Alerta</div>
+          </div>
         </div>
-        <div class="card">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Producción Tot.</div>
-          <div style="font-size:1.5rem; font-weight:700; margin-top:5px;">${state.stats.totalProduction}</div>
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-top:10px;">Stock Crítico</div>
-          <div style="font-size:1.1rem; font-weight:700; color:#ef4444;">${state.stats.lowStockItems} Items</div>
-        </div>
-        <div class="card">
-          <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">Asientos Contables</div>
-          <div style="font-size:1.5rem; font-weight:700; margin-top:5px;">${asientos.length}</div>
-          <div style="font-size:0.7rem; color:var(--accent); margin-top:5px;">Sincronizado</div>
-        </div>
-        <div class="card">
-           <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em;">IVA Neto</div>
-           <div style="font-size:1.5rem; font-weight:700; margin-top:5px; color:${iva.ivaPorPagar >= 0 ? '#ef4444' : '#10b981'}">${formatCLP(Math.abs(iva.ivaPorPagar))}</div>
-           <p style="font-size:0.65rem; margin-top:10px; opacity:0.6;">Dato basado en Libro Compras/Ventas</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <h2>Ventas Últimos 7 Días</h2>
+            <canvas id="salesChart" style="max-height: 300px;"></canvas>
+          </div>
+          <div class="card">
+            <h2>Acciones Rápidas</h2>
+            <div style="display: grid; gap: 1rem; margin-top: 1rem;">
+              <button class="btn btn-secondary" onclick="window.renderView('sales')">Nueva Venta</button>
+              <button class="btn btn-primary" onclick="window.renderView('production')">Iniciar Producción</button>
+              <button class="btn btn-accent" onclick="window.renderView('purchases')">Registrar Compra</button>
+              <button id="btn-sync-dashboard" class="btn btn-success" style="margin-top: 10px;">
+                <i class="fas fa-sync"></i> Sincronizar ERP -> Contabilidad
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Row 4: Salud Financiera & Acciones -->
-      <div class="grid-2" style="gap: 1.5rem;">
-        <div class="card">
-           <h3 style="margin-bottom:1rem; font-size:1rem;"><i class="fas fa-scale-balanced" style="color:var(--secondary);"></i> Ecuación Contable</h3>
-           <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:1rem; border-radius:10px;">
+      <!-- Tab Content: FINANCIERO -->
+      <div id="tab-financiero" class="tab-pane" style="display:none">
+        <div class="grid-4" style="margin-bottom: 2rem; gap: 1.25rem;">
+          ${renderStatCard('Total Activos', formatCLP(balance.totalActivos), 'blue', 'fa-wallet')}
+          ${renderStatCard('Resultado Neta', formatCLP(resultado.utilidadNeta), resultado.utilidadNeta >= 0 ? 'green' : 'red', resultado.utilidadNeta >= 0 ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down')}
+          ${renderStatCard(`IVA ${iva.ivaPorPagar >= 0 ? 'a Pagar' : 'a Favor'}`, formatCLP(Math.abs(iva.ivaPorPagar)), 'yellow', 'fa-receipt')}
+          ${renderStatCard('Patrimonio Neto', formatCLP(balance.totalPatrimonio), 'purple', 'fa-scale-unbalanced-flip')}
+        </div>
+
+        <div class="grid-2" style="margin-bottom: 2rem; gap: 1.5rem;">
+          <div class="card" style="border-left: 5px solid #10b981; padding: 1.5rem; position:relative;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:1rem;">
+              <i class="fas fa-hand-holding-dollar" style="color:#10b981; font-size:1.5rem;"></i>
+              <h4 style="margin:0; font-size:1rem; opacity:0.8;">Cuentas por Cobrar (Clientes)</h4>
+            </div>
+            <div style="font-size:2.5rem; font-weight:800; color:#10b981; font-family:monospace;">${formatCLP(cxCPending)}</div>
+          </div>
+
+          <div class="card" style="border-left: 5px solid #ef4444; padding: 1.5rem; position:relative;">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:1rem;">
+              <i class="fas fa-file-invoice-dollar" style="color:#ef4444; font-size:1.5rem;"></i>
+              <h4 style="margin:0; font-size:1rem; opacity:0.8;">Cuentas por Pagar (Proveedores)</h4>
+            </div>
+            <div style="font-size:2.5rem; font-weight:800; color:#ef4444; font-family:monospace;">${formatCLP(cxPPending)}</div>
+          </div>
+        </div>
+
+        <div class="grid-2" style="gap:1.5rem;">
+          <div class="card">
+            <h3 style="margin-bottom:1.5rem; font-size:1.1rem;"><i class="fas fa-balance-scale" style="color:var(--secondary);"></i> Ecuación Contable</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:1.5rem; border-radius:12px;">
               <div style="text-align:center;">
-                <div style="font-size:0.65rem; color:var(--text-muted);">Activos</div>
-                <div style="font-weight:700; font-family:monospace;">${formatCLP(balance.totalActivos)}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase;">Activos</div>
+                <div style="font-family:monospace; font-weight:800; font-size:1.25rem;">${formatCLP(balance.totalActivos)}</div>
               </div>
-              <div style="opacity:0.3;">=</div>
+              <div style="font-size:2rem; opacity:0.2;">=</div>
               <div style="text-align:center;">
-                <div style="font-size:0.65rem; color:var(--text-muted);">Pasivos + Pat.</div>
-                <div style="font-weight:700; font-family:monospace;">${formatCLP(balance.totalPasivos + balance.totalPatrimonio)}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase;">Pasivos + Pat.</div>
+                <div style="font-family:monospace; font-weight:800; font-size:1.25rem;">${formatCLP(balance.totalPasivos + balance.totalPatrimonio)}</div>
               </div>
-              <div class="badge ${balance.cuadra ? 'badge-success' : 'badge-error'}">
-                ${balance.cuadra ? 'Cuadrado' : 'Descuadrado'}
+              <div class="badge ${balance.cuadra ? 'badge-success' : 'badge-error'}" style="padding: 6px 12px; font-size:0.8rem;">
+                ${balance.cuadra ? 'Equilibrado' : 'Descuadrado'}
               </div>
-           </div>
-        </div>
+            </div>
+          </div>
 
-        <div class="card">
-          <h3 style="margin-bottom:1rem; font-size:1rem;"><i class="fas fa-rocket" style="color:var(--accent);"></i> Accesos Rápidos</h3>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
-            <button class="btn btn-primary" onclick="window.renderView('inventory_products')">Gestión Inventario</button>
-            <button class="btn btn-secondary" onclick="window.renderView('sales')">Nueva Venta</button>
-            <button class="btn btn-ghost" onclick="window.renderView('acc_libro_diario')">Libro Diario</button>
-            <button class="btn btn-ghost" onclick="window.renderView('acc_analisis')">Análisis Avanzado</button>
+          <div class="card">
+             <h3 style="margin-bottom:1.25rem; font-size:1.1rem;"><i class="fas fa-book" style="color:var(--accent);"></i> Actividad Contable</h3>
+             <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                <div style="background:rgba(255,255,255,0.03); padding:1rem; border-radius:10px;">
+                   <div style="font-size:2rem; font-weight:800; font-family:monospace;">${asientos.length}</div>
+                   <div style="font-size:0.75rem; opacity:0.6;">Asientos Totales</div>
+                </div>
+                <div style="background:rgba(255,255,255,0.03); padding:1rem; border-radius:10px;">
+                   <div style="font-size:2rem; font-weight:800; font-family:monospace;">${asientos.filter(a => a.fecha.startsWith(periodo)).length}</div>
+                   <div style="font-size:0.75rem; opacity:0.6;">Generados hoy/mes</div>
+                </div>
+             </div>
           </div>
         </div>
       </div>
     </div>
   `;
 
-  // Initialize Sales Chart
+  // --- Handlers & Chart ---
+
+  // Tab Switching Logic
+  container.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      container.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const target = btn.dataset.tab;
+      container.querySelector('#tab-operacional').style.display = target === 'operacional' ? 'block' : 'none';
+      container.querySelector('#tab-financiero').style.display = target === 'financiero' ? 'block' : 'none';
+
+      if (target === 'operacional') {
+        // Re-init chart if needed
+        initDashboardChart(state.stats.weeklySales);
+      }
+    };
+  });
+
+  // Init Chart (default tab)
   if (state.stats.weeklySales && state.stats.weeklySales.length > 0) {
     setTimeout(() => initDashboardChart(state.stats.weeklySales), 100);
   }
 
-  // Event Listeners
+  // Sync Logic
   const btnSync = container.querySelector('#btn-sync-dashboard');
   if (btnSync) {
-    btnSync.addEventListener('click', async () => {
+    btnSync.onclick = async () => {
       btnSync.disabled = true;
       btnSync.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sincronizando...';
       try {
-        await window.apiSyncOperations(); // This should be defined globally or in main.js
+        await window.apiSyncOperations();
       } catch (e) {
         console.error(e);
       } finally {
         btnSync.disabled = false;
-        btnSync.innerHTML = '<i class="fas fa-sync"></i> Sincronizar Operaciones';
+        btnSync.innerHTML = '<i class="fas fa-sync"></i> Sincronizar ERP -> Contabilidad';
       }
-    });
+    };
   }
 }
 
@@ -180,7 +215,8 @@ function renderStatCard(label, value, color, icon) {
     blue: { bg: 'rgba(59,130,246,0.1)', text: '#3b82f6' },
     purple: { bg: 'rgba(139,92,246,0.1)', text: '#8b5cf6' },
     yellow: { bg: 'rgba(245,158,11,0.1)', text: '#f59e0b' },
-    green: { bg: 'rgba(16,185,129,0.1)', text: '#10b981' }
+    green: { bg: 'rgba(16,185,129,0.1)', text: '#10b981' },
+    red: { bg: 'rgba(239,68,68,0.1)', text: '#ef4444' }
   };
   const c = colors[color] || colors.blue;
 
@@ -191,7 +227,7 @@ function renderStatCard(label, value, color, icon) {
           <i class="fas ${icon}"></i>
         </div>
       </div>
-      <div style="font-size:1.5rem; font-weight:800; font-family:monospace;">${value}</div>
+      <div style="font-size:1.5rem; font-weight:800; font-family:monospace; color:${c.text === '#ef4444' ? '#ef4444' : 'inherit'}">${value}</div>
       <div style="font-size:0.8rem; color:var(--text-muted); font-weight:600; margin-top:2px;">${label}</div>
     </div>
   `;
@@ -200,6 +236,10 @@ function renderStatCard(label, value, color, icon) {
 function initDashboardChart(data) {
   const ctx = document.getElementById('salesChart');
   if (!ctx) return;
+
+  // Destroy previous if exists (Chart.js limitation)
+  const existingChart = Chart.getChart(ctx);
+  if (existingChart) existingChart.destroy();
 
   new Chart(ctx, {
     type: 'line',
