@@ -6,9 +6,10 @@ import { db } from '../../services/datastore.js';
 import { getBalanceGeneral, getEstadoResultados, getResumenIVA } from '../../services/contabilidad.service.js';
 import { erpFetch } from '../../services/erp-api.js';
 import Chart from 'chart.js/auto';
-import { formatCLP } from '../../utils/formatters.js';
+import { formatCLP, formatNumber } from '../../utils/formatters.js';
 import { MESES } from '../../utils/constants.js';
 import { getSelectedPeriodo } from '../../components/ui-helpers.js';
+import { getIndicadoresHoy } from '../../services/indicadores.service.js';
 
 export async function renderDashboard(container, state) {
   const { mes, string: periodo } = getSelectedPeriodo();
@@ -23,13 +24,14 @@ export async function renderDashboard(container, state) {
   `;
 
   // Fetch data in parallel
-  const [balance, resultado, iva, asientos, rawPurchases, rawSales] = await Promise.all([
+  const [balance, resultado, iva, asientos, rawPurchases, rawSales, indicadores] = await Promise.all([
     getBalanceGeneral(periodo),
     getEstadoResultados(periodo),
     getResumenIVA(periodo),
     db.getAll('asientos'),
     erpFetch('/purchases'),
-    erpFetch('/sales')
+    erpFetch('/sales'),
+    getIndicadoresHoy()
   ]);
 
   const purchases = Array.isArray(rawPurchases) ? rawPurchases : [];
@@ -41,10 +43,36 @@ export async function renderDashboard(container, state) {
 
   container.innerHTML = `
     <div class="dashboard animate-fade">
-      <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1.5rem;">
+      <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 2rem; background: var(--surface-light); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border);">
         <div>
-          <h1 style="margin:0; font-size:1.75rem; font-weight:800;">Panel de Control</h1>
-          <p style="color:var(--text-muted); font-size:0.85rem; margin-top:2px;">Centro de mando operativo y contable — ${mesActual}</p>
+          <h1 style="margin:0; font-size:1.5rem; font-weight:800; display:flex; align-items:center; gap:10px;">
+            <i class="fas fa-gauge-high" style="color:var(--accent);"></i> Panel de Control
+          </h1>
+          <p style="color:var(--text-muted); font-size:0.8rem; margin-top:2px; font-weight:500;">Vista integral operativa y contable</p>
+        </div>
+
+        <div style="display:flex; gap:1rem; align-items:center;">
+           <!-- Periodo Badge -->
+           <div style="background:rgba(255,255,255,0.03); padding:8px 16px; border-radius:10px; border:1px solid var(--border); display:flex; gap:12px; align-items:center;">
+              <i class="fas fa-calendar-alt" style="color:var(--secondary);"></i>
+              <span style="font-weight:700; font-size:0.95rem; letter-spacing:0.5px;">${mesActual.toUpperCase()} ${new Date().getFullYear()}</span>
+           </div>
+
+           <!-- Indicadores Badges -->
+           <div style="display:flex; gap:8px;">
+              <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
+                <span style="color:var(--text-muted); font-weight:700; margin-right:5px;">UF:</span>
+                <span style="font-family:monospace; font-weight:600;">$${formatNumber(indicadores?.uf, 2)}</span>
+              </div>
+              <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
+                <span style="color:var(--text-muted); font-weight:700; margin-right:5px;">UTM:</span>
+                <span style="font-family:monospace; font-weight:600;">$${formatNumber(indicadores?.utm, 0)}</span>
+              </div>
+              <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
+                <span style="color:var(--text-muted); font-weight:700; margin-right:5px;">USD:</span>
+                <span style="font-family:monospace; font-weight:600;">$${formatNumber(indicadores?.dolar, 2)}</span>
+              </div>
+           </div>
         </div>
       </header>
 
