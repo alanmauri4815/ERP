@@ -36,6 +36,24 @@ const API_BASE = window.location.hostname === 'localhost'
 const mainContent = document.getElementById('main-content');
 const navItems = document.querySelectorAll('.nav-item');
 
+// --- Tema ---
+function initTheme() {
+  const theme = localStorage.getItem('erp_theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  const toggleBtn = document.getElementById('theme-toggle');
+  if (toggleBtn) {
+    toggleBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-moon"></i>' : '<i class="fas fa-sun"></i>';
+    toggleBtn.onclick = () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('erp_theme', next);
+      toggleBtn.innerHTML = next === 'dark' ? '<i class="fas fa-moon"></i>' : '<i class="fas fa-sun"></i>';
+    };
+  }
+}
+initTheme();
+
 let token = localStorage.getItem('erp_token');
 let currentUser = JSON.parse(localStorage.getItem('erp_user') || 'null');
 
@@ -4110,6 +4128,7 @@ window.printQuotation = () => {
         
         .line-divider { border-top: 3px solid #000; margin-bottom: 30px; }
         
+        .main-title { text-align: center;
         .main-title { text-align: center; color: #4a7ebb; font-size: 26px; font-weight: bold; margin-bottom: 30px; letter-spacing: 2px; }
         
         .client-info-grid { margin-bottom: 40px; font-size: 14px; }

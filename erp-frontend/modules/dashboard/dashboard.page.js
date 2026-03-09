@@ -43,34 +43,34 @@ export async function renderDashboard(container, state) {
 
   container.innerHTML = `
     <div class="dashboard animate-fade">
-      <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 2rem; background: var(--surface-light); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border);">
+      <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 2rem; background: var(--surface); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
         <div>
           <h1 style="margin:0; font-size:1.5rem; font-weight:800; display:flex; align-items:center; gap:10px;">
-            <i class="fas fa-gauge-high" style="color:var(--accent);"></i> Panel de Control
+            <i class="fas fa-gauge-high" style="color:var(--primary);"></i> Panel de Control
           </h1>
           <p style="color:var(--text-muted); font-size:0.8rem; margin-top:2px; font-weight:500;">Vista integral operativa y contable</p>
         </div>
 
         <div style="display:flex; gap:1rem; align-items:center;">
            <!-- Periodo Badge -->
-           <div style="background:rgba(255,255,255,0.03); padding:8px 16px; border-radius:10px; border:1px solid var(--border); display:flex; gap:12px; align-items:center;">
+           <div style="background:var(--surface-light); padding:8px 16px; border-radius:10px; border:1px solid var(--border); display:flex; gap:12px; align-items:center;">
               <i class="fas fa-calendar-alt" style="color:var(--secondary);"></i>
               <span style="font-weight:700; font-size:0.95rem; letter-spacing:0.5px;">${mesActual.toUpperCase()} ${new Date().getFullYear()}</span>
            </div>
 
            <!-- Indicadores Badges -->
            <div style="display:flex; gap:8px;">
-              <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
+              <div style="background:var(--surface-light); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
                 <span style="color:var(--text-muted); font-weight:700; margin-right:5px;">UF:</span>
-                <span style="font-family:monospace; font-weight:600;">$${formatNumber(indicadores?.uf, 2)}</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-weight:600;">$${formatNumber(indicadores?.uf, 2)}</span>
               </div>
-              <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
+              <div style="background:var(--surface-light); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
                 <span style="color:var(--text-muted); font-weight:700; margin-right:5px;">UTM:</span>
-                <span style="font-family:monospace; font-weight:600;">$${formatNumber(indicadores?.utm, 0)}</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-weight:600;">$${formatNumber(indicadores?.utm, 0)}</span>
               </div>
-              <div style="background:rgba(255,255,255,0.03); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
+              <div style="background:var(--surface-light); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
                 <span style="color:var(--text-muted); font-weight:700; margin-right:5px;">USD:</span>
-                <span style="font-family:monospace; font-weight:600;">$${formatNumber(indicadores?.dolar, 2)}</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-weight:600;">$${formatNumber(indicadores?.dolar, 2)}</span>
               </div>
            </div>
         </div>
@@ -142,35 +142,35 @@ export async function renderDashboard(container, state) {
         </div>
 
         <div class="grid-2" style="margin-bottom: 2rem; gap: 1.5rem;">
-          <div class="card" style="border-left: 5px solid #10b981; padding: 1.5rem; position:relative;">
+          <div class="card" style="border-left: 5px solid var(--secondary); padding: 1.5rem; position:relative;">
             <div style="display:flex; align-items:center; gap:12px; margin-bottom:1rem;">
-              <i class="fas fa-hand-holding-dollar" style="color:#10b981; font-size:1.5rem;"></i>
+              <i class="fas fa-hand-holding-dollar" style="color:var(--secondary); font-size:1.5rem;"></i>
               <h4 style="margin:0; font-size:1rem; opacity:0.8;">Cuentas por Cobrar (Clientes)</h4>
             </div>
-            <div style="font-size:2.5rem; font-weight:800; color:#10b981; font-family:monospace;">${formatCLP(cxCPending)}</div>
+            <div style="font-size:2.5rem; font-weight:800; color:var(--secondary); font-family:'JetBrains Mono', monospace; letter-spacing:-1px;">${formatCLP(cxCPending)}</div>
           </div>
 
-          <div class="card" style="border-left: 5px solid #ef4444; padding: 1.5rem; position:relative;">
+          <div class="card" style="border-left: 5px solid var(--danger); padding: 1.5rem; position:relative;">
             <div style="display:flex; align-items:center; gap:12px; margin-bottom:1rem;">
-              <i class="fas fa-file-invoice-dollar" style="color:#ef4444; font-size:1.5rem;"></i>
+              <i class="fas fa-file-invoice-dollar" style="color:var(--danger); font-size:1.5rem;"></i>
               <h4 style="margin:0; font-size:1rem; opacity:0.8;">Cuentas por Pagar (Proveedores)</h4>
             </div>
-            <div style="font-size:2.5rem; font-weight:800; color:#ef4444; font-family:monospace;">${formatCLP(cxPPending)}</div>
+            <div style="font-size:2.5rem; font-weight:800; color:var(--danger); font-family:'JetBrains Mono', monospace; letter-spacing:-1px;">${formatCLP(cxPPending)}</div>
           </div>
         </div>
 
         <div class="grid-2" style="gap:1.5rem;">
           <div class="card">
-            <h3 style="margin-bottom:1.5rem; font-size:1.1rem;"><i class="fas fa-balance-scale" style="color:var(--secondary);"></i> Ecuación Contable</h3>
-            <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.03); padding:1.5rem; border-radius:12px;">
+            <h3 style="margin-bottom:1.5rem; font-size:1.1rem;"><i class="fas fa-balance-scale" style="color:var(--primary);"></i> Ecuación Contable</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface-light); padding:1.5rem; border-radius:12px; border:1px solid var(--border);">
               <div style="text-align:center;">
-                <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase;">Activos</div>
-                <div style="font-family:monospace; font-weight:800; font-size:1.25rem;">${formatCLP(balance.totalActivos)}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase; font-weight:700;">Activos</div>
+                <div style="font-family:'JetBrains Mono', monospace; font-weight:800; font-size:1.25rem; color:var(--text);">${formatCLP(balance.totalActivos)}</div>
               </div>
               <div style="font-size:2rem; opacity:0.2;">=</div>
               <div style="text-align:center;">
-                <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase;">Pasivos + Pat.</div>
-                <div style="font-family:monospace; font-weight:800; font-size:1.25rem;">${formatCLP(balance.totalPasivos + balance.totalPatrimonio)}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase; font-weight:700;">Pasivos + Pat.</div>
+                <div style="font-family:'JetBrains Mono', monospace; font-weight:800; font-size:1.25rem; color:var(--text);">${formatCLP(balance.totalPasivos + balance.totalPatrimonio)}</div>
               </div>
               <div class="badge ${balance.cuadra ? 'badge-success' : 'badge-error'}" style="padding: 6px 12px; font-size:0.8rem;">
                 ${balance.cuadra ? 'Equilibrado' : 'Descuadrado'}
@@ -179,15 +179,15 @@ export async function renderDashboard(container, state) {
           </div>
 
           <div class="card">
-             <h3 style="margin-bottom:1.25rem; font-size:1.1rem;"><i class="fas fa-book" style="color:var(--accent);"></i> Actividad Contable</h3>
+             <h3 style="margin-bottom:1.25rem; font-size:1.1rem;"><i class="fas fa-book" style="color:var(--secondary);"></i> Actividad Contable</h3>
              <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
-                <div style="background:rgba(255,255,255,0.03); padding:1rem; border-radius:10px;">
-                   <div style="font-size:2rem; font-weight:800; font-family:monospace;">${asientos.length}</div>
-                   <div style="font-size:0.75rem; opacity:0.6;">Asientos Totales</div>
+                <div style="background:var(--surface-light); padding:1rem; border-radius:10px; border:1px solid var(--border);">
+                   <div style="font-size:2rem; font-weight:800; font-family:'JetBrains Mono', monospace; color:var(--primary);">${asientos.length}</div>
+                   <div style="font-size:0.75rem; opacity:0.6; font-weight:600;">Asientos Totales</div>
                 </div>
-                <div style="background:rgba(255,255,255,0.03); padding:1rem; border-radius:10px;">
-                   <div style="font-size:2rem; font-weight:800; font-family:monospace;">${asientos.filter(a => a.fecha.startsWith(periodo)).length}</div>
-                   <div style="font-size:0.75rem; opacity:0.6;">Generados hoy/mes</div>
+                <div style="background:var(--surface-light); padding:1rem; border-radius:10px; border:1px solid var(--border);">
+                   <div style="font-size:2rem; font-weight:800; font-family:'JetBrains Mono', monospace; color:var(--secondary);">${asientos.filter(a => a.fecha.startsWith(periodo)).length}</div>
+                   <div style="font-size:0.75rem; opacity:0.6; font-weight:600;">Generados este mes</div>
                 </div>
              </div>
           </div>
@@ -255,7 +255,7 @@ function renderStatCard(label, value, color, icon) {
           <i class="fas ${icon}"></i>
         </div>
       </div>
-      <div style="font-size:1.5rem; font-weight:800; font-family:monospace; color:${c.text === '#ef4444' ? '#ef4444' : 'inherit'}">${value}</div>
+      <div style="font-size:1.5rem; font-weight:800; font-family:'JetBrains Mono', monospace; color:${color === 'red' ? 'var(--danger)' : 'inherit'}">${value}</div>
       <div style="font-size:0.8rem; color:var(--text-muted); font-weight:600; margin-top:2px;">${label}</div>
     </div>
   `;
