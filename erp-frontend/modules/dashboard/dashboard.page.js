@@ -93,22 +93,22 @@ export async function renderDashboard(container, state) {
         <div class="stats-grid" style="margin-bottom: 2rem;">
           <div class="card stat-card">
             <div class="label">Ingresos Totales (Ventas)</div>
-            <div class="value">${formatCLP(state.stats.totalRevenue)}</div>
+            <div class="value">${formatCLP(state.stats.totalRevenue || 0)}</div>
             <div class="trend up">Operativo</div>
           </div>
           <div class="card stat-card">
             <div class="label">Ventas Realizadas</div>
-            <div class="value">${state.stats.totalSales}</div>
+            <div class="value">${state.stats.totalSales || 0}</div>
             <div class="trend up">Docs</div>
           </div>
           <div class="card stat-card">
             <div class="label">Producción Total</div>
-            <div class="value">${state.stats.totalProduction}</div>
+            <div class="value">${state.stats.totalProduction || 0}</div>
             <div class="trend up">Unidades</div>
           </div>
           <div class="card stat-card">
             <div class="label">Stock Crítico MP</div>
-            <div class="value" style="color: var(--danger)">${state.stats.lowStockItems} Items</div>
+            <div class="value" style="color: var(--danger)">${state.stats.lowStockItems || 0} Items</div>
             <div class="trend down">Alerta</div>
           </div>
         </div>
