@@ -4430,6 +4430,7 @@ async function postData(endpoint, body, refresh = true) {
 
 function renderView(viewName) {
   const appContainer = document.getElementById('app');
+  const mobileBtn = document.getElementById('mobile-menu-btn');
 
   // Limpiar cualquier residuo de vistas y modales abiertos para evitar blurs persistentes
   document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
@@ -4438,16 +4439,18 @@ function renderView(viewName) {
     document.querySelector('.sidebar').style.display = 'none';
     document.querySelector('.main-content').style.marginLeft = '0';
     document.querySelector('.main-content').style.padding = '0';
+    if (mobileBtn) mobileBtn.style.display = 'none';
   } else {
     appContainer.style.display = 'flex';
-    appContainer.style.width = '100vw'; // Forzar 100% del ancho de la ventana
-    appContainer.style.maxWidth = '100vw'; // Eliminar límites
+    appContainer.style.width = '100vw';
+    appContainer.style.maxWidth = '100vw';
     document.querySelector('.sidebar').style.display = 'flex';
+    if (mobileBtn) mobileBtn.style.display = '';  // Let CSS media query handle it
 
     const mainContent = document.querySelector('.main-content');
     mainContent.style.flex = '1';
-    mainContent.style.width = 'auto'; // Dejar que flex lo expanda
-    mainContent.style.maxWidth = 'none'; // Quitar candado de ancho
+    mainContent.style.width = 'auto';
+    mainContent.style.maxWidth = 'none';
     mainContent.style.marginLeft = '0'; // Usamos Flexbox, no márgenes manuales
 
     // --- SISTEMA DE PERMISOS POR ROL ---
@@ -4752,55 +4755,62 @@ function renderView(viewName) {
     };
 
     document.getElementById('btn-submit-purchase')?.addEventListener('click', async () => {
-      const isEditMode = document.getElementById('pur-edit-mode')?.value === 'true';
-      const editId = document.getElementById('pur-edit-id')?.value;
-      const type = document.getElementById('pur-type')?.value;
-
-      const projectVal = document.getElementById('pur-project')?.value || null;
-      const body = {
-        type: type,
-        purchase_category: document.getElementById('pur-category')?.value || 'general',
-        date: document.getElementById('pur-date')?.value,
-        payment_method: document.getElementById('pur-payment-method')?.value,
-        account_id: document.getElementById('pur-account')?.value || null,
-        document_type: document.getElementById('pur-doc-type')?.value,
-        quotation_id: (projectVal && !projectVal.includes('S-')) ? parseInt(projectVal) : null,
-        project_ref: (projectVal && projectVal.includes('S-')) ? projectVal : (projectVal || null),
-        document_number: document.getElementById('pur-doc-number')?.value || null
-      };
-
-      if (type === 'mp') {
-        body.providerId = document.getElementById('pur-prov')?.value;
-        body.items = getTableItems('pur');
-        body.net = parseInt(document.getElementById('pur-net')?.value) || 0;
-        body.iva = parseInt(document.getElementById('pur-iva')?.value) || 0;
-        body.total = parseInt(document.getElementById('pur-total')?.value) || 0;
-
-        if (!body.items || body.items.length === 0) return alert('Debe agregar al menos un ítem');
-      } else {
-        const totalExp = parseInt(document.getElementById('pur-expense-total')?.value) || 0;
-        body.description = document.getElementById('pur-description')?.value;
-        body.net = totalExp;
-        body.iva = 0;
-        body.total = totalExp;
-
-        if (!body.description) return alert('Debe ingresar una descripción para el gasto');
-        if (body.total <= 0) return alert('El monto debe ser mayor a cero');
-      }
-
+      console.log('[PURCHASE] Botón de guardar presionado');
       try {
+        const isEditMode = document.getElementById('pur-edit-mode')?.value === 'true';
+        const editId = document.getElementById('pur-edit-id')?.value;
+        const type = document.getElementById('pur-type')?.value;
+        console.log('[PURCHASE] Mode:', isEditMode ? 'EDIT' : 'NEW', '| ID:', editId, '| Type:', type);
+
+        const projectVal = document.getElementById('pur-project')?.value || null;
+        const body = {
+          type: type,
+          purchase_category: document.getElementById('pur-category')?.value || 'general',
+          date: document.getElementById('pur-date')?.value,
+          payment_method: document.getElementById('pur-payment-method')?.value,
+          account_id: document.getElementById('pur-account')?.value || null,
+          document_type: document.getElementById('pur-doc-type')?.value,
+          quotation_id: (projectVal && !projectVal.includes('S-')) ? parseInt(projectVal) : null,
+          project_ref: (projectVal && projectVal.includes('S-')) ? projectVal : (projectVal || null),
+          document_number: document.getElementById('pur-doc-number')?.value || null
+        };
+
+        if (type === 'mp') {
+          body.providerId = document.getElementById('pur-prov')?.value;
+          body.items = getTableItems('pur');
+          console.log('[PURCHASE] Items encontrados:', body.items?.length, body.items);
+          body.net = parseInt(document.getElementById('pur-net')?.value) || 0;
+          body.iva = parseInt(document.getElementById('pur-iva')?.value) || 0;
+          body.total = parseInt(document.getElementById('pur-total')?.value) || 0;
+
+          if (!body.items || body.items.length === 0) return alert('Debe agregar al menos un ítem');
+        } else {
+          const totalExp = parseInt(document.getElementById('pur-expense-total')?.value) || 0;
+          body.description = document.getElementById('pur-description')?.value;
+          body.net = totalExp;
+          body.iva = 0;
+          body.total = totalExp;
+
+          if (!body.description) return alert('Debe ingresar una descripción para el gasto');
+          if (body.total <= 0) return alert('El monto debe ser mayor a cero');
+        }
+
+        console.log('[PURCHASE] Enviando body:', JSON.stringify(body).substring(0, 300));
+
         let res;
         if (isEditMode) {
           res = await putData(`/purchases/${editId}`, body);
         } else {
           res = await postData('/purchases', body);
         }
+        console.log('[PURCHASE] Respuesta:', res);
 
         // Hide modal immediately if successful (postData/putData already alert and refresh)
         const modal = document.getElementById('buy-modal');
         if (modal) modal.style.display = 'none';
 
       } catch (e) {
+        console.error('[PURCHASE] Error capturado:', e);
         alert('Error al procesar: ' + e.message);
       }
     });
@@ -6055,16 +6065,27 @@ function calculateTotals(prefix) {
 
 function getTableItems(prefix) {
   const body = document.getElementById(`${prefix}-items-body`);
+  if (!body) {
+    console.error(`[getTableItems] No se encontró el elemento: ${prefix}-items-body`);
+    return [];
+  }
   const rows = body.querySelectorAll('.item-row');
   const items = [];
 
   const parseNum = (val) => parseFloat(String(val).replace(',', '.')) || 0;
 
   rows.forEach(row => {
-    const code = row.querySelector('.item-code').value;
-    const price = parseNum(row.querySelector('.item-price').value);
-    const qty = parseNum(row.querySelector('.item-qty').value);
-    const subtotal = parseNum(row.querySelector('.item-subtotal').value);
+    const codeEl = row.querySelector('.item-code');
+    const priceEl = row.querySelector('.item-price');
+    const qtyEl = row.querySelector('.item-qty');
+    const subtotalEl = row.querySelector('.item-subtotal');
+    
+    if (!codeEl || !priceEl || !qtyEl || !subtotalEl) return;
+    
+    const code = codeEl.value;
+    const price = parseNum(priceEl.value);
+    const qty = parseNum(qtyEl.value);
+    const subtotal = parseNum(subtotalEl.value);
     const customNameInput = row.querySelector('.item-custom-name');
     const customName = customNameInput ? customNameInput.value.trim() : '';
 
@@ -6233,14 +6254,92 @@ window.exportProduction = function () {
   alert('✅ Producción exportada a Excel exitosamente');
 };
 
-navItems.forEach(item => item.addEventListener('click', () => renderView(item.dataset.view)));
+navItems.forEach(item => item.addEventListener('click', () => {
+  renderView(item.dataset.view);
+  // On mobile, close sidebar after selecting
+  const sidebar = document.getElementById('main-sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (window.innerWidth <= 768 && sidebar) {
+    sidebar.classList.remove('mobile-open');
+    overlay?.classList.remove('active');
+  }
+}));
 
-// Sidebar Collapsible Logic
+// ============================================
+//  SIDEBAR RESPONSIVE LOGIC
+// ============================================
+
+// 1. Nav-group collapsible headers
 document.querySelectorAll('.nav-group-header').forEach(header => {
   header.addEventListener('click', () => {
     const group = header.parentElement;
     group.classList.toggle('open');
   });
+});
+
+// 2. Set tooltip data attributes for collapsed mode
+document.querySelectorAll('.sidebar .nav-item').forEach(item => {
+  const textContent = item.textContent.trim();
+  item.setAttribute('data-tooltip', textContent);
+});
+
+// 3. Desktop collapse toggle
+const collapseBtn = document.getElementById('sidebar-collapse-btn');
+const sidebar = document.getElementById('main-sidebar');
+
+if (collapseBtn && sidebar) {
+  // Restore previous state
+  const savedCollapsed = localStorage.getItem('erp_sidebar_collapsed');
+  if (savedCollapsed === 'true') {
+    sidebar.classList.add('collapsed');
+  }
+
+  collapseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    sidebar.classList.toggle('collapsed');
+    localStorage.setItem('erp_sidebar_collapsed', sidebar.classList.contains('collapsed'));
+  });
+
+  // Double-click on collapsed sidebar to expand
+  sidebar.addEventListener('dblclick', (e) => {
+    if (sidebar.classList.contains('collapsed') && window.innerWidth > 768) {
+      sidebar.classList.remove('collapsed');
+      localStorage.setItem('erp_sidebar_collapsed', 'false');
+    }
+  });
+}
+
+// 4. Mobile hamburger toggle
+const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+if (mobileMenuBtn && sidebar) {
+  mobileMenuBtn.addEventListener('click', () => {
+    const isOpen = sidebar.classList.contains('mobile-open');
+    if (isOpen) {
+      sidebar.classList.remove('mobile-open');
+      sidebarOverlay?.classList.remove('active');
+    } else {
+      sidebar.classList.add('mobile-open');
+      sidebarOverlay?.classList.add('active');
+    }
+  });
+}
+
+// 5. Close mobile sidebar when tapping overlay
+if (sidebarOverlay && sidebar) {
+  sidebarOverlay.addEventListener('click', () => {
+    sidebar.classList.remove('mobile-open');
+    sidebarOverlay.classList.remove('active');
+  });
+}
+
+// 6. Handle resize: clean up mobile classes when going to desktop
+window.addEventListener('resize', () => {
+  if (window.innerWidth > 768 && sidebar) {
+    sidebar.classList.remove('mobile-open');
+    sidebarOverlay?.classList.remove('active');
+  }
 });
 
 function logout() {

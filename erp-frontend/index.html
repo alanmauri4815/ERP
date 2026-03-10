@@ -10,15 +10,24 @@
 </head>
 
 <body style="margin: 0 !important; width: 100vw !important; max-width: 100vw !important; overflow-x: hidden;">
+  <!-- Mobile hamburger button -->
+  <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Abrir menú">
+    <i class="fas fa-bars"></i>
+  </button>
+  <!-- Mobile overlay -->
+  <div id="sidebar-overlay" class="sidebar-overlay"></div>
   <div id="app" style="width: 100vw !important; max-width: 100vw !important;">
-    <aside class="sidebar" style="height: 100vh; position: sticky; top: 0;">
+    <aside class="sidebar" id="main-sidebar" style="height: 100vh; position: sticky; top: 0;">
       <div class="logo">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+        <svg class="logo-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
           stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
           <polyline points="9 22 9 12 15 12 15 22"></polyline>
         </svg>
-        <span id="sidebar-empresa-name">Cargando...</span>
+        <span id="sidebar-empresa-name" class="sidebar-text">Cargando...</span>
+        <button id="sidebar-collapse-btn" class="sidebar-collapse-btn" aria-label="Colapsar menú" title="Colapsar menú">
+          <i class="fas fa-chevron-left"></i>
+        </button>
       </div>
       <div id="sidebar-user-info"
         style="padding: 0 0.5rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 1.5rem;">
@@ -355,14 +364,14 @@
       </nav>
       <div class="sidebar-footer">
         <div class="sidebar-badge" style="flex: 1;">
-          <i class="fas fa-building" style="margin-right:8px; color:var(--primary);"></i>
-          <span id="footer-empresa-name" style="font-size:0.75rem; font-weight:800;">Ross Confecciones</span>
+          <i class="fas fa-building" style="color:var(--primary);"></i>
+          <span id="footer-empresa-name" class="sidebar-text" style="font-size:0.75rem; font-weight:800;">ERP Universal</span>
         </div>
         <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
           <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema">
             <i class="fas fa-moon"></i>
           </button>
-          <span
+          <span class="sidebar-text"
             style="font-size:0.6rem; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Tema</span>
         </div>
       </div>
