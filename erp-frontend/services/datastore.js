@@ -41,10 +41,13 @@ class DataStore {
     // --- Operaciones de Lectura (Read) ---
     async getAll(table) {
         let query = supabase.from(table).select('*');
+        const tableName = table ? String(table).trim().toLowerCase() : '';
 
         // El plan de cuentas es global (compartido), el resto es multi-tenant
-        if (table !== 'plan_cuentas') {
+        if (tableName !== 'plan_cuentas' && tableName !== 'plan-cuentas') {
             query = query.eq('empresa_id', this.empresa_id);
+        } else {
+            console.info(`[DataStore] Acceso GLOBAL detectado para tabla: ${tableName}`);
         }
 
         const { data, error } = await query.order('created_at', { ascending: false });
@@ -53,13 +56,14 @@ class DataStore {
             console.error(`Error al leer ${table}:`, error.message);
             return [];
         }
-        return data;
+        return data || [];
     }
 
     async getById(table, id) {
         let query = supabase.from(table).select('*').eq('id', id);
+        const tableName = table ? String(table).trim().toLowerCase() : '';
         
-        if (table !== 'plan_cuentas') {
+        if (tableName !== 'plan_cuentas') {
             query = query.eq('empresa_id', this.empresa_id);
         }
         
@@ -74,8 +78,9 @@ class DataStore {
 
     // --- Operaciones de Escritura (Create) ---
     async insert(table, item) {
+        const tableName = table ? String(table).trim().toLowerCase() : '';
         // Inyectar empresa_id automáticamente si la tabla no es global
-        const itemToInsert = (table === 'plan_cuentas') ? item : { ...item, empresa_id: this.empresa_id };
+        const itemToInsert = (tableName === 'plan_cuentas') ? item : { ...item, empresa_id: this.empresa_id };
         
         const { data, error } = await supabase
             .from(table)
@@ -93,8 +98,9 @@ class DataStore {
     // --- Operaciones de Actualización (Update) ---
     async update(table, id, updates) {
         let query = supabase.from(table).update(updates).eq('id', id);
+        const tableName = table ? String(table).trim().toLowerCase() : '';
         
-        if (table !== 'plan_cuentas') {
+        if (tableName !== 'plan_cuentas') {
             query = query.eq('empresa_id', this.empresa_id);
         }
         
@@ -111,8 +117,9 @@ class DataStore {
     // --- Operaciones de Eliminación (Delete) ---
     async delete(table, id) {
         let query = supabase.from(table).delete().eq('id', id);
+        const tableName = table ? String(table).trim().toLowerCase() : '';
         
-        if (table !== 'plan_cuentas') {
+        if (tableName !== 'plan_cuentas') {
             query = query.eq('empresa_id', this.empresa_id);
         }
         
@@ -129,8 +136,9 @@ class DataStore {
     // --- Consultas especiales ---
     async query(table, column, value) {
         let query = supabase.from(table).select('*').eq(column, value);
+        const tableName = table ? String(table).trim().toLowerCase() : '';
         
-        if (table !== 'plan_cuentas') {
+        if (tableName !== 'plan_cuentas') {
             query = query.eq('empresa_id', this.empresa_id);
         }
         

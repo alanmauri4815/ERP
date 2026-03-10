@@ -1,4 +1,4 @@
-console.log('ERP Universal v1.2.1 - Multi-Empresa Edition');
+console.log('ERP Universal v1.2.2 [FIXED-MULTI-TENANCY-2026-03-10]');
 import './style.css'
 import './accounting.css'
 import Chart from 'chart.js/auto'
@@ -4499,37 +4499,36 @@ function renderView(viewName) {
     }
   });
 
-  // Actualizar nombre de usuario y empresa en el sidebar si no estamos en login
-  if (viewName !== 'login') {
+  // --- Branding Dinámico v2.2 ---
+  function forceBranding() {
+    if (viewName === 'login') return;
+    
+    const empresaNombre = currentUser?.empresa_nombre || 'ERP Universal';
     const userDisplay = document.getElementById('display-username');
-    const roleDisplay = document.getElementById('display-user-role');
     const sidebarEmpresa = document.getElementById('sidebar-empresa-name');
     const footerEmpresa = document.getElementById('footer-empresa-name');
-
-    if (userDisplay && currentUser) {
-      userDisplay.textContent = currentUser.username;
-    }
-    if (sidebarEmpresa) {
-        sidebarEmpresa.textContent = currentUser?.empresa_nombre || 'ERP Universal';
-    } else {
+    const dashStrong = document.querySelector('.card p strong');
+    
+    if (userDisplay && currentUser) userDisplay.textContent = currentUser.username;
+    
+    if (sidebarEmpresa) sidebarEmpresa.textContent = empresaNombre;
+    else {
         const logoSpan = document.querySelector('.logo span');
-        if (logoSpan) logoSpan.textContent = currentUser?.empresa_nombre || 'ERP Universal';
+        if (logoSpan) logoSpan.textContent = empresaNombre;
     }
-    if (footerEmpresa) {
-      footerEmpresa.textContent = currentUser?.empresa_nombre || 'ERP Universal';
+    
+    if (footerEmpresa) footerEmpresa.textContent = empresaNombre;
+    
+    if (dashStrong && dashStrong.textContent.includes('Ross')) {
+        dashStrong.textContent = empresaNombre;
     }
+  }
 
-    if (roleDisplay && currentUser) {
-      const roleMap = {
-        'superadmin': 'Gestor del ERP',
-        'admin': 'Administrador',
-        'user': 'Usuario',
-        'viewer': 'Visor'
-      };
-      roleDisplay.textContent = roleMap[currentUser.role] || currentUser.role;
-      // DEBUG:
-      console.log('Current User Role:', currentUser.role);
-    }
+  if (viewName !== 'login') {
+    forceBranding();
+    // Bucle de persistencia para asegurar que cargue tras el rendering de módulos
+    const brandingInterval = setInterval(forceBranding, 1000);
+    setTimeout(() => clearInterval(brandingInterval), 10000);
   }
 
   if (viewName === 'login') {
