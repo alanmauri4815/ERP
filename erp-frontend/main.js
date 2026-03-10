@@ -4510,13 +4510,13 @@ function renderView(viewName) {
       userDisplay.textContent = currentUser.username;
     }
     if (sidebarEmpresa) {
-        sidebarEmpresa.textContent = currentUser?.empresa_nombre || 'Ross Confecciones';
+        sidebarEmpresa.textContent = currentUser?.empresa_nombre || 'ERP Universal';
     } else {
         const logoSpan = document.querySelector('.logo span');
-        if (logoSpan) logoSpan.textContent = currentUser?.empresa_nombre || 'Ross Confecciones';
+        if (logoSpan) logoSpan.textContent = currentUser?.empresa_nombre || 'ERP Universal';
     }
-    if (footerEmpresa && currentUser?.empresa_nombre) {
-      footerEmpresa.textContent = currentUser.empresa_nombre;
+    if (footerEmpresa) {
+      footerEmpresa.textContent = currentUser?.empresa_nombre || 'ERP Universal';
     }
 
     if (roleDisplay && currentUser) {
