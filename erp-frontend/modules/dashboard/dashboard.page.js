@@ -42,35 +42,35 @@ export async function renderDashboard(container, state) {
   const cxPPending = purchases.reduce((s, c) => s + (parseFloat(c.total) - parseFloat(c.paid_amount || 0)), 0);
 
   container.innerHTML = `
-    <div class="dashboard animate-fade">
-      <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 2rem; background: var(--surface); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow);">
-        <div>
-          <h1 style="margin:0; font-size:1.5rem; font-weight:800; display:flex; align-items:center; gap:10px;">
+    <div class="dashboard animate-fade" style="width: 100%; max-width: 100%;">
+      <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 2rem; background: var(--surface); padding: 1.5rem 2rem; border-radius: 16px; border: 1px solid var(--border); box-shadow: var(--shadow); width: 100%;">
+        <div style="flex: 1; min-width: 0;">
+          <h1 style="margin:0; font-size:2rem; font-weight:800; display:flex; align-items:center; gap:12px; white-space: nowrap;">
             <i class="fas fa-gauge-high" style="color:var(--primary);"></i> Panel de Control
           </h1>
-          <p style="color:var(--text-muted); font-size:0.8rem; margin-top:2px; font-weight:500;">Vista integral operativa y contable</p>
+          <p style="color:var(--text-muted); font-size:0.9rem; margin-top:4px; font-weight:500;">Gestión operativa y financiera de Ross Confecciones</p>
         </div>
 
-        <div style="display:flex; gap:1rem; align-items:center;">
+        <div style="display:flex; gap:1.5rem; align-items:center;">
            <!-- Periodo Badge -->
-           <div style="background:var(--surface-light); padding:8px 16px; border-radius:10px; border:1px solid var(--border); display:flex; gap:12px; align-items:center;">
+           <div style="background:var(--surface-light); padding:10px 20px; border-radius:12px; border:1px solid var(--border); display:flex; gap:12px; align-items:center; white-space: nowrap;">
               <i class="fas fa-calendar-alt" style="color:var(--secondary);"></i>
-              <span style="font-weight:700; font-size:0.95rem; letter-spacing:0.5px;">${mesActual.toUpperCase()} ${new Date().getFullYear()}</span>
+              <span style="font-weight:800; font-size:1rem; letter-spacing:0.5px;">${mesActual.toUpperCase()} ${new Date().getFullYear()}</span>
            </div>
 
            <!-- Indicadores Badges -->
-           <div style="display:flex; gap:8px;">
-              <div style="background:var(--surface-light); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
-                <span style="color:var(--text-muted); font-weight:700; margin-right:5px;">UF:</span>
-                <span style="font-family:'JetBrains Mono', monospace; font-weight:600;">$${formatNumber(indicadores?.uf, 2)}</span>
+           <div style="display:flex; gap:10px;">
+              <div style="background:var(--surface-light); padding:10px 15px; border-radius:12px; border:1px solid var(--border); font-size:0.9rem; display:flex; align-items:center; gap:8px;">
+                <span style="color:var(--text-muted); font-weight:700;">UF:</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-weight:700; color: var(--primary);">$${formatNumber(indicadores?.uf, 2)}</span>
               </div>
-              <div style="background:var(--surface-light); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
-                <span style="color:var(--text-muted); font-weight:700; margin-right:5px;">UTM:</span>
-                <span style="font-family:'JetBrains Mono', monospace; font-weight:600;">$${formatNumber(indicadores?.utm, 0)}</span>
+              <div style="background:var(--surface-light); padding:10px 15px; border-radius:12px; border:1px solid var(--border); font-size:0.9rem; display:flex; align-items:center; gap:8px;">
+                <span style="color:var(--text-muted); font-weight:700;">UTM:</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-weight:700; color: var(--secondary);">$${formatNumber(indicadores?.utm, 0)}</span>
               </div>
-              <div style="background:var(--surface-light); padding:8px 12px; border-radius:10px; border:1px solid var(--border); font-size:0.85rem;">
-                <span style="color:var(--text-muted); font-weight:700; margin-right:5px;">USD:</span>
-                <span style="font-family:'JetBrains Mono', monospace; font-weight:600;">$${formatNumber(indicadores?.dolar, 2)}</span>
+              <div style="background:var(--surface-light); padding:10px 15px; border-radius:12px; border:1px solid var(--border); font-size:0.9rem; display:flex; align-items:center; gap:8px;">
+                <span style="color:var(--text-muted); font-weight:700;">USD:</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-weight:700; color: var(--accent);">$${formatNumber(indicadores?.dolar, 2)}</span>
               </div>
            </div>
         </div>

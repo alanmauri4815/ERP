@@ -120,9 +120,28 @@ function calculateTax(netPrice, taxRate = 0.19) {
     return { iva, total };
 }
 
+// --- Health Check DB ---
+async function checkHealth() {
+    try {
+        const { count: usersCount, error: errU } = await supabase.from(T.USERS).select('*', { count: 'exact', head: true });
+        const { count: provCount, error: errP } = await supabase.from(T.PROVIDERS).select('*', { count: 'exact', head: true });
+        const { count: prodCount, error: errPr } = await supabase.from(T.PRODUCTS).select('*', { count: 'exact', head: true });
+
+        if (errU) console.error('[DB HEALTH] Error Usuarios:', errU.message);
+        if (errP) console.error('[DB HEALTH] Error Proveedores:', errP.message);
+        if (errPr) console.error('[DB HEALTH] Error Productos:', errPr.message);
+
+        console.log(`[DB HEALTH] Usuarios: ${usersCount}, Proveedores: ${provCount}, Productos: ${prodCount}`);
+    } catch (e) {
+        console.error('[DB HEALTH ERROR]', e.message);
+    }
+}
+checkHealth();
+
 // --- CORS: Only allow known origins ---
 const allowedOrigins = [
     process.env.FRONTEND_URL || 'http://localhost:5173',
+    'https://erp-universal.vercel.app',
     'https://erp-rho-nine.vercel.app',
     'https://erp-git-main-alanmauri4815s-proyectos.vercel.app',
     'https://erp-54l4owhov-alanmauri4815s-proyectos.vercel.app',

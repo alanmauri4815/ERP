@@ -29,9 +29,10 @@ import { sincronizarOperacionesERP, initPlanCuentas } from './services/contabili
 import { PLAN_CUENTAS_DEFAULT } from './utils/constants.js'
 import { db } from './services/datastore.js'
 
-const API_BASE = window.location.hostname === 'localhost'
+const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   ? 'http://localhost:3001/api'
   : 'https://erp-universal-backend.onrender.com/api';
+console.log('🔗 Conectado con API en:', API_BASE);
 
 const mainContent = document.getElementById('main-content');
 const navItems = document.querySelectorAll('.nav-item');
@@ -4338,9 +4339,15 @@ function renderView(viewName) {
     document.querySelector('.main-content').style.padding = '0';
   } else {
     appContainer.style.display = 'flex';
+    appContainer.style.width = '100vw'; // Forzar 100% del ancho de la ventana
+    appContainer.style.maxWidth = '100vw'; // Eliminar límites
     document.querySelector('.sidebar').style.display = 'flex';
-    document.querySelector('.main-content').style.marginLeft = 'var(--sidebar-width)';
-    document.querySelector('.main-content').style.padding = '2rem';
+
+    const mainContent = document.querySelector('.main-content');
+    mainContent.style.flex = '1';
+    mainContent.style.width = 'auto'; // Dejar que flex lo expanda
+    mainContent.style.maxWidth = 'none'; // Quitar candado de ancho
+    mainContent.style.marginLeft = '0'; // Usamos Flexbox, no márgenes manuales
 
     // --- SISTEMA DE PERMISOS POR ROL ---
     const userRole = currentUser?.role || 'user';
