@@ -57,12 +57,13 @@ class DataStore {
     }
 
     async getById(table, id) {
-        const { data, error } = await supabase
-            .from(table)
-            .select('*')
-            .eq('id', id)
-            .eq('empresa_id', this.empresa_id)
-            .single();
+        let query = supabase.from(table).select('*').eq('id', id);
+        
+        if (table !== 'plan_cuentas') {
+            query = query.eq('empresa_id', this.empresa_id);
+        }
+        
+        const { data, error } = await query.single();
 
         if (error) {
             console.error(`Error al leer ${table} por ID:`, error.message);
@@ -73,11 +74,12 @@ class DataStore {
 
     // --- Operaciones de Escritura (Create) ---
     async insert(table, item) {
-        // Inyectar empresa_id automáticamente
-        const itemConEmpresa = { ...item, empresa_id: this.empresa_id };
+        // Inyectar empresa_id automáticamente si la tabla no es global
+        const itemToInsert = (table === 'plan_cuentas') ? item : { ...item, empresa_id: this.empresa_id };
+        
         const { data, error } = await supabase
             .from(table)
-            .insert([itemConEmpresa])
+            .insert([itemToInsert])
             .select();
 
         if (error) {
@@ -90,12 +92,13 @@ class DataStore {
 
     // --- Operaciones de Actualización (Update) ---
     async update(table, id, updates) {
-        const { data, error } = await supabase
-            .from(table)
-            .update(updates)
-            .eq('id', id)
-            .eq('empresa_id', this.empresa_id)
-            .select();
+        let query = supabase.from(table).update(updates).eq('id', id);
+        
+        if (table !== 'plan_cuentas') {
+            query = query.eq('empresa_id', this.empresa_id);
+        }
+        
+        const { data, error } = await query.select();
 
         if (error) {
             console.error(`Error al actualizar ${table}:`, error.message);
@@ -107,11 +110,13 @@ class DataStore {
 
     // --- Operaciones de Eliminación (Delete) ---
     async delete(table, id) {
-        const { error } = await supabase
-            .from(table)
-            .delete()
-            .eq('id', id)
-            .eq('empresa_id', this.empresa_id);
+        let query = supabase.from(table).delete().eq('id', id);
+        
+        if (table !== 'plan_cuentas') {
+            query = query.eq('empresa_id', this.empresa_id);
+        }
+        
+        const { error } = await query;
 
         if (error) {
             console.error(`Error al eliminar en ${table}:`, error.message);
@@ -123,11 +128,13 @@ class DataStore {
 
     // --- Consultas especiales ---
     async query(table, column, value) {
-        const { data, error } = await supabase
-            .from(table)
-            .select('*')
-            .eq(column, value)
-            .eq('empresa_id', this.empresa_id);
+        let query = supabase.from(table).select('*').eq(column, value);
+        
+        if (table !== 'plan_cuentas') {
+            query = query.eq('empresa_id', this.empresa_id);
+        }
+        
+        const { data, error } = await query;
 
         if (error) {
             console.error(`Error en query sobre ${table}:`, error.message);

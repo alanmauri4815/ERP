@@ -1,4 +1,4 @@
-console.log('ERP Universal v1.2.0 - Administración y Finanzas Integrado');
+console.log('ERP Universal v1.2.1 - Multi-Empresa Edition');
 import './style.css'
 import './accounting.css'
 import Chart from 'chart.js/auto'
@@ -4509,8 +4509,11 @@ function renderView(viewName) {
     if (userDisplay && currentUser) {
       userDisplay.textContent = currentUser.username;
     }
-    if (sidebarEmpresa && currentUser?.empresa_nombre) {
-      sidebarEmpresa.textContent = currentUser.empresa_nombre;
+    if (sidebarEmpresa) {
+        sidebarEmpresa.textContent = currentUser?.empresa_nombre || 'Ross Confecciones';
+    } else {
+        const logoSpan = document.querySelector('.logo span');
+        if (logoSpan) logoSpan.textContent = currentUser?.empresa_nombre || 'Ross Confecciones';
     }
     if (footerEmpresa && currentUser?.empresa_nombre) {
       footerEmpresa.textContent = currentUser.empresa_nombre;
