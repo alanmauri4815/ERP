@@ -1453,6 +1453,76 @@ const views = {
           </div>
         </form>
     </div>
+
+    ${currentUser?.role === 'superadmin' ? `
+    <!-- ========== GESTIÓN DE EMPRESAS (Solo Gestor) ========== -->
+    <header class="animate-fade" style="margin-top: 2rem">
+      <h1>🏢 Gestión de Empresas</h1>
+      <button onclick="window.openEmpresaModal()">+ Nueva Empresa</button>
+    </header>
+
+    <div class="card animate-fade">
+      <div class="table-container">
+        <table id="empresas-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>RUT</th>
+              <th>Email</th>
+              <th>Estado</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="empresas-tbody">
+            <tr><td colspan="6" style="text-align:center; opacity:0.5">Cargando empresas...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Empresa Modal -->
+    <div id="empresa-modal" class="modal" style="display:none">
+      <div class="card modal-content" style="max-width: 500px">
+        <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
+          <h3 id="empresa-modal-title">Nueva Empresa</h3>
+          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted); border:none; font-size: 1.2rem; cursor:pointer">✕</button>
+        </header>
+        <form id="empresa-form">
+          <input type="hidden" id="empresa-edit-id" value="">
+          <div class="form-group">
+            <label>Nombre de Empresa *</label>
+            <input type="text" id="empresa-nombre" required placeholder="Ej: Acme Corp">
+          </div>
+          <div class="grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem">
+            <div class="form-group">
+              <label>RUT</label>
+              <input type="text" id="empresa-rut" placeholder="12.345.678-9">
+            </div>
+            <div class="form-group">
+              <label>Teléfono</label>
+              <input type="text" id="empresa-telefono" placeholder="+56 9 1234 5678">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="empresa-email" placeholder="contacto@empresa.cl">
+          </div>
+          <div class="form-group">
+            <label>Dirección</label>
+            <input type="text" id="empresa-direccion" placeholder="Calle 123, Ciudad">
+          </div>
+          <p style="font-size: 0.8rem; opacity: 0.6; margin-top: 0.5rem">
+            ℹ️ Al crear una nueva empresa, se generará automáticamente un usuario <strong>admin</strong> con contraseña <strong>admin123</strong>.
+          </p>
+          <div class="form-actions">
+            <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
+            <button type="submit">Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    ` : ''}
   `,
 
   profile: () => `
@@ -5154,6 +5224,100 @@ function renderView(viewName) {
         alert('Error: ' + result.error);
       }
     });
+
+    // ========== EMPRESA MANAGEMENT (superadmin only) ==========
+    if (currentUser?.role === 'superadmin') {
+      const loadEmpresas = async () => {
+        const empresas = await apiFetch('/empresas/admin');
+        const tbody = document.getElementById('empresas-tbody');
+        if (!tbody || !Array.isArray(empresas)) return;
+
+        tbody.innerHTML = empresas.map(e => `
+          <tr>
+            <td>${e.id}</td>
+            <td><strong>${e.nombre}</strong></td>
+            <td>${e.rut || '-'}</td>
+            <td>${e.email || '-'}</td>
+            <td><span class="badge ${e.activa ? 'badge-success' : 'badge-danger'}">${e.activa ? 'Activa' : 'Inactiva'}</span></td>
+            <td>
+              <button class="btn-sm" onclick="window.editEmpresa(${e.id})">✏️</button>
+              <button class="btn-sm" onclick="window.toggleEmpresa(${e.id}, ${e.activa})" style="background:${e.activa ? 'var(--danger)' : 'var(--success)'}">
+                ${e.activa ? '⏸️' : '▶️'}
+              </button>
+            </td>
+          </tr>
+        `).join('');
+      };
+      loadEmpresas();
+
+      window._empresasCache = [];
+      apiFetch('/empresas/admin').then(data => { window._empresasCache = data || []; });
+
+      window.openEmpresaModal = function () {
+        document.getElementById('empresa-edit-id').value = '';
+        document.getElementById('empresa-nombre').value = '';
+        document.getElementById('empresa-rut').value = '';
+        document.getElementById('empresa-telefono').value = '';
+        document.getElementById('empresa-email').value = '';
+        document.getElementById('empresa-direccion').value = '';
+        document.getElementById('empresa-modal-title').textContent = 'Nueva Empresa';
+        document.getElementById('empresa-modal').style.display = 'flex';
+      };
+
+      window.editEmpresa = function (id) {
+        const e = window._empresasCache?.find(x => x.id === id);
+        if (!e) return;
+        document.getElementById('empresa-edit-id').value = e.id;
+        document.getElementById('empresa-nombre').value = e.nombre || '';
+        document.getElementById('empresa-rut').value = e.rut || '';
+        document.getElementById('empresa-telefono').value = e.telefono || '';
+        document.getElementById('empresa-email').value = e.email || '';
+        document.getElementById('empresa-direccion').value = e.direccion || '';
+        document.getElementById('empresa-modal-title').textContent = 'Editar Empresa';
+        document.getElementById('empresa-modal').style.display = 'flex';
+      };
+
+      window.toggleEmpresa = async function (id, currentlyActive) {
+        const action = currentlyActive ? 'desactivar' : 'reactivar';
+        if (!confirm(`¿Seguro que deseas ${action} esta empresa?`)) return;
+
+        if (currentlyActive) {
+          await apiFetch(`/empresas/${id}`, { method: 'DELETE' });
+        } else {
+          await apiFetch(`/empresas/${id}`, { method: 'PUT', body: JSON.stringify({ activa: true }) });
+        }
+        loadEmpresas();
+        apiFetch('/empresas/admin').then(data => { window._empresasCache = data || []; });
+      };
+
+      document.getElementById('empresa-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = document.getElementById('empresa-edit-id').value;
+        const body = {
+          nombre: document.getElementById('empresa-nombre').value,
+          rut: document.getElementById('empresa-rut').value,
+          direccion: document.getElementById('empresa-direccion').value,
+          telefono: document.getElementById('empresa-telefono').value,
+          email: document.getElementById('empresa-email').value
+        };
+
+        let result;
+        if (id) {
+          result = await apiFetch(`/empresas/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+        } else {
+          result = await apiFetch('/empresas', { method: 'POST', body: JSON.stringify(body) });
+        }
+
+        if (result && result.success) {
+          alert(result.message || 'Empresa guardada exitosamente.');
+          document.getElementById('empresa-modal').style.display = 'none';
+          loadEmpresas();
+          apiFetch('/empresas/admin').then(data => { window._empresasCache = data || []; });
+        } else if (result) {
+          alert('Error: ' + (result.error || 'Error desconocido'));
+        }
+      });
+    }
   }
 
   if (viewName === 'payment_machines') {

@@ -246,6 +246,64 @@ app.get('/api/empresas', async (req, res) => {
     res.json(data || []);
 });
 
+// --- Empresa Management (Solo Gestor del ERP / superadmin) ---
+app.get('/api/empresas/admin', authenticateToken, checkSuperAdmin, async (req, res) => {
+    const { data, error } = await supabase.from('empresas').select('*').order('nombre');
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data || []);
+});
+
+app.post('/api/empresas', authenticateToken, checkSuperAdmin, async (req, res) => {
+    const { nombre, rut, direccion, telefono, email } = req.body;
+    if (!nombre) return res.status(400).json({ error: 'El nombre de la empresa es obligatorio.' });
+
+    try {
+        const { data, error } = await supabase.from('empresas')
+            .insert({ nombre, rut, direccion, telefono, email, activa: true })
+            .select().single();
+        if (error) throw error;
+
+        // Crear usuario admin por defecto para la nueva empresa
+        const defaultPassword = await bcrypt.hash('admin123', 10);
+        const { error: userErr } = await supabase.from(T.USERS).insert({
+            username: 'admin',
+            password: defaultPassword,
+            role: 'admin',
+            empresa_id: data.id
+        });
+
+        if (userErr) {
+            console.warn('No se pudo crear usuario admin para la empresa:', userErr.message);
+        }
+
+        res.json({
+            success: true,
+            message: `Empresa "${nombre}" creada exitosamente. Usuario admin creado (contraseña: admin123).`,
+            data
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.put('/api/empresas/:id', authenticateToken, checkSuperAdmin, async (req, res) => {
+    const { nombre, rut, direccion, telefono, email, activa } = req.body;
+    const { error } = await supabase.from('empresas')
+        .update({ nombre, rut, direccion, telefono, email, activa })
+        .eq('id', req.params.id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, message: 'Empresa actualizada.' });
+});
+
+app.delete('/api/empresas/:id', authenticateToken, checkSuperAdmin, async (req, res) => {
+    // No elimina, solo desactiva
+    const { error } = await supabase.from('empresas')
+        .update({ activa: false })
+        .eq('id', req.params.id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ success: true, message: 'Empresa desactivada.' });
+});
+
 // Auth Routes
 app.post('/api/auth/register', authenticateToken, checkAdmin, async (req, res) => {
     const { username, password } = req.body;
