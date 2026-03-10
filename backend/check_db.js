@@ -3,19 +3,15 @@ require('dotenv').config();
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-async function check() {
-    console.log("Checking for 'document_number' in 'ventas'...");
-    const { data, error } = await supabase.from('ventas').select('document_number').limit(1);
-
+async function checkConstraints() {
+    const { data, error } = await supabase.rpc('get_constraints', { t_name: 'usuarios' });
     if (error) {
-        console.error("Error detected:", error.message);
-        if (error.message.includes("column \"document_number\" does not exist")) {
-            console.log("CONFIRMED: Column 'document_number' is missing.");
-        }
-    } else {
-        console.log("SUCCESS: Column 'document_number' exists.");
-        console.log("Sample data:", data);
+        // Fallback to direct query if RPC doesn't exist
+        const { data: rawData, error: rawError } = await supabase.from('usuarios').select('username').limit(1);
+        console.log('User model check:', rawData?.[0]);
+        
+        // Let's try to just run a drop and add again with the CORRECT column name
+        console.log('Please run the exact SQL provided in the response.');
     }
 }
-
-check();
+checkConstraints();

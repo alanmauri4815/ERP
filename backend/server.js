@@ -37,7 +37,7 @@ const T = {
 
 // Accounting Helper
 // Accounting Helper (Versión Pro compatible con ContaChile)
-async function createAccountingEntry({ date, description, type, document_number, lines, userId }) {
+async function createAccountingEntry({ date, description, type, document_number, lines, userId, empresaId }) {
     try {
         const periodo = (date ? new Date(date) : new Date()).toISOString().substring(0, 7);
 
@@ -50,7 +50,8 @@ async function createAccountingEntry({ date, description, type, document_number,
                 periodo: periodo,
                 tipo_origen: type,
                 referencia_id: document_number,
-                usuario_id: userId
+                usuario_id: userId,
+                empresa_id: empresaId
             })
             .select()
             .single();
@@ -63,7 +64,8 @@ async function createAccountingEntry({ date, description, type, document_number,
             cuenta_codigo: line.account_code,
             debe: line.debit || 0,
             haber: line.credit || 0,
-            glosa_linea: line.glosa || description
+            glosa_linea: line.glosa || description,
+            empresa_id: empresaId
         }));
 
         const { error: lError } = await supabase.from(T.PC_MOVIMIENTOS).insert(journalLines);
@@ -421,13 +423,13 @@ app.put('/api/raw-materials/:code', authenticateToken, async (req, res) => {
     const { error } = await supabase.from(T.MP).update({
         name, unit, cost_net, iva, total, color, size, parent_code,
         batch_size: batch_size || 1
-    }).eq('code', req.params.code);
+    }).eq('code', req.params.code).eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
 
 app.delete('/api/raw-materials/:code', authenticateToken, async (req, res) => {
-    const { error } = await supabase.from(T.MP).delete().eq('code', req.params.code);
+    const { error } = await supabase.from(T.MP).delete().eq('code', req.params.code).eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
@@ -448,13 +450,13 @@ app.post('/api/providers', authenticateToken, async (req, res) => {
 app.put('/api/providers/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { rut, name, address, contact, phone, email, notes } = req.body;
-    const { error } = await supabase.from(T.PROVIDERS).update({ rut, name, address, contact, phone, email, notes }).eq('id', id);
+    const { error } = await supabase.from(T.PROVIDERS).update({ rut, name, address, contact, phone, email, notes }).eq('id', id).eq('empresa_id', req.empresa_id);
     res.json({ success: true, message: 'Proveedor actualizado correctamente' });
 });
 
 app.delete('/api/providers/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { error } = await supabase.from(T.PROVIDERS).delete().eq('id', id);
+    const { error } = await supabase.from(T.PROVIDERS).delete().eq('id', id).eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
@@ -475,14 +477,14 @@ app.post('/api/clients', authenticateToken, async (req, res) => {
 app.put('/api/clients/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { name, address, phone, email, rut, notes } = req.body;
-    const { error } = await supabase.from(T.CLIENTS).update({ name, address, phone, email, rut, notes }).eq('id', id);
+    const { error } = await supabase.from(T.CLIENTS).update({ name, address, phone, email, rut, notes }).eq('id', id).eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Cliente actualizado correctamente' });
 });
 
 app.delete('/api/clients/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { error } = await supabase.from(T.CLIENTS).delete().eq('id', id);
+    const { error } = await supabase.from(T.CLIENTS).delete().eq('id', id).eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
@@ -497,7 +499,7 @@ app.get('/api/payment-machines', authenticateToken, async (req, res) => {
 app.post('/api/payment-machines', authenticateToken, async (req, res) => {
     const { name, provider, commission_percent, account_id, active } = req.body;
     const { data, error } = await supabase.from(T.PAYMENT_MACHINES)
-        .insert({ name, provider, commission_percent: commission_percent || 0, account_id, active: active !== false })
+        .insert({ name, provider, commission_percent: commission_percent || 0, account_id, active: active !== false, empresa_id: req.empresa_id })
         .select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, data });
@@ -508,14 +510,15 @@ app.put('/api/payment-machines/:id', authenticateToken, async (req, res) => {
     const { name, provider, commission_percent, account_id, active } = req.body;
     const { error } = await supabase.from(T.PAYMENT_MACHINES)
         .update({ name, provider, commission_percent, account_id, active })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
 
 app.delete('/api/payment-machines/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { error } = await supabase.from(T.PAYMENT_MACHINES).delete().eq('id', id);
+    const { error } = await supabase.from(T.PAYMENT_MACHINES).delete().eq('id', id).eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
@@ -540,7 +543,8 @@ app.get('/api/recipes/:productCode', authenticateToken, async (req, res) => {
                 size
             )
         `)
-        .eq('product_code', req.params.productCode);
+        .eq('product_code', req.params.productCode)
+        .eq('empresa_id', req.empresa_id);
 
     if (error) return res.status(500).json({ error: error.message });
 
@@ -563,13 +567,13 @@ app.put('/api/recipes/:productCode', authenticateToken, async (req, res) => {
     const productCode = req.params.productCode;
 
     try {
-        // Delete old recipe
-        await supabase.from(T.RECIPES).delete().eq('product_code', productCode);
+        // Delete old recipe (only for current company)
+        await supabase.from(T.RECIPES).delete().eq('product_code', productCode).eq('empresa_id', req.empresa_id);
 
         // Prepare new items
         const newItems = [];
         for (const item of items) {
-            const { data: rm } = await supabase.from(T.MP).select('cost_net, batch_size').eq('code', item.mpCode).single();
+            const { data: rm } = await supabase.from(T.MP).select('cost_net, batch_size').eq('code', item.mpCode).eq('empresa_id', req.empresa_id).single();
             const mpCostNetTotal = rm ? rm.cost_net : 0;
             const mpBatchSize = rm ? (rm.batch_size || 1) : 1;
             const mpUnitPrice = mpCostNetTotal / mpBatchSize;
@@ -582,7 +586,8 @@ app.put('/api/recipes/:productCode', authenticateToken, async (req, res) => {
                 mp_code: item.mpCode,
                 quantity: item.quantity,
                 batch_size: recipeBatchSize,
-                unit_cost: unitCost
+                unit_cost: unitCost,
+                empresa_id: req.empresa_id
             });
         }
 
@@ -590,11 +595,11 @@ app.put('/api/recipes/:productCode', authenticateToken, async (req, res) => {
             await supabase.from(T.RECIPES).insert(newItems);
         }
 
-        // Recalculate total cost
-        const { data: newRecipe } = await supabase.from(T.RECIPES).select('unit_cost').eq('product_code', productCode);
+        // Recalculate total cost (only for current company)
+        const { data: newRecipe } = await supabase.from(T.RECIPES).select('unit_cost').eq('product_code', productCode).eq('empresa_id', req.empresa_id);
         const totalCost = Math.round(newRecipe.reduce((sum, r) => sum + (r.unit_cost || 0), 0));
 
-        await supabase.from(T.PRODUCTS).update({ cost_unit: totalCost }).eq('code', productCode);
+        await supabase.from(T.PRODUCTS).update({ cost_unit: totalCost }).eq('code', productCode).eq('empresa_id', req.empresa_id);
 
         res.json({ success: true, message: 'Receta actualizada exitosamente.' });
     } catch (e) {
@@ -679,9 +684,9 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
 
         // Fetch lookup tables
         const [provs, accs, quotes] = await Promise.all([
-            supabase.from(T.PROVIDERS).select('id, name, rut'),
-            supabase.from(T.ACCOUNTS).select('id, name'),
-            supabase.from(T.QUOTATIONS).select(`id, name, purchase_order_id, clients:${T.CLIENTS}(name)`).limit(1000)
+            supabase.from(T.PROVIDERS).select('id, name, rut').eq('empresa_id', req.empresa_id),
+            supabase.from(T.ACCOUNTS).select('id, name').eq('empresa_id', req.empresa_id),
+            supabase.from(T.QUOTATIONS).select(`id, name, purchase_order_id, clients:${T.CLIENTS}(name)`).eq('empresa_id', req.empresa_id).limit(1000)
         ]);
 
         const provMap = {}; provs.data?.forEach(p => provMap[p.id] = { name: p.name, rut: p.rut });
@@ -778,7 +783,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
     if (error) return res.status(500).json({ error: error.message });
 
     // Build quotation lookup for project names and totals
-    const { data: quotes } = await supabase.from(T.QUOTATIONS).select('id, name, purchase_order_id, total_price_gross').limit(1000);
+    const { data: quotes } = await supabase.from(T.QUOTATIONS).select('id, name, purchase_order_id, total_price_gross').eq('empresa_id', req.empresa_id).limit(1000);
     const quoteMap = {};
     quotes?.forEach(q => quoteMap[q.id] = { name: q.name, oc: q.purchase_order_id, total: q.total_price_gross });
 
@@ -838,7 +843,7 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         if (result.error && result.error.message.includes('column')) {
             console.warn("Retrying purchase insert without new columns...", result.error.message);
             const { project_ref: _p, purchase_category: _c, document_number: _dn, quotation_id: _qid, ...fallbackData } = fullData;
-            result = await supabase.from(T.PURCHASES).insert(fallbackData).select().single();
+            result = await supabase.from(T.PURCHASES).insert({ ...fallbackData, empresa_id: req.empresa_id }).select().single();
         }
 
         if (result.error) throw result.error;
@@ -910,6 +915,7 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             type: type === 'expense' ? 'gasto' : ((quotation_id || project_ref) ? 'compra_pull' : 'compra_push'),
             document_number: purchase.id.toString(),
             userId: req.user.id,
+            empresaId: req.empresa_id,
             lines: journalLines
         });
 
@@ -972,6 +978,7 @@ app.post('/api/purchases/:id/payment', authenticateToken, async (req, res) => {
             type: 'pago_compra',
             document_number: purchaseId.toString(),
             userId: req.user.id,
+            empresaId: req.empresa_id,
             lines: [
                 { account_code: '2.1.01', debit: parseFloat(amount), glosa: `Abono a factura ${docRef}` },
                 { account_code: paymentAccount, credit: parseFloat(amount), glosa: `Pago a ${provName}` }
@@ -1033,6 +1040,7 @@ app.post('/api/sales/:id/payment', authenticateToken, async (req, res) => {
             type: 'cobro_venta',
             document_number: saleId.toString(),
             userId: req.user.id,
+            empresaId: req.empresa_id,
             lines: [
                 { account_code: paymentAccount, debit: parseFloat(amount), glosa: `Cobro de ${clientName}` },
                 { account_code: '1.1.03', credit: parseFloat(amount), glosa: `Abono a cuenta por cobrar ${docRef}` }
@@ -1089,12 +1097,12 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             purchase_category: purchase_category || 'general'
         };
 
-        let result = await supabase.from(T.PURCHASES).update(fullUpdate).eq('id', purchaseId);
+        let result = await supabase.from(T.PURCHASES).update(fullUpdate).eq('id', purchaseId).eq('empresa_id', req.empresa_id);
 
         if (result.error && result.error.message.includes('column')) {
             console.warn("Retrying purchase update without new columns...");
             const { project_ref: _p, purchase_category: _c, ...fallbackUpdate } = fullUpdate;
-            result = await supabase.from(T.PURCHASES).update(fallbackUpdate).eq('id', purchaseId);
+            result = await supabase.from(T.PURCHASES).update(fallbackUpdate).eq('id', purchaseId).eq('empresa_id', req.empresa_id);
         }
         if (result.error) throw result.error;
 
@@ -1164,6 +1172,7 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             type: type === 'expense' ? 'gasto' : ((quotation_id || project_ref) ? 'compra_pull' : 'compra_push'),
             document_number: purchaseId.toString(),
             userId: req.user.id,
+            empresaId: req.empresa_id,
             lines: journalLines
         });
 
@@ -1193,13 +1202,13 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             document_number: document_number || null
         };
 
-        let { data: sale, error: sError } = await supabase.from(T.SALES).insert({ ...payload, category, quotation_id }).select().single();
+        let { data: sale, error: sError } = await supabase.from(T.SALES).insert({ ...payload, category, quotation_id, empresa_id: req.empresa_id }).select().single();
 
         // If some columns are missing, retry without them
         if (sError && sError.message.includes('column')) {
             console.warn("Retrying sale insert without extended columns...", sError.message);
             const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, document_number: _dn, ...fallbackPayload } = payload;
-            const retryReq = await supabase.from(T.SALES).insert({ ...fallbackPayload }).select().single();
+            const retryReq = await supabase.from(T.SALES).insert({ ...fallbackPayload, empresa_id: req.empresa_id }).select().single();
             sale = retryReq.data;
             sError = retryReq.error;
         }
@@ -1253,6 +1262,7 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             type: 'venta_' + (category || 'push'),
             document_number: sale.id.toString(),
             userId: req.user.id,
+            empresaId: req.empresa_id,
             lines: journalLines
         });
 
@@ -1287,12 +1297,12 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             document_number: document_number || null
         };
 
-        let { error: updateError } = await supabase.from(T.SALES).update({ ...updatePayload, category, quotation_id }).eq('id', saleId);
+        let { error: updateError } = await supabase.from(T.SALES).update({ ...updatePayload, category, quotation_id }).eq('id', saleId).eq('empresa_id', req.empresa_id);
 
         if (updateError && updateError.message.includes('column')) {
             console.warn("Retrying sale update without extended columns...", updateError.message);
             const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, ...fallbackUpdate } = updatePayload;
-            const retryReq = await supabase.from(T.SALES).update(fallbackUpdate).eq('id', saleId);
+            const retryReq = await supabase.from(T.SALES).update(fallbackUpdate).eq('id', saleId).eq('empresa_id', req.empresa_id);
             updateError = retryReq.error;
         }
 
@@ -1357,6 +1367,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             type: 'venta_' + (category || 'push'),
             document_number: saleId.toString(),
             userId: req.user.id,
+            empresaId: req.empresa_id,
             lines: journalLines
         });
 
@@ -1374,6 +1385,7 @@ app.get('/api/sales/pending-transfer', authenticateToken, async (req, res) => {
             .select('*, payment_machines:machine_id(name, commission_percent)')
             .is('client_id', null)
             .eq('transferred', false)
+            .eq('empresa_id', req.empresa_id)
             .order('date', { ascending: false });
         if (error) throw error;
         res.json(data || []);
@@ -1422,6 +1434,7 @@ app.post('/api/sales/bulk-transfer', authenticateToken, async (req, res) => {
             description: `Liquidación masiva Transbank (${sales.length} ventas)`,
             type: 'transferencia',
             userId: req.user.id,
+            empresaId: req.empresa_id,
             lines: [
                 { account_code: '1.1.02', debit: totalNetTransfer },      // Entra al Banco
                 { account_code: '1.1.03', credit: totalNetTransfer }     // Sale de Fondos por Recaudar (ya neto)
@@ -1438,7 +1451,7 @@ app.post('/api/sales/bulk-transfer', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/accounting-entries', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase.from(T.ACCOUNTING_ENTRIES).select('*').order('date', { ascending: false });
+    const { data, error } = await supabase.from(T.ACCOUNTING_ENTRIES).select('*').eq('empresa_id', req.empresa_id).order('date', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     res.json(data || []);
 });
@@ -1448,7 +1461,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
     const productionDate = date || new Date().toISOString();
 
     try {
-        const insertData = { date: productionDate };
+        const insertData = { date: productionDate, empresa_id: req.empresa_id };
         if (production_category) insertData.production_category = production_category;
         if (quotation_id && !isNaN(quotation_id)) insertData.quotation_id = parseInt(quotation_id);
         insertData.material_cost = material_cost || 0;
@@ -1465,7 +1478,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
             console.warn('Retrying production insert without new columns...', result.error.message);
             result = await supabase
                 .from(T.PRODUCTION)
-                .insert({ date: productionDate })
+                .insert({ date: productionDate, empresa_id: req.empresa_id })
                 .select()
                 .single();
         }
@@ -1487,20 +1500,20 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                 });
                 if (itemError) throw new Error(`Error en ítem ${i + 1} (${item.productCode}): ${itemError.message}`);
 
-                // Update product stock
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.productCode).single();
-                await supabase.from(T.PRODUCTS).update({ stock: (p?.stock || 0) + item.quantity }).eq('code', item.productCode);
+                // Update product stock (multi-tenant)
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.productCode).eq('empresa_id', req.empresa_id).single();
+                await supabase.from(T.PRODUCTS).update({ stock: (p?.stock || 0) + item.quantity }).eq('code', item.productCode).eq('empresa_id', req.empresa_id);
 
-                // Update MP stock based on recipe
-                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', item.productCode);
+                // Update MP stock based on recipe (multi-tenant)
+                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', item.productCode).eq('empresa_id', req.empresa_id);
                 for (const r of recipe) {
                     const consumptionQty = (r.quantity * item.quantity);
-                    const consumptionCost = r.unit_cost ? (r.unit_cost * item.quantity) : (consumptionQty * 0); // Fallback if unit_cost is missing
+                    const consumptionCost = r.unit_cost ? (r.unit_cost * item.quantity) : (consumptionQty * 0);
                     totalProductionCost += consumptionCost;
 
-                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).single();
+                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).single();
                     const newStock = (rm?.stock || 0) - consumptionQty;
-                    await supabase.from(T.MP).update({ stock: newStock }).eq('code', r.mp_code);
+                    await supabase.from(T.MP).update({ stock: newStock }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
 
                     // Check alert
                     await checkLowStockAlerts(r.mp_code);
@@ -1515,6 +1528,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                 description: `Consumo de Materias Primas - Producción #${prod.id}`,
                 type: 'consumo',
                 userId: req.user.id,
+                empresaId: req.empresa_id,
                 lines: [
                     { account_code: '1.1.09', debit: totalProductionCost }, // Inventario PT
                     { account_code: '1.1.09', credit: totalProductionCost } // Inventario MP
@@ -1539,20 +1553,20 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
 
         if (oldItems) {
             for (const item of oldItems) {
-                // Subtract from PT stock
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.product_code).single();
+                // Subtract from PT stock (multi-tenant)
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.product_code).eq('empresa_id', req.empresa_id).single();
                 if (p) {
-                    await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) - item.quantity }).eq('code', item.product_code);
+                    await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) - item.quantity }).eq('code', item.product_code).eq('empresa_id', req.empresa_id);
                 }
 
-                // Add back to MP stock based on recipe
-                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', item.product_code);
+                // Add back to MP stock based on recipe (multi-tenant)
+                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', item.product_code).eq('empresa_id', req.empresa_id);
                 if (recipe) {
                     for (const r of recipe) {
                         const consumptionQty = (r.quantity * item.quantity);
-                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).single();
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).single();
                         if (rm) {
-                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + consumptionQty }).eq('code', r.mp_code);
+                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + consumptionQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
                         }
                     }
                 }
@@ -1569,7 +1583,7 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
         updateData.material_cost = material_cost || 0;
         updateData.general_expenses = general_expenses || 0;
 
-        let updateResult = await supabase.from(T.PRODUCTION).update(updateData).eq('id', prodId);
+        let updateResult = await supabase.from(T.PRODUCTION).update(updateData).eq('id', prodId).eq('empresa_id', req.empresa_id);
 
         // Fallback if new columns don't exist yet
         if (updateResult.error && updateResult.error.message.includes('column')) {
@@ -1577,7 +1591,7 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
             const fallbackData = { date: productionDate };
             if (production_category) fallbackData.production_category = production_category;
             if (quotation_id && !isNaN(quotation_id)) fallbackData.quotation_id = parseInt(quotation_id);
-            updateResult = await supabase.from(T.PRODUCTION).update(fallbackData).eq('id', prodId);
+            updateResult = await supabase.from(T.PRODUCTION).update(fallbackData).eq('id', prodId).eq('empresa_id', req.empresa_id);
         }
 
         if (updateResult.error) throw updateResult.error;
@@ -1638,6 +1652,7 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
                 description: `Consumo de Materias Primas - Producción #${prodId}`,
                 type: 'consumo',
                 userId: req.user.id,
+                empresaId: req.empresa_id,
                 lines: [
                     { account_code: '1.1.09', debit: totalProductionCost }, // Inventario PT
                     { account_code: '1.1.09', credit: totalProductionCost } // Inventario MP
@@ -1666,14 +1681,14 @@ app.delete('/api/production/:id', authenticateToken, async (req, res) => {
                     await supabase.from(T.PRODUCTS).update({ stock: Math.max(0, (p.stock || 0) - item.quantity) }).eq('code', item.product_code);
                 }
 
-                // Add back to MP stock based on recipe
-                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', item.product_code);
+                // Add back to MP stock based on recipe (multi-tenant)
+                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', item.product_code).eq('empresa_id', req.empresa_id);
                 if (recipe) {
                     for (const r of recipe) {
                         const consumptionQty = (r.quantity * item.quantity);
-                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).single();
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).single();
                         if (rm) {
-                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + consumptionQty }).eq('code', r.mp_code);
+                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + consumptionQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
                         }
                     }
                 }
@@ -1692,12 +1707,12 @@ app.delete('/api/production/:id', authenticateToken, async (req, res) => {
 
         if (entries && entries.length > 0) {
             const entryIds = entries.map(e => e.id);
-            await supabase.from(T.ACCOUNTING_LINES).delete().in('asiento_id', entryIds);
-            await supabase.from(T.ACCOUNTING_ENTRIES).delete().in('id', entryIds);
+            await supabase.from(T.ACCOUNTING_LINES).delete().in('asiento_id', entryIds).eq('empresa_id', req.empresa_id);
+            await supabase.from(T.ACCOUNTING_ENTRIES).delete().in('id', entryIds).eq('empresa_id', req.empresa_id);
         }
 
-        // 4. DELETE PRODUCTION HEADER
-        const { error: deleteError } = await supabase.from(T.PRODUCTION).delete().eq('id', prodId);
+        // 4. DELETE PRODUCTION HEADER (multi-tenant)
+        const { error: deleteError } = await supabase.from(T.PRODUCTION).delete().eq('id', prodId).eq('empresa_id', req.empresa_id);
         if (deleteError) throw deleteError;
 
         res.json({ success: true, message: 'Producción eliminada y stock revertido correctamente.' });
@@ -1713,6 +1728,7 @@ app.get('/api/logistics', authenticateToken, async (req, res) => {
         const { data, error } = await supabase
             .from(T.LOGISTICS)
             .select(`*, ${T.PURCHASES}(type)`)
+            .eq('empresa_id', req.empresa_id)
             .order('created_at', { ascending: false });
 
         if (error) return res.status(500).json({ error: error.message });
@@ -1755,7 +1771,8 @@ app.post('/api/logistics', authenticateToken, async (req, res) => {
                 transport_cost,
                 handling_cost,
                 estimated_arrival,
-                observations
+                observations,
+                empresa_id: req.empresa_id
             })
             .select()
             .single();
@@ -1781,6 +1798,7 @@ app.post('/api/logistics', authenticateToken, async (req, res) => {
                 description: desc,
                 type: 'gasto',
                 userId: req.user.id,
+                empresaId: req.empresa_id,
                 lines: [
                     { account_code: '4.1.01', debit: totalLogisticsCost, glosa: desc }, // Gasto Transporte (Assume code)
                     { account_code: '1.1.01', credit: totalLogisticsCost, glosa: desc } // Caja/Banco
@@ -1801,7 +1819,7 @@ app.put('/api/logistics/:id', authenticateToken, async (req, res) => {
     delete body.items;
 
     try {
-        const { error: uError } = await supabase.from(T.LOGISTICS).update(body).eq('id', id);
+        const { error: uError } = await supabase.from(T.LOGISTICS).update(body).eq('id', id).eq('empresa_id', req.empresa_id);
         if (uError) throw uError;
 
         if (items) {
@@ -1822,7 +1840,7 @@ app.put('/api/logistics/:id', authenticateToken, async (req, res) => {
 
 app.delete('/api/logistics/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
-    const { error } = await supabase.from(T.LOGISTICS).delete().eq('id', id);
+    const { error } = await supabase.from(T.LOGISTICS).delete().eq('id', id).eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
@@ -1830,7 +1848,7 @@ app.delete('/api/logistics/:id', authenticateToken, async (req, res) => {
 app.get('/api/logistics/pending', authenticateToken, async (req, res) => {
     try {
         // Fetch all logistics to know which transactions are already covered
-        const { data: logs } = await supabase.from(T.LOGISTICS).select('transaction_type, transaction_id');
+        const { data: logs } = await supabase.from(T.LOGISTICS).select('transaction_type, transaction_id').eq('empresa_id', req.empresa_id);
         const covered = { compra: new Set(), venta: new Set(), produccion: new Set() };
         logs?.forEach(l => {
             if (l.transaction_type && l.transaction_id) {
@@ -1843,6 +1861,7 @@ app.get('/api/logistics/pending', authenticateToken, async (req, res) => {
             .from(T.PURCHASES)
             .select('id, date, type, proveedores(name)')
             .eq('type', 'mp')
+            .eq('empresa_id', req.empresa_id)
             .order('date', { ascending: false })
             .limit(50);
 
@@ -1855,7 +1874,7 @@ app.get('/api/logistics/pending', authenticateToken, async (req, res) => {
         }));
 
         // Pending Sales
-        const { data: sales } = await supabase.from(T.SALES).select('id, date, clientela(name)').order('date', { ascending: false }).limit(50);
+        const { data: sales } = await supabase.from(T.SALES).select('id, date, clientela(name)').eq('empresa_id', req.empresa_id).order('date', { ascending: false }).limit(50);
         const pendingSales = (sales || []).filter(s => !covered.venta.has(s.id)).map(s => ({
             id: s.id,
             date: s.date,
@@ -1882,7 +1901,7 @@ app.post('/api/products', authenticateToken, async (req, res) => {
         total = tax.total;
     }
 
-    const { error } = await supabase.from(T.PRODUCTS).insert({ code, name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total });
+    const { error } = await supabase.from(T.PRODUCTS).insert({ code, name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total, empresa_id: req.empresa_id });
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Producto creado.' });
 });
@@ -1897,31 +1916,31 @@ app.put('/api/products/:code', authenticateToken, async (req, res) => {
         total = tax.total;
     }
 
-    const { error } = await supabase.from(T.PRODUCTS).update({ name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total }).eq('code', req.params.code);
+    const { error } = await supabase.from(T.PRODUCTS).update({ name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total }).eq('code', req.params.code).eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Producto actualizado.' });
 });
 
 app.post('/api/products/recalculate-all-costs', authenticateToken, async (req, res) => {
     try {
-        const { data: products } = await supabase.from(T.PRODUCTS).select('code');
+        const { data: products } = await supabase.from(T.PRODUCTS).select('code').eq('empresa_id', req.empresa_id);
         for (const p of products) {
-            const { data: recipe } = await supabase.from(T.RECIPES).select('*').eq('product_code', p.code);
+            const { data: recipe } = await supabase.from(T.RECIPES).select('*').eq('product_code', p.code).eq('empresa_id', req.empresa_id);
 
             // Si no hay receta, no sobreescribimos el costo manual (si existe)
             if (!recipe || recipe.length === 0) continue;
 
             let totalCost = 0;
             for (const r of recipe) {
-                const { data: rm } = await supabase.from(T.MP).select('cost_net, batch_size').eq('code', r.mp_code).single();
+                const { data: rm } = await supabase.from(T.MP).select('cost_net, batch_size').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).single();
                 const mpCostNet = rm ? rm.cost_net : 0;
                 const mpBatchSize = rm ? (rm.batch_size || 1) : 1;
                 const unitCost = (r.quantity / (r.batch_size || 1)) * (mpCostNet / mpBatchSize);
 
-                await supabase.from(T.RECIPES).update({ unit_cost: unitCost }).eq('product_code', p.code).eq('mp_code', r.mp_code);
+                await supabase.from(T.RECIPES).update({ unit_cost: unitCost }).eq('product_code', p.code).eq('mp_code', r.mp_code).eq('empresa_id', req.empresa_id);
                 totalCost += unitCost;
             }
-            await supabase.from(T.PRODUCTS).update({ cost_unit: Math.round(totalCost) }).eq('code', p.code);
+            await supabase.from(T.PRODUCTS).update({ cost_unit: Math.round(totalCost) }).eq('code', p.code).eq('empresa_id', req.empresa_id);
         }
         res.json({ success: true, message: 'Costos recalculados exitosamente.' });
     } catch (e) {
@@ -1948,6 +1967,7 @@ app.get('/api/reports/monthly', authenticateToken, async (req, res) => {
                     )
                 )
             `)
+            .eq('empresa_id', req.empresa_id)
             .order('date', { ascending: true });
 
         if (error) throw error;
@@ -1987,15 +2007,15 @@ app.get('/api/reports/monthly', authenticateToken, async (req, res) => {
 
 app.get('/api/stats', authenticateToken, async (req, res) => {
     try {
-        const { data: sales } = await supabase.from(T.SALES).select('total, date');
+        const { data: sales } = await supabase.from(T.SALES).select('total, date').eq('empresa_id', req.empresa_id);
         const revenue = sales?.reduce((sum, s) => sum + (s.total || 0), 0) || 0;
 
-        const { count: salesCount } = await supabase.from(T.SALES).select('*', { count: 'exact', head: true });
+        const { count: salesCount } = await supabase.from(T.SALES).select('*', { count: 'exact', head: true }).eq('empresa_id', req.empresa_id);
 
-        const { data: prodItems } = await supabase.from(T.PRODUCTION_ITEMS).select('quantity');
+        const { data: prodItems } = await supabase.from(T.PRODUCTION_ITEMS).select('quantity, production!inner(empresa_id)').eq('production.empresa_id', req.empresa_id);
         const productionCount = prodItems?.reduce((sum, i) => sum + (i.quantity || 0), 0) || 0;
 
-        const { count: lowStock } = await supabase.from(T.MP).select('*', { count: 'exact', head: true }).lt('stock', 2);
+        const { count: lowStock } = await supabase.from(T.MP).select('*', { count: 'exact', head: true }).eq('empresa_id', req.empresa_id).lt('stock', 2);
 
         // Weekly sales logic
         const last7Days = [...Array(7)].map((_, i) => {
@@ -2118,14 +2138,14 @@ app.delete('/api/users/:id', authenticateToken, checkSuperAdmin, async (req, res
 
 // --- Accounts Management Routes ---
 app.get('/api/accounts', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase.from(T.ACCOUNTS).select('*').order('name');
+    const { data, error } = await supabase.from(T.ACCOUNTS).select('*').eq('empresa_id', req.empresa_id).order('name');
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
 });
 
 app.post('/api/accounts', authenticateToken, checkAdmin, async (req, res) => {
     const { name, type, current_balance } = req.body;
-    const { error } = await supabase.from(T.ACCOUNTS).insert({ name, type, current_balance });
+    const { error } = await supabase.from(T.ACCOUNTS).insert({ name, type, current_balance: current_balance || 0, empresa_id: req.empresa_id });
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
@@ -2133,7 +2153,7 @@ app.post('/api/accounts', authenticateToken, checkAdmin, async (req, res) => {
 app.put('/api/accounts/:id', authenticateToken, checkAdmin, async (req, res) => {
     const { id } = req.params;
     const { name, type, current_balance } = req.body;
-    const { error } = await supabase.from(T.ACCOUNTS).update({ name, type, current_balance }).eq('id', id);
+    const { error } = await supabase.from(T.ACCOUNTS).update({ name, type, current_balance }).eq('id', id).eq('empresa_id', req.empresa_id);
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
@@ -2143,6 +2163,7 @@ app.get('/api/quotations', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from(T.QUOTATIONS)
         .select(`*, clients:"${T.CLIENTS}"(name, rut, address)`)
+        .eq('empresa_id', req.empresa_id)
         .order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
     const formatted = (data || []).map(q => ({
@@ -2158,6 +2179,7 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
         .from(T.QUOTATIONS)
         .select(`*, clients:"${T.CLIENTS}"(name, rut, address)`)
         .eq('id', id)
+        .eq('empresa_id', req.empresa_id)
         .single();
     if (qError) return res.status(500).json({ error: qError.message });
 
@@ -2244,6 +2266,7 @@ app.post('/api/accounting/transfers', authenticateToken, async (req, res) => {
         description: description || 'Transferencia entre cuentas',
         type: 'transferencia',
         userId: req.user.id,
+        empresaId: req.empresa_id,
         lines: [
             { account_code: to_account_code, debit: amount },
             { account_code: from_account_code, credit: amount }
@@ -2274,7 +2297,8 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
             budget, success_probability, products_list,
             rut, address, description_proposal, images,
             external_quote_id, purchase_order_id,
-            status: 'draft'
+            status: 'draft',
+            empresa_id: req.empresa_id
         };
 
         let { data: quote, error: qError } = await supabase.from(T.QUOTATIONS).insert(insertData).select().single();
@@ -2338,14 +2362,14 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
             external_quote_id, purchase_order_id
         };
 
-        let { error: qError } = await supabase.from(T.QUOTATIONS).update(updateData).eq('id', id);
+        let { error: qError } = await supabase.from(T.QUOTATIONS).update(updateData).eq('id', id).eq('empresa_id', req.empresa_id);
 
         // Fallback if columns don't exist
         if (qError && qError.message.includes('column') && (qError.message.includes('external_quote_id') || qError.message.includes('purchase_order_id'))) {
             console.warn('Fallback: Columns missing. Retrying without external_quote_id and purchase_order_id');
             delete updateData.external_quote_id;
             delete updateData.purchase_order_id;
-            const retry = await supabase.from(T.QUOTATIONS).update(updateData).eq('id', id);
+            const retry = await supabase.from(T.QUOTATIONS).update(updateData).eq('id', id).eq('empresa_id', req.empresa_id);
             qError = retry.error;
         }
 
@@ -2404,6 +2428,7 @@ app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
             .from(T.QUOTATIONS)
             .select('id, status')
             .eq('id', id)
+            .eq('empresa_id', req.empresa_id)
             .single();
 
         if (fetchErr || !quote) {
@@ -2422,7 +2447,8 @@ app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
         const { error: updateErr } = await supabase
             .from(T.QUOTATIONS)
             .update({ status: newStatus })
-            .eq('id', id);
+            .eq('id', id)
+            .eq('empresa_id', req.empresa_id);
 
         if (updateErr) throw updateErr;
 

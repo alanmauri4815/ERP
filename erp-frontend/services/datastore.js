@@ -40,11 +40,14 @@ class DataStore {
 
     // --- Operaciones de Lectura (Read) ---
     async getAll(table) {
-        const { data, error } = await supabase
-            .from(table)
-            .select('*')
-            .eq('empresa_id', this.empresa_id)
-            .order('created_at', { ascending: false });
+        let query = supabase.from(table).select('*');
+
+        // El plan de cuentas es global (compartido), el resto es multi-tenant
+        if (table !== 'plan_cuentas') {
+            query = query.eq('empresa_id', this.empresa_id);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: false });
 
         if (error) {
             console.error(`Error al leer ${table}:`, error.message);

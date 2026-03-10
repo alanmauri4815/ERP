@@ -4499,13 +4499,23 @@ function renderView(viewName) {
     }
   });
 
-  // Actualizar nombre de usuario en el sidebar si no estamos en login
+  // Actualizar nombre de usuario y empresa en el sidebar si no estamos en login
   if (viewName !== 'login') {
     const userDisplay = document.getElementById('display-username');
     const roleDisplay = document.getElementById('display-user-role');
+    const sidebarEmpresa = document.getElementById('sidebar-empresa-name');
+    const footerEmpresa = document.getElementById('footer-empresa-name');
+
     if (userDisplay && currentUser) {
       userDisplay.textContent = currentUser.username;
     }
+    if (sidebarEmpresa && currentUser?.empresa_nombre) {
+      sidebarEmpresa.textContent = currentUser.empresa_nombre;
+    }
+    if (footerEmpresa && currentUser?.empresa_nombre) {
+      footerEmpresa.textContent = currentUser.empresa_nombre;
+    }
+
     if (roleDisplay && currentUser) {
       const roleMap = {
         'superadmin': 'Gestor del ERP',

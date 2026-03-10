@@ -41,6 +41,9 @@ export async function renderDashboard(container, state) {
   const cxCPending = sales.reduce((s, v) => s + (parseFloat(v.total) - parseFloat(v.paid_amount || 0)), 0);
   const cxPPending = purchases.reduce((s, c) => s + (parseFloat(c.total) - parseFloat(c.paid_amount || 0)), 0);
 
+  const user = JSON.parse(localStorage.getItem('erp_user') || '{}');
+  const empresaNombre = user.empresa_nombre || 'ContaChile';
+
   container.innerHTML = `
     <div class="dashboard animate-fade" style="width: 100%; max-width: 100%;">
       <header style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 2rem; background: var(--surface); padding: 1.5rem 2rem; border-radius: 16px; border: 1px solid var(--border); box-shadow: var(--shadow); width: 100%;">
@@ -48,7 +51,7 @@ export async function renderDashboard(container, state) {
           <h1 style="margin:0; font-size:2rem; font-weight:800; display:flex; align-items:center; gap:12px; white-space: nowrap;">
             <i class="fas fa-gauge-high" style="color:var(--primary);"></i> Panel de Control
           </h1>
-          <p style="color:var(--text-muted); font-size:0.9rem; margin-top:4px; font-weight:500;">Gestión operativa y financiera de Ross Confecciones</p>
+          <p style="color:var(--text-muted); font-size:0.9rem; margin-top:4px; font-weight:500;">Gestión operativa y financiera de ${empresaNombre}</p>
         </div>
 
         <div style="display:flex; gap:1.5rem; align-items:center;">
