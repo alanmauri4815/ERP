@@ -1452,6 +1452,7 @@ const views = {
             <button type="submit">Guardar</button>
           </div>
         </form>
+      </div>
     </div>
 
     ${currentUser?.role === 'superadmin' ? `
