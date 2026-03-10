@@ -2060,16 +2060,25 @@ app.post('/api/test-notification', authenticateToken, async (req, res) => {
 
 // User Management Routes (Admin Only)
 app.get('/api/users', authenticateToken, checkSuperAdmin, async (req, res) => {
-    const { data, error } = await supabase.from(T.USERS).select('id, username, role');
+    const { data, error } = await supabase.from(T.USERS)
+        .select('id, username, role, empresa_id, empresas:empresas(nombre)')
+        .order('empresa_id');
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
+    // Flatten empresa name
+    const users = (data || []).map(u => ({
+        ...u,
+        empresa_nombre: u.empresas?.nombre || 'Sin empresa'
+    }));
+    res.json(users);
 });
 
 app.post('/api/users', authenticateToken, checkSuperAdmin, async (req, res) => {
-    const { username, password, role } = req.body;
+    const { username, password, role, empresa_id } = req.body;
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        const { error } = await supabase.from(T.USERS).insert({ username, password: hashedPassword, role });
+        const insertData = { username, password: hashedPassword, role };
+        if (empresa_id) insertData.empresa_id = parseInt(empresa_id);
+        const { error } = await supabase.from(T.USERS).insert(insertData);
         if (error) throw error;
         res.json({ success: true, message: 'Usuario creado exitosamente.' });
     } catch (e) {
@@ -2079,8 +2088,9 @@ app.post('/api/users', authenticateToken, checkSuperAdmin, async (req, res) => {
 
 app.put('/api/users/:id', authenticateToken, checkSuperAdmin, async (req, res) => {
     const { id } = req.params;
-    const { username, password, role } = req.body;
+    const { username, password, role, empresa_id } = req.body;
     const updateData = { username, role };
+    if (empresa_id) updateData.empresa_id = parseInt(empresa_id);
 
     if (password && password.trim() !== '') {
         updateData.password = await bcrypt.hash(password, 10);

@@ -1400,6 +1400,7 @@ const views = {
               <th>ID</th>
               <th>Usuario</th>
               <th>Rol</th>
+              <th>Empresa</th>
               <th>Acción</th>
             </tr>
           </thead>
@@ -1409,6 +1410,7 @@ const views = {
                 <td>${u.id}</td>
                 <td><strong>${u.username}</strong></td>
                 <td><span class="badge ${u.role === 'admin' ? 'badge-success' : 'badge-info'}">${u.role}</span></td>
+                <td>${u.empresa_nombre || 'Sin empresa'}</td>
                 <td>
                   <button class="btn-sm" onclick="window.editUser(${u.id})">✏️</button>
                   ${u.username !== currentUser.username ? `<button class="btn-sm" onclick="window.deleteUser(${u.id})" style="background:var(--danger)">🗑️</button>` : ''}
@@ -1445,6 +1447,12 @@ const views = {
               <option value="admin">Administrador (Gestión General)</option>
               <option value="user">Usuario (Operaciones)</option>
               <option value="viewer">Visor (Sólo Lectura/Reportes)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Empresa</label>
+            <select id="user-empresa">
+              <option value="">-- Seleccionar Empresa --</option>
             </select>
           </div>
           <div class="form-actions">
@@ -2832,7 +2840,7 @@ window.deleteProduction = async (id) => {
 };
 
 // --- USER MANAGEMENT HELPERS ---
-window.openUserModal = () => {
+window.openUserModal = async () => {
   document.getElementById('user-modal').style.display = 'flex';
   document.getElementById('user-modal-title').textContent = 'Nuevo Usuario';
   document.getElementById('user-edit-id').value = '';
@@ -2840,17 +2848,33 @@ window.openUserModal = () => {
   document.getElementById('user-pass-label').textContent = 'Contraseña';
   document.getElementById('user-pass').required = true;
   document.getElementById('user-pass-hint').style.display = 'none';
+
+  // Populate empresa dropdown
+  const empresaSelect = document.getElementById('user-empresa');
+  if (empresaSelect && empresaSelect.options.length <= 1) {
+    const empresas = await apiFetch('/empresas/admin');
+    if (Array.isArray(empresas)) {
+      empresas.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e.id;
+        opt.textContent = e.nombre;
+        empresaSelect.appendChild(opt);
+      });
+    }
+  }
+  empresaSelect.value = '';
 };
 
-window.editUser = (id) => {
+window.editUser = async (id) => {
   const user = state.users.find(u => u.id === id);
   if (!user) return;
 
-  window.openUserModal();
+  await window.openUserModal();
   document.getElementById('user-modal-title').textContent = 'Editar Usuario';
   document.getElementById('user-edit-id').value = id;
   document.getElementById('user-name').value = user.username;
   document.getElementById('user-role').value = user.role;
+  document.getElementById('user-empresa').value = user.empresa_id || '';
   document.getElementById('user-pass-label').textContent = 'Nueva Contraseña';
   document.getElementById('user-pass').required = false;
   document.getElementById('user-pass-hint').style.display = 'block';
@@ -5206,7 +5230,8 @@ function renderView(viewName) {
       const body = {
         username: document.getElementById('user-name').value,
         password: document.getElementById('user-pass').value,
-        role: document.getElementById('user-role').value
+        role: document.getElementById('user-role').value,
+        empresa_id: document.getElementById('user-empresa')?.value || null
       };
 
       let result;
