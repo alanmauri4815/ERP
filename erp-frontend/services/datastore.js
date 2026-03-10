@@ -1,5 +1,6 @@
 /* ============================================
    SUPABASE DATASTORE — Motor de Datos Real
+   Multi-Tenant: filtra por empresa_id
    ============================================ */
 
 import { supabase } from '../config/supabase.js';
@@ -7,6 +8,22 @@ import { supabase } from '../config/supabase.js';
 class DataStore {
     constructor() {
         this.listeners = [];
+        this._empresa_id = null;
+    }
+
+    // --- Multi-Tenant: obtener empresa_id del usuario logueado ---
+    get empresa_id() {
+        if (this._empresa_id) return this._empresa_id;
+        try {
+            const user = JSON.parse(localStorage.getItem('erp_user'));
+            return user?.empresa_id || 1;
+        } catch {
+            return 1;
+        }
+    }
+
+    set empresa_id(val) {
+        this._empresa_id = val;
     }
 
     // --- Suscripciones para actualizar la UI ---
@@ -26,6 +43,7 @@ class DataStore {
         const { data, error } = await supabase
             .from(table)
             .select('*')
+            .eq('empresa_id', this.empresa_id)
             .order('created_at', { ascending: false });
 
         if (error) {
@@ -40,6 +58,7 @@ class DataStore {
             .from(table)
             .select('*')
             .eq('id', id)
+            .eq('empresa_id', this.empresa_id)
             .single();
 
         if (error) {
@@ -51,9 +70,11 @@ class DataStore {
 
     // --- Operaciones de Escritura (Create) ---
     async insert(table, item) {
+        // Inyectar empresa_id automáticamente
+        const itemConEmpresa = { ...item, empresa_id: this.empresa_id };
         const { data, error } = await supabase
             .from(table)
-            .insert([item])
+            .insert([itemConEmpresa])
             .select();
 
         if (error) {
@@ -70,6 +91,7 @@ class DataStore {
             .from(table)
             .update(updates)
             .eq('id', id)
+            .eq('empresa_id', this.empresa_id)
             .select();
 
         if (error) {
@@ -85,7 +107,8 @@ class DataStore {
         const { error } = await supabase
             .from(table)
             .delete()
-            .eq('id', id);
+            .eq('id', id)
+            .eq('empresa_id', this.empresa_id);
 
         if (error) {
             console.error(`Error al eliminar en ${table}:`, error.message);
@@ -100,7 +123,8 @@ class DataStore {
         const { data, error } = await supabase
             .from(table)
             .select('*')
-            .eq(column, value);
+            .eq(column, value)
+            .eq('empresa_id', this.empresa_id);
 
         if (error) {
             console.error(`Error en query sobre ${table}:`, error.message);

@@ -208,7 +208,7 @@ setInterval(() => {
     }
 }, 30 * 60 * 1000);
 
-// Auth Middleware
+// Auth Middleware (Multi-Tenant: extrae empresa_id del JWT)
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -218,6 +218,7 @@ const authenticateToken = (req, res, next) => {
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return res.status(403).json({ error: 'Token inválido o expirado.' });
         req.user = user;
+        req.empresa_id = user.empresa_id || 1; // Fallback a empresa 1 para compatibilidad
         next();
     });
 };
@@ -238,12 +239,19 @@ const checkSuperAdmin = (req, res, next) => {
     }
 };
 
+// --- Multi-Tenant: Lista de Empresas (público, sin auth) ---
+app.get('/api/empresas', async (req, res) => {
+    const { data, error } = await supabase.from('empresas').select('id, nombre').eq('activa', true).order('nombre');
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data || []);
+});
+
 // Auth Routes
 app.post('/api/auth/register', authenticateToken, checkAdmin, async (req, res) => {
     const { username, password } = req.body;
     try {
         const hashedPassword = await bcrypt.hash(password, 10);
-        const { error } = await supabase.from(T.USERS).insert({ username, password: hashedPassword });
+        const { error } = await supabase.from(T.USERS).insert({ username, password: hashedPassword, empresa_id: req.empresa_id });
         if (error) throw error;
         res.json({ success: true, message: 'Usuario registrado exitosamente.' });
     } catch (e) {
@@ -252,20 +260,43 @@ app.post('/api/auth/register', authenticateToken, checkAdmin, async (req, res) =
 });
 
 app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
-    const { username, password } = req.body;
+    const { username, password, empresa_id } = req.body;
     try {
-        const { data: user, error } = await supabase.from(T.USERS).select('*').eq('username', username).single();
+        // Multi-Tenant: buscar usuario por username Y empresa_id
+        let query = supabase.from(T.USERS).select('*').eq('username', username);
+        if (empresa_id) query = query.eq('empresa_id', empresa_id);
+        const { data: user, error } = await query.single();
+
         if (error) {
             console.error('Login DB Error:', error.message, 'Code:', error.code);
-            return res.status(401).json({ error: 'Error de base de datos', details: error.message, code: error.code });
+            return res.status(401).json({ error: 'Usuario no encontrado en esta empresa.', details: error.message, code: error.code });
         }
         if (!user) return res.status(401).json({ error: 'Usuario no encontrado.' });
 
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) return res.status(401).json({ error: 'Contraseña incorrecta.' });
 
-        const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '24h' });
-        res.json({ success: true, token, user: { username: user.username, role: user.role } });
+        // Multi-Tenant: incluir empresa_id en el JWT
+        const userEmpresaId = user.empresa_id || 1;
+        const token = jwt.sign(
+            { id: user.id, username: user.username, role: user.role, empresa_id: userEmpresaId },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        // Obtener nombre de la empresa
+        const { data: empresa } = await supabase.from('empresas').select('nombre').eq('id', userEmpresaId).single();
+
+        res.json({
+            success: true,
+            token,
+            user: {
+                username: user.username,
+                role: user.role,
+                empresa_id: userEmpresaId,
+                empresa_nombre: empresa?.nombre || 'Empresa'
+            }
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -297,6 +328,7 @@ app.get('/api/products', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from(T.PRODUCTS)
         .select('*')
+        .eq('empresa_id', req.empresa_id)
         .neq('code', '')
         .not('code', 'is', null);
 
@@ -308,6 +340,7 @@ app.get('/api/raw-materials', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from(T.MP)
         .select('*')
+        .eq('empresa_id', req.empresa_id)
         .neq('code', '')
         .not('code', 'is', null);
 
@@ -319,7 +352,7 @@ app.post('/api/raw-materials', authenticateToken, async (req, res) => {
     const { code, name, unit, cost_net, iva, total, color, size, parent_code, type, batch_size } = req.body;
     const { data, error } = await supabase.from(T.MP).insert({
         code, name, unit, cost_net, iva, total, color, size, parent_code, type: type || 'MP',
-        batch_size: batch_size || 1
+        batch_size: batch_size || 1, empresa_id: req.empresa_id
     }).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, data });
@@ -342,14 +375,14 @@ app.delete('/api/raw-materials/:code', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/providers', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase.from(T.PROVIDERS).select('*').order('name');
+    const { data, error } = await supabase.from(T.PROVIDERS).select('*').eq('empresa_id', req.empresa_id).order('name');
     if (error) return res.status(500).json({ error: error.message });
     res.json(data || []);
 });
 
 app.post('/api/providers', authenticateToken, async (req, res) => {
     const { rut, name, address, contact, phone, email, notes } = req.body;
-    const { data, error } = await supabase.from(T.PROVIDERS).insert({ rut, name, address, contact, phone, email, notes }).select().single();
+    const { data, error } = await supabase.from(T.PROVIDERS).insert({ rut, name, address, contact, phone, email, notes, empresa_id: req.empresa_id }).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Proveedor guardado correctamente', data });
 });
@@ -369,14 +402,14 @@ app.delete('/api/providers/:id', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/clients', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase.from(T.CLIENTS).select('*').order('name');
+    const { data, error } = await supabase.from(T.CLIENTS).select('*').eq('empresa_id', req.empresa_id).order('name');
     if (error) return res.status(500).json({ error: error.message });
     res.json(data || []);
 });
 
 app.post('/api/clients', authenticateToken, async (req, res) => {
     const { name, address, phone, email, rut, notes } = req.body;
-    const { data, error } = await supabase.from(T.CLIENTS).insert({ name, address, phone, email, rut, notes }).select().single();
+    const { data, error } = await supabase.from(T.CLIENTS).insert({ name, address, phone, email, rut, notes, empresa_id: req.empresa_id }).select().single();
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true, message: 'Cliente guardado correctamente', data });
 });
@@ -398,7 +431,7 @@ app.delete('/api/clients/:id', authenticateToken, async (req, res) => {
 
 // ========== PAYMENT MACHINES ==========
 app.get('/api/payment-machines', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase.from(T.PAYMENT_MACHINES).select('*').order('name');
+    const { data, error } = await supabase.from(T.PAYMENT_MACHINES).select('*').eq('empresa_id', req.empresa_id).order('name');
     if (error) return res.status(500).json({ error: error.message });
     res.json(data || []);
 });
@@ -581,6 +614,7 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
         const { data: history, error } = await supabase
             .from(T.PURCHASES)
             .select('*')
+            .eq('empresa_id', req.empresa_id)
             .order('date', { ascending: false });
 
         if (error) throw error;
@@ -648,6 +682,7 @@ app.get(['/api/history/sales', '/api/sales'], authenticateToken, async (req, res
     const { data: history, error } = await supabase
         .from(T.SALES)
         .select(`*, clients:"${T.CLIENTS}"(name, rut)`)
+        .eq('empresa_id', req.empresa_id)
         .order('date', { ascending: false });
 
     if (error) return res.status(500).json({ error: error.message });
@@ -679,6 +714,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
     const { data: history, error } = await supabase
         .from(T.PRODUCTION)
         .select('*')
+        .eq('empresa_id', req.empresa_id)
         .order('date', { ascending: false });
 
     if (error) return res.status(500).json({ error: error.message });
@@ -725,7 +761,8 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             payment_method: payment_method || null,
             account_id: account_id || null,
             document_type: document_type || 'factura',
-            document_number: document_number || null
+            document_number: document_number || null,
+            empresa_id: req.empresa_id
         };
 
         // Try to insert with ALL columns first

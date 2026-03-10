@@ -1339,6 +1339,12 @@ const views = {
         <h1 style="text-align: center; margin-bottom: 2rem; font-size: 1.8rem; background: linear-gradient(45deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">ERP Universal</h1>
         <form id="login-form">
           <div class="form-group">
+            <label>Empresa</label>
+            <select id="login-empresa" required style="padding: 0.8rem; width: 100%; background: var(--surface-light); border: 1px solid var(--border); border-radius: 0.5rem; color: var(--text); font-size: 1rem">
+              <option value="">Cargando empresas...</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>Usuario</label>
             <input type="text" id="login-user" required placeholder="Tu nombre de usuario" style="padding: 0.8rem">
           </div>
@@ -4419,8 +4425,23 @@ function renderView(viewName) {
   }
 
   if (viewName === 'login') {
+    // Cargar lista de empresas desde el backend
+    fetch(`${API_BASE}/empresas`)
+      .then(r => r.json())
+      .then(empresas => {
+        const select = document.getElementById('login-empresa');
+        if (select && Array.isArray(empresas)) {
+          select.innerHTML = empresas.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+        }
+      })
+      .catch(() => {
+        const select = document.getElementById('login-empresa');
+        if (select) select.innerHTML = '<option value="1">Empresa Principal</option>';
+      });
+
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const empresa_id = parseInt(document.getElementById('login-empresa').value);
       const username = document.getElementById('login-user').value;
       const password = document.getElementById('login-pass').value;
       const errorEl = document.getElementById('login-error');
@@ -4429,7 +4450,7 @@ function renderView(viewName) {
         const res = await fetch(`${API_BASE}/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify({ username, password, empresa_id })
         }).then(r => r.json());
 
         if (res.token) {
