@@ -1,4 +1,4 @@
-console.log('ERP Universal v1.2.2 [FIXED-MULTI-TENANCY-2026-03-10]');
+console.log('ERP Universal v1.2.3 [PIPELINE-RENAME-FIX]');
 import './style.css'
 import './accounting.css'
 import Chart from 'chart.js/auto'
