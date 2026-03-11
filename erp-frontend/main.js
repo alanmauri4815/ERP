@@ -746,7 +746,7 @@ const views = {
 
         <div class="form-actions">
           <button type="button" onclick="this.closest('.modal').style.display='none'" style="background: var(--surface-light)">Cancelar</button>
-          <button id="btn-submit-purchase" style="background: var(--primary); padding: 0.8rem 2rem; font-weight: 700">Registrar Registro</button>
+          <button id="btn-submit-purchase" style="background: var(--primary); padding: 0.8rem 2rem; font-weight: 700">Registrar Compra</button>
         </div>
       </div>
     </div>
@@ -1914,7 +1914,7 @@ views.pipeline = () => {
         <line x1="12" y1="4" x2="12" y2="20"></line>
       </svg>
       <div>
-        <h1 style="margin:0">Pipeline de Proyectos</h1>
+        <h1 style="margin:0">Gestión de Procesos</h1>
         <div class="date-display" style="font-size:0.8rem; opacity:0.7">Cadena de Valor — Método Pull</div>
       </div>
     </div>
@@ -1931,7 +1931,7 @@ views.pipeline = () => {
       <div style="font-size:1.8rem; font-weight:700; color:#10b981">${activeQuotes}</div>
     </div>
     <div class="card" style="text-align:center; padding:1rem">
-      <div style="font-size:0.8rem; color:var(--text-muted)">Valor Total Pipeline</div>
+      <div style="font-size:0.8rem; color:var(--text-muted)">Valor Total Procesos</div>
       <div style="font-size:1.5rem; font-weight:700; color:var(--primary)">$${Math.round(totalValue).toLocaleString()}</div>
     </div>
     <div class="card" style="text-align:center; padding:1rem">
@@ -4505,25 +4505,25 @@ function renderView(viewName) {
   // --- Branding Dinámico v2.2 ---
   function forceBranding() {
     if (viewName === 'login') return;
-    
+
     const empresaNombre = currentUser?.empresa_nombre || 'ERP Universal';
     const userDisplay = document.getElementById('display-username');
     const sidebarEmpresa = document.getElementById('sidebar-empresa-name');
     const footerEmpresa = document.getElementById('footer-empresa-name');
     const dashStrong = document.querySelector('.card p strong');
-    
+
     if (userDisplay && currentUser) userDisplay.textContent = currentUser.username;
-    
+
     if (sidebarEmpresa) sidebarEmpresa.textContent = empresaNombre;
     else {
-        const logoSpan = document.querySelector('.logo span');
-        if (logoSpan) logoSpan.textContent = empresaNombre;
+      const logoSpan = document.querySelector('.logo span');
+      if (logoSpan) logoSpan.textContent = empresaNombre;
     }
-    
+
     if (footerEmpresa) footerEmpresa.textContent = empresaNombre;
-    
+
     if (dashStrong && dashStrong.textContent.includes('Ross')) {
-        dashStrong.textContent = empresaNombre;
+      dashStrong.textContent = empresaNombre;
     }
   }
 
@@ -6079,9 +6079,9 @@ function getTableItems(prefix) {
     const priceEl = row.querySelector('.item-price');
     const qtyEl = row.querySelector('.item-qty');
     const subtotalEl = row.querySelector('.item-subtotal');
-    
+
     if (!codeEl || !priceEl || !qtyEl || !subtotalEl) return;
-    
+
     const code = codeEl.value;
     const price = parseNum(priceEl.value);
     const qty = parseNum(qtyEl.value);
