@@ -3948,6 +3948,23 @@ window.viewQuotation = async (id) => {
       const totalEstimatedCost = q.items.reduce((sum, it) => sum + (it.total_cost || 0), 0);
       const totalRealPurchase = (q.related_purchases || []).reduce((sum, p) => sum + (p.total || 0), 0);
       const totalRealSales = (q.related_sales || []).reduce((sum, s) => sum + (s.total || 0), 0);
+      
+      // Indicadores de IVA y Utilidad Neta solicitados por el usuario
+      const totalIvaSales = (q.related_sales || []).reduce((sum, s) => sum + (s.iva || 0), 0);
+      const totalIvaPurchases = (q.related_purchases || []).reduce((sum, p) => {
+        // Solo IVA recuperable de facturas
+        return (p.document_type === 'factura') ? sum + (p.iva || 0) : sum;
+      }, 0);
+      const ivaDiff = totalIvaSales - totalIvaPurchases;
+
+      const totalNetSales = (q.related_sales || []).reduce((sum, s) => sum + (s.net || 0), 0);
+      const totalNetCostPurchases = (q.related_purchases || []).reduce((sum, p) => {
+        // Si es boleta, el costo real para el negocio es el TOTAL (no recupera IVA)
+        // Si es factura, el costo real es el NETO (el IVA es crédito fiscal)
+        return (p.document_type === 'boleta') ? sum + (p.total || 0) : sum + (p.net || 0);
+      }, 0);
+      const netProfit = totalNetSales - totalNetCostPurchases;
+
       const balance = totalRealSales - totalRealPurchase;
 
       tableHtml = `
@@ -4006,11 +4023,33 @@ window.viewQuotation = async (id) => {
             </div>
           </div>
 
-          <div class="card" style="margin-top:2rem; background: ${balance >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; border: 1px solid ${balance >= 0 ? 'var(--success)' : 'var(--danger)'}">
+          <div class="card" style="margin-top:2rem; background:rgba(var(--primary-rgb),0.05); border:1px dashed var(--border)">
+            <h4 style="margin-bottom:1rem">🧮 Detalle Impositivo y Neto</h4>
+            <div class="grid-4" style="gap:1rem">
+              <div>
+                <small style="opacity:0.7">IVA de Ventas</small>
+                <div style="font-weight:700; color:var(--success)">$ ${Math.round(totalIvaSales).toLocaleString()}</div>
+              </div>
+              <div>
+                <small style="opacity:0.7">IVA de Compras (S. Fac)</small>
+                <div style="font-weight:700; color:var(--danger)">$ ${Math.round(totalIvaPurchases).toLocaleString()}</div>
+              </div>
+              <div>
+                <small style="opacity:0.7">Diferencia IVA por Pagar</small>
+                <div style="font-weight:700; color:${ivaDiff >= 0 ? 'var(--danger)' : 'var(--success)'}">$ ${Math.round(ivaDiff).toLocaleString()}</div>
+              </div>
+              <div style="background:var(--surface-light); padding:0.5rem; border-radius:8px">
+                <small style="opacity:0.7; font-weight:700">Utilidad Neta (Sin IVAs)</small>
+                <div style="font-size:1.1rem; font-weight:800; color:${netProfit >= 0 ? 'var(--success)' : 'var(--danger)'}">$ ${Math.round(netProfit).toLocaleString()}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:1.5rem; background: ${balance >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; border: 1px solid ${balance >= 0 ? 'var(--success)' : 'var(--danger)'}">
             <div style="display:flex; justify-content:space-between; align-items:center">
               <div>
                 <h4 style="margin:0">Balance del Proyecto (Margen Bruto Real)</h4>
-                <p style="font-size:0.85rem; opacity:0.8">Ingresos totales menos gastos reales vinculados.</p>
+                <p style="font-size:0.85rem; opacity:0.8">Ingresos totales menos gastos reales vinculados (IVA Inc).</p>
               </div>
               <div style="font-size:2rem; font-weight:800; color:${balance >= 0 ? 'var(--success)' : 'var(--danger)'}">
                 $ ${Math.round(balance).toLocaleString()}
