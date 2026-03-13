@@ -1080,7 +1080,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
 
         // 2. Update purchase record (Robustly)
         const purchaseData = {
-            provider_id: providerId || null,
+            provider_id: providerId || req.body.provider_id || null,
+            date: date || new Date().toISOString().split('T')[0],
             net, iva, total,
             payment_method: payment_method || null,
             account_id: account_id || null,
@@ -1276,16 +1277,17 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 app.put('/api/sales/:id', authenticateToken, async (req, res) => {
     const saleId = req.params.id;
     const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number } = req.body;
-    const date = req.body.date || new Date().toISOString().split('T')[0];
+    const dateFromBody = req.body.date || req.body.fecha;
 
     try {
-        // 1. Get current sale date for accounting
+        // 1. Get current sale date for accounting fallback if not provided in body
         const { data: existingSale } = await supabase.from(T.SALES).select('date').eq('id', saleId).single();
-        const date = existingSale?.date || new Date().toISOString().split('T')[0];
+        const targetDate = dateFromBody || (existingSale?.date ? existingSale.date.split('T')[0] : new Date().toISOString().split('T')[0]);
 
         // 2. Update sale record
         let updatePayload = {
-            client_id: clientId || null,
+            date: targetDate,
+            client_id: clientId || req.body.client_id || null,
             net, iva, total,
             discount: discount || 0,
             commission: commission || 0,
@@ -1362,7 +1364,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
         }
 
         await createAccountingEntry({
-            date,
+            date: targetDate,
             description: `Venta de productos (${event_name || 'General'})`,
             type: 'venta_' + (category || 'push'),
             document_number: saleId.toString(),

@@ -171,13 +171,13 @@ async function fetchData() {
       // Nuevas tablas profesionalizadas
       proPlanCuentas, proAsientos, proMovimientos
     ] = await Promise.all([
-      apiFetch('/products'),
-      apiFetch('/raw-materials'),
-      apiFetch('/providers'),
-      apiFetch('/sales'),
-      apiFetch('/purchases'),
+      apiFetch(`/products?t=${Date.now()}`),
+      apiFetch(`/raw-materials?t=${Date.now()}`),
+      apiFetch(`/providers?t=${Date.now()}`),
+      apiFetch(`/sales?t=${Date.now()}`),
+      apiFetch(`/purchases?t=${Date.now()}`),
       apiFetch(`/production?t=${Date.now()}`),
-      apiFetch('/stats'),
+      apiFetch(`/stats?t=${Date.now()}`),
       (currentUser.role === 'superadmin') ? apiFetch('/users') : Promise.resolve([]),
       apiFetch('/recipes'),
       apiFetch('/accounts'),
@@ -3399,6 +3399,21 @@ window.openQuotationModal = () => {
   document.getElementById('quote-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('quote-delivery-time').value = '';
   document.getElementById('quote-external-id').value = '';
+
+  // Auto-increment logic
+  if (state.quotations && state.quotations.length > 0) {
+    const ids = state.quotations
+      .map(q => parseInt(q.external_quote_id))
+      .filter(id => !isNaN(id));
+    if (ids.length > 0) {
+      document.getElementById('quote-external-id').value = Math.max(...ids) + 1;
+    } else {
+      document.getElementById('quote-external-id').value = '1';
+    }
+  } else {
+    document.getElementById('quote-external-id').value = '1';
+  }
+
   document.getElementById('quote-purchase-order').value = '';
   document.getElementById('quote-utility').value = '30';
   document.getElementById('quote-budget').value = '0';
@@ -3989,7 +4004,7 @@ window.viewQuotation = async (id) => {
               <h4 style="margin-bottom:0.8rem">📦 Compras Asociadas</h4>
               ${(q.related_purchases || []).length === 0 ? '<p style="opacity:0.5; font-size:0.9rem">No hay compras vinculadas.</p>' : `
                 <table style="font-size:0.85rem">
-                  <thead><tr><th>ID</th><th>Fecha</th><th>Proveedor</th><th>Total</th></tr></thead>
+                  <thead><tr><th>ID</th><th>Fecha</th><th>Proveedor</th><th style="text-align:right">Total</th></tr></thead>
                   <tbody>
                     ${q.related_purchases.map(p => `
                       <tr>
@@ -4000,6 +4015,12 @@ window.viewQuotation = async (id) => {
                       </tr>
                     `).join('')}
                   </tbody>
+                  <tfoot>
+                    <tr style="background:rgba(var(--primary-rgb),0.05); font-weight:700; border-top: 1px solid var(--border)">
+                      <td colspan="3" style="text-align:right; padding: 0.5rem">TOTAL COMPRAS:</td>
+                      <td style="text-align:right; padding: 0.5rem">$ ${Math.round(totalRealPurchase).toLocaleString()}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               `}
             </div>
@@ -4007,7 +4028,7 @@ window.viewQuotation = async (id) => {
               <h4 style="margin-bottom:0.8rem">💰 Ventas Realizadas</h4>
               ${(q.related_sales || []).length === 0 ? '<p style="opacity:0.5; font-size:0.9rem">No hay ventas vinculadas.</p>' : `
                 <table style="font-size:0.85rem">
-                  <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th>Total</th></tr></thead>
+                  <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th style="text-align:right">Total</th></tr></thead>
                   <tbody>
                     ${q.related_sales.map(s => `
                       <tr>
@@ -4018,6 +4039,12 @@ window.viewQuotation = async (id) => {
                       </tr>
                     `).join('')}
                   </tbody>
+                  <tfoot>
+                    <tr style="background:rgba(var(--primary-rgb),0.05); font-weight:700; border-top: 1px solid var(--border)">
+                      <td colspan="3" style="text-align:right; padding: 0.5rem">TOTAL VENTAS:</td>
+                      <td style="text-align:right; padding: 0.5rem">$ ${Math.round(totalRealSales).toLocaleString()}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               `}
             </div>
@@ -4095,9 +4122,14 @@ window.viewQuotation = async (id) => {
 
       tableHtml = `
         <div class="client-view-container">
-          <table class="item-table pvp-table">
+          <style>
+            .pvp-table-preview { width: 100%; border-collapse: collapse; background: white; color: black; }
+            .pvp-table-preview th, .pvp-table-preview td { border: 1px solid #000 !important; padding: 8px; }
+            .pvp-table-preview th { background: #eee !important; color: black !important; }
+          </style>
+          <table class="pvp-table-preview">
             <thead>
-              <tr style="background: var(--primary); color: white">
+              <tr>
                 <th style="width: 50px; text-align: center">Item</th>
                 <th>Detalle</th>
                 <th style="width: 140px; text-align: right">Precio Unit</th>
@@ -4366,9 +4398,9 @@ window.printQuotation = () => {
       </table>
 
       <table class="totals-table">
-        <tr><td class="label-cell">NETO</td><td style="text-align:right">$ ${Math.round(totalQuoteNet).toLocaleString('es-CL')}</td></tr>
-        <tr><td class="label-cell">IVA (19%)</td><td style="text-align:right">$ ${Math.round(totalQuoteIVA).toLocaleString('es-CL')}</td></tr>
-        <tr style="font-size:18px"><td class="label-cell" style="background:#eee">TOTAL</td><td style="text-align:right; background:#eee">$ ${Math.round(totalQuoteGross).toLocaleString('es-CL')}</td></tr>
+        <tr><td class="label-cell" style="border: 1.5px solid #000">NETO</td><td style="text-align:right; border: 1.5px solid #000">$ ${Math.round(totalQuoteNet).toLocaleString('es-CL')}</td></tr>
+        <tr><td class="label-cell" style="border: 1.5px solid #000">IVA (19%)</td><td style="text-align:right; border: 1.5px solid #000">$ ${Math.round(totalQuoteIVA).toLocaleString('es-CL')}</td></tr>
+        <tr style="font-size:18px"><td class="label-cell" style="background:#eee; border: 1.5px solid #000">TOTAL</td><td style="text-align:right; background:#eee; border: 1.5px solid #000">$ ${Math.round(totalQuoteGross).toLocaleString('es-CL')}</td></tr>
       </table>
 
       <div class="page-break"></div>
@@ -4377,13 +4409,21 @@ window.printQuotation = () => {
       <div class="page-header">
         <div class="logo-section">
           <img src="${window.LOGO_ROSS_B64 || ''}" class="logo-img" alt="Logo">
-          <div class="company-details"><h2>ROSS Confecciones</h2></div>
+          <div class="company-details">
+            <h2>ROSS Confecciones</h2>
+            <p>Rosa Huentemil Contreras</p>
+            <p>Fono: +569 98745436</p>
+            <p>Mail: ross.confecciones@gmail.com</p>
+          </div>
         </div>
         <div class="quote-meta">
           <p>COTIZACIÓN: ${q.external_quote_id || quoteDisplayId}</p>
+          ${q.purchase_order_id ? `<p>ORDEN DE COMPRA: ${q.purchase_order_id}</p>` : ''}
+          <p>Fecha documento: ${q.quote_date ? q.quote_date.split('-').reverse().join('-') : today}</p>
           <p>Página 2 de 2</p>
         </div>
       </div>
+      <div class="line-divider"></div>
 
       <h2 class="section-title">SERVICIOS INCLUIDOS:</h2>
       <ul style="list-style: none; font-size:14px; margin-left: 20px">
@@ -4574,18 +4614,46 @@ function renderView(viewName) {
   }
 
   if (viewName === 'login') {
-    // Cargar lista de empresas desde el backend
+    console.log('--- LOGIN VIEW INIT ---');
+    const select = document.getElementById('login-empresa');
+    
+    // Función de fallback seguro
+    const setFallback = () => {
+      console.warn('⚠️ Usando fallback de empresa por defecto');
+      const s = document.getElementById('login-empresa');
+      if (s) s.innerHTML = '<option value="1">Empresa Principal</option>';
+    };
+
+    // Timeout de seguridad: si en 5 segundos no hay respuesta, usar fallback
+    const timeoutId = setTimeout(() => {
+      const s = document.getElementById('login-empresa');
+      if (s && s.value === "") {
+        console.warn('⏱️ Fetch de empresas excedió el tiempo límite, activando fallback.');
+        setFallback();
+      }
+    }, 5000);
+
+    console.log(`📡 Solicitando empresas a: ${API_BASE}/empresas`);
     fetch(`${API_BASE}/empresas`)
-      .then(r => r.json())
+      .then(r => {
+        console.log(`📥 Respuesta recibida de empresas: status ${r.status}`);
+        if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
+        return r.json();
+      })
       .then(empresas => {
-        const select = document.getElementById('login-empresa');
-        if (select && Array.isArray(empresas)) {
-          select.innerHTML = empresas.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+        clearTimeout(timeoutId);
+        console.log('✅ Empresas cargadas:', empresas);
+        const s = document.getElementById('login-empresa');
+        if (s && Array.isArray(empresas) && empresas.length > 0) {
+          s.innerHTML = empresas.map(e => `<option value="${e.id}">${e.nombre}</option>`).join('');
+        } else {
+          setFallback();
         }
       })
-      .catch(() => {
-        const select = document.getElementById('login-empresa');
-        if (select) select.innerHTML = '<option value="1">Empresa Principal</option>';
+      .catch(err => {
+        clearTimeout(timeoutId);
+        console.error('❌ Error cargando empresas:', err);
+        setFallback();
       });
 
     document.getElementById('login-form').addEventListener('submit', async (e) => {
@@ -4909,6 +4977,8 @@ function renderView(viewName) {
         document_number: document.getElementById('sale-doc-number')?.value || null
       };
 
+      console.log('[DEBUG] Enviando Venta:', body);
+      if (!body.date) return alert('Por favor, ingrese una fecha válida.');
       if (body.items.length === 0) return alert('Debe agregar al menos un ítem');
 
       let res;
@@ -6317,10 +6387,31 @@ document.querySelectorAll('.nav-group-header').forEach(header => {
 });
 
 // 2. Set tooltip data attributes for collapsed mode
-document.querySelectorAll('.sidebar .nav-item').forEach(item => {
-  const textContent = item.textContent.trim();
-  item.setAttribute('data-tooltip', textContent);
-});
+function initSideBarTooltips() {
+  // Select both headers and items
+  document.querySelectorAll('.sidebar .nav-item, .sidebar .nav-group-header').forEach(item => {
+    // Try to find the specific text span
+    const textElement = item.querySelector('.sidebar-text');
+    let text = "";
+    
+    if (textElement) {
+      text = textElement.textContent.trim();
+    } else {
+      // Fallback: clone and remove script/svg to get pure text
+      const clone = item.cloneNode(true);
+      clone.querySelectorAll('svg, i, .chevron').forEach(el => el.remove());
+      text = clone.textContent.trim();
+    }
+
+    if (text && text.length > 0) {
+      item.setAttribute('data-tooltip', text);
+    }
+  });
+}
+
+initSideBarTooltips();
+setTimeout(initSideBarTooltips, 500);
+setTimeout(initSideBarTooltips, 2000);
 
 // 3. Desktop collapse toggle
 const collapseBtn = document.getElementById('sidebar-collapse-btn');

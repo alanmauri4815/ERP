@@ -136,14 +136,22 @@ body {
 
 /* Group Styles */
 .nav-group {
-    margin-bottom: 0.75rem;
+    margin-bottom: 1rem;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar.collapsed .nav-group {
+    overflow: visible !important;
 }
 
 .nav-group-header {
+    padding: 0.8rem 1rem;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
+    gap: 0.75rem;
     color: var(--text-muted);
     font-size: 0.75rem;
     font-weight: 700;
@@ -152,6 +160,15 @@ body {
     cursor: pointer;
     border-radius: 0.5rem;
     transition: all 0.2s ease;
+    white-space: nowrap;
+    position: relative; /* Required for absolute tooltip positioning */
+}
+
+.nav-group-header i {
+    width: 18px;
+    text-align: center;
+    font-size: 1rem;
+    flex-shrink: 0;
 }
 
 .nav-group-header:hover {
@@ -198,6 +215,12 @@ body {
     gap: 0.75rem;
     font-weight: 500;
     font-size: 0.9rem;
+    white-space: nowrap;
+    position: relative; /* Required for absolute tooltip positioning */
+}
+
+.sidebar:not(.collapsed) .nav-item {
+    overflow: hidden;
 }
 
 .sidebar .nav-item svg {
@@ -222,14 +245,27 @@ body {
 }
 
 /* Main Content */
+/* Main Content Layout */
+#app {
+    display: flex;
+    min-height: 100vh;
+    width: 100vw;
+}
+
+.sidebar {
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+}
+
 .main-content {
-    flex: 1 1 auto !important;
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    padding: 2.5rem 3rem !important;
-    width: calc(100vw - var(--sidebar-width)) !important;
-    max-width: none !important;
-    min-width: 0;
+    padding: 2.5rem 3rem;
+    transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background-color: var(--background);
+    overflow-x: hidden;
 }
 
 header {
@@ -955,18 +991,30 @@ button:hover {
     border: 1px solid var(--border);
     color: var(--text-muted);
     cursor: pointer;
-    margin-left: auto;
-    transition: all 0.3s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     flex-shrink: 0;
     padding: 0;
     font-size: 0.75rem;
+    z-index: 10;
+    margin-left: auto; /* Pushes to the right in expanded mode */
 }
 
 .sidebar-collapse-btn:hover {
     background: var(--primary);
     color: white;
+    border-color: var(--primary);
     transform: scale(1.1);
 }
+
+.sidebar-collapse-btn i {
+    transition: transform 0.3s ease;
+}
+
+.sidebar.collapsed .sidebar-collapse-btn i {
+    transform: rotate(180deg);
+}
+
+
 
 /* ============================================
    SIDEBAR TEXT (hideable elements)
@@ -1004,9 +1052,13 @@ button:hover {
 .sidebar.collapsed .sidebar-badge {
     opacity: 0;
     width: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
     overflow: hidden;
     visibility: hidden;
     position: absolute;
+    transition: none; /* Instant hide to avoid awkward wrapping */
 }
 
 .sidebar.collapsed .logo {
@@ -1016,12 +1068,18 @@ button:hover {
 }
 
 .sidebar.collapsed .sidebar-collapse-btn {
-    display: none;
+    position: absolute;
+    right: -14px;
+    top: 24px;
+    background: var(--surface-elevated);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
 .sidebar.collapsed .nav-group-header {
     justify-content: center;
     padding: 0.5rem;
+    position: relative !important;
+    overflow: visible !important;
 }
 
 .sidebar.collapsed .nav-group-header svg.chevron {
@@ -1030,9 +1088,13 @@ button:hover {
 
 .sidebar.collapsed .nav-item {
     justify-content: center;
-    padding: 0.7rem;
+    padding: 0;
+    min-height: 48px; /* Consistent height for tooltip centering */
     gap: 0;
-    position: relative;
+    position: relative !important;
+    overflow: visible !important;
+    display: flex;
+    align-items: center;
 }
 
 .sidebar.collapsed .nav-item:hover {
@@ -1052,36 +1114,106 @@ button:hover {
     padding: 0 0.35rem 1.5rem;
 }
 
-/* Tooltip on hover when collapsed */
-.sidebar.collapsed .nav-item::after {
+/* TOOLTIP ("Etiqueta Volante") Premium Style */
+.sidebar.collapsed .nav-item::after,
+.sidebar.collapsed .nav-group-header::after {
     content: attr(data-tooltip);
     position: absolute;
-    left: calc(100% + 12px);
-    top: 50%;
-    transform: translateY(-50%);
-    background: var(--surface-elevated);
-    color: var(--text);
-    padding: 0.4rem 0.75rem;
-    border-radius: 8px;
-    font-size: 0.8rem;
-    font-weight: 500;
+    left: 100% !important;
+    top: 50% !important;
+    transform: translateY(-50%) translateX(0px) !important;
+    margin-left: 15px !important;
+    
+    /* Aesthetics */
+    background: #11111a;
+    color: #ffffff;
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
     white-space: nowrap;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-    border: 1px solid var(--border);
+    
+    /* Behavior */
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
-    transition: opacity 0.2s ease;
-    z-index: 200;
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1);
+    z-index: 1000000;
+}
+
+/* Tooltip Arrow */
+.sidebar.collapsed .nav-item::before,
+.sidebar.collapsed .nav-group-header::before {
+    content: "";
+    position: absolute;
+    left: 100% !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    margin-left: 7px !important;
+    border: 5px solid transparent;
+    border-right-color: #11111a;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    z-index: 1000000;
+}
+
+.sidebar.collapsed .nav-item:hover::after,
+.sidebar.collapsed .nav-group-header:hover::after,
+.sidebar.collapsed .nav-item:hover::before,
+.sidebar.collapsed .nav-group-header:hover::before {
+    opacity: 1;
+    visibility: visible;
 }
 
 .sidebar.collapsed .nav-item:hover::after {
+    margin-left: 17px !important;
+}
+
+/* Sub-menu identification in collapsed mode */
+.sidebar.collapsed .nav-group-content {
+    padding-left: 0;
+    border-left: none;
+    overflow: visible !important; /* Critical for showing sub-item tooltips */
+}
+
+.sidebar.collapsed .nav-group-content .nav-item {
+    position: relative;
+    opacity: 0.7;
+}
+
+.sidebar.collapsed .nav-group-content .nav-item:hover {
     opacity: 1;
 }
 
-/* Main content adapts to collapsed sidebar */
-.sidebar.collapsed ~ .main-content {
-    width: calc(100vw - var(--sidebar-collapsed-width)) !important;
+.sidebar.collapsed .nav-group-content .nav-item::before {
+    content: '';
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--primary);
+    transform: translateY(-50%);
+    opacity: 0.3;
 }
+
+.sidebar.collapsed .nav-item.active {
+    background: rgba(var(--primary-rgb), 0.15);
+}
+
+.sidebar.collapsed .nav-item.active::after {
+    border-left: 2px solid var(--primary);
+    border-radius: 0 6px 6px 0;
+}
+
+
+/* Main content adapts automatically via flex:1, but we can add specific adjustments if needed */
+/* Main content adapts automatically via flex:1 */
 
 /* ============================================
    RESPONSIVE — MOBILE (< 768px)
