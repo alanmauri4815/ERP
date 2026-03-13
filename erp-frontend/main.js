@@ -4202,10 +4202,12 @@ window.viewQuotation = async (id) => {
         const displayAddress = q.address || clientInfo.address || '-';
         return `
               <div><p><strong>Cliente:</strong> ${clientInfo.name || q.name || 'Varios'}</p></div>
+              <div><p><strong>ID Cotización:</strong> <span style="color:var(--secondary); font-weight:700">${q.external_quote_id || '-'}</span></p></div>
               <div><p><strong>RUT:</strong> ${displayRut}</p></div>
+              <div><p><strong>Orden Compra (OC):</strong> ${q.purchase_order_id || '-'}</p></div>
               <div><p><strong>Dirección:</strong> ${displayAddress}</p></div>
               <div><p><strong>Fecha Emisión:</strong> ${q.quote_date ? new Date(q.quote_date).toLocaleDateString() : '-'}</p></div>
-              <div><p><strong>Plazo de Entrega:</strong> ${q.delivery_time || 'No especificado'}</p></div>
+              <div style="grid-column: span 2"><p><strong>Plazo de Entrega:</strong> ${q.delivery_time || 'No especificado'}</p></div>
             `;
       })()}
         </div>
