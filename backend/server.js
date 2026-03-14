@@ -1114,17 +1114,31 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             for (let i = 0; i < items.length; i++) {
                 const item = items[i];
                 if (item.mpCode && item.quantity > 0) {
-                    await supabase.from(T.PURCHASE_ITEMS).insert({
+                    const insertItem = {
                         purchase_id: purchaseId,
                         item_number: i + 1,
                         mp_code: item.mpCode,
                         quantity: item.quantity,
                         unit_price: item.unitPrice,
                         subtotal: item.subtotal
-                    });
+                    };
 
-                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
-                    await supabase.from(T.MP).update({ stock: (rm?.stock || 0) + item.quantity }).eq('code', item.mpCode);
+                    if (item.mpCode === '__otros__') {
+                        insertItem.custom_name = item.customName || 'Producto Eventual';
+                        insertItem.mp_code = '__otros__';
+                        try {
+                            await supabase.from(T.PURCHASE_ITEMS).insert(insertItem);
+                        } catch (e) {
+                            delete insertItem.custom_name;
+                            await supabase.from(T.PURCHASE_ITEMS).insert(insertItem);
+                        }
+                    } else {
+                        await supabase.from(T.PURCHASE_ITEMS).insert(insertItem);
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
+                        if (rm) {
+                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + item.quantity }).eq('code', item.mpCode);
+                        }
+                    }
                 }
             }
         }

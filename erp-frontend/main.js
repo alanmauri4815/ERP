@@ -2423,6 +2423,9 @@ window.editTransaction = (type, id) => {
       if (docEl) docEl.value = transaction.document_type || 'factura';
       if (projectEl) projectEl.value = transaction.quotation_id || transaction.project_ref || '';
 
+      const docNumEl = document.getElementById('pur-doc-number');
+      if (docNumEl) docNumEl.value = transaction.document_number || '';
+
       if (transaction.type === 'expense') {
         if (descEl) descEl.value = transaction.description || '';
         if (expTotalEl) expTotalEl.value = transaction.total || 0;
@@ -2460,8 +2463,14 @@ window.editTransaction = (type, id) => {
 
           if (codeSel) {
             codeSel.value = type === 'sale' ? item.product_code : item.mp_code;
-            // Trigger change to populate names/prices if needed
-            // codeSel.dispatchEvent(new Event('change')); 
+            if (codeSel.value === '__otros__' || (!codeSel.value && item.custom_name)) {
+                codeSel.value = '__otros__';
+                const customNameInput = row.querySelector('.item-custom-name');
+                if (customNameInput) {
+                    customNameInput.style.display = 'block';
+                    customNameInput.value = item.custom_name || item.product_name || item.mp_name || '';
+                }
+            }
           }
           if (priceInp) priceInp.value = item.unit_price || 0;
           if (qtyInp) qtyInp.value = item.quantity || 0;
@@ -4832,6 +4841,10 @@ function renderView(viewName) {
       }
     };
 
+    document.getElementById('pur-doc-type')?.addEventListener('change', () => {
+        if (typeof calculateTotals === 'function') calculateTotals('pur');
+    });
+
     window.openPurchaseModal = function () {
       const modal = document.getElementById('buy-modal');
       if (modal) modal.style.display = 'flex';
@@ -6152,7 +6165,12 @@ function calculateTotals(prefix) {
     if (realIncomeDisplay) realIncomeDisplay.textContent = realIncome.toLocaleString();
   } else {
     // For purchases
-    iva = Math.round(net * 0.19);
+    const docType = document.getElementById('pur-doc-type')?.value;
+    if (docType === 'boleta' || docType === 'n/a') {
+      iva = 0;
+    } else {
+      iva = Math.round(net * 0.19);
+    }
     total = net + iva;
   }
 
