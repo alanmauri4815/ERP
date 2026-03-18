@@ -15,7 +15,9 @@ export async function erpFetch(endpoint, options = {}) {
     };
 
     try {
-        const response = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+        const url = `${API_BASE}${endpoint}`;
+        console.log(`[ERP-API] Fetching: ${url}`);
+        const response = await fetch(url, { ...options, headers });
         if (response.status === 401 || response.status === 403) return null;
         const data = await response.json();
         if (!response.ok) {

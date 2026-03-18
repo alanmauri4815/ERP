@@ -4,9 +4,35 @@ const { createClient } = require('@supabase/supabase-js');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
+
+// Global debug logger to file
+function debugLog(msg, data = null) {
+    const time = new Date().toISOString();
+    const logMsg = data ? `${time} - ${msg} - ${JSON.stringify(data)}\n` : `${time} - ${msg}\n`;
+    const logPath = path.join(__dirname, 'debug_accounting.log');
+    try {
+        fs.appendFileSync(logPath, logMsg);
+    } catch (e) {
+        console.error('Failed to write to log file:', e);
+    }
+    console.log(msg, data || '');
+}
+
+debugLog('--- Backend starting and ready for debugging ---');
 
 const app = express();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+// Global Request Logger
+app.use((req, res, next) => {
+    debugLog(`[TRAFFIC] ${req.method} ${req.url}`, {
+        headers: req.headers,
+        body: req.method !== 'GET' ? req.body : null
+    });
+    next();
+});
 
 const T = {
     MP: 'materias primas',
@@ -29,34 +55,56 @@ const T = {
     PAYMENT_MACHINES: 'payment_machines',
     LOGISTICS: 'logistica',
     LOGISTICS_ITEMS: 'logistica_items',
-    // Nuevas Tablas Contabilidad Pro
+    // Nuevas Tablas Contabilidad Pro (Compatibles con sistema anterior vía alias)
     PC_PLAN: 'plan_cuentas',
     PC_ASIENTOS: 'asientos',
-    PC_MOVIMIENTOS: 'asiento_movimientos'
+    PC_MOVIMIENTOS: 'asiento_movimientos',
+    COST_CENTERS: 'centros_costo',
+    // Aliases para compatibilidad con código antiguo
+    ACCOUNTING_ENTRIES: 'asientos',
+    ACCOUNTING_LINES: 'asiento_movimientos',
+    ACCOUNTING_ACCOUNTS: 'plan_cuentas'
 };
 
 // Accounting Helper
-// Accounting Helper (Versión Pro compatible con ContaChile)
 async function createAccountingEntry({ date, description, type, document_number, lines, userId, empresaId }) {
     try {
-        const periodo = (date ? new Date(date) : new Date()).toISOString().substring(0, 7);
+        // Asegurar tipos correctos para la base de datos
+        const finalEmpresaId = isNaN(parseInt(empresaId)) ? empresaId : parseInt(empresaId);
+        debugLog(`Attempting accounting entry for Empresa: ${finalEmpresaId} (Raw: ${empresaId})`);
+
+        // Helper para asegurar fecha ISO YYYY-MM-DD
+        let isoDate = date || new Date().toISOString().split('T')[0];
+        if (typeof isoDate === 'string' && isoDate.includes('/')) {
+            const parts = isoDate.split('/');
+            if (parts[2]?.length === 4) isoDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        
+        const periodo = (typeof isoDate === 'string' && isoDate.length >= 7) 
+            ? isoDate.substring(0, 7) 
+            : new Date().toISOString().substring(0, 7);
 
         // 1. Crear Cabecera del Asiento (Voucher)
+        const headerPayload = {
+            fecha: isoDate,
+            glosa: description,
+            periodo: periodo,
+            tipo_origen: type,
+            referencia_id: document_number,
+            empresa_id: finalEmpresaId
+        };
+        debugLog('Header Payload:', headerPayload);
+
         const { data: header, error: hError } = await supabase
             .from(T.PC_ASIENTOS)
-            .insert({
-                fecha: date || new Date().toISOString().split('T')[0],
-                glosa: description,
-                periodo: periodo,
-                tipo_origen: type,
-                referencia_id: document_number,
-                usuario_id: userId,
-                empresa_id: empresaId
-            })
+            .insert(headerPayload)
             .select()
             .single();
 
-        if (hError) throw hError;
+        if (hError) {
+            debugLog('Header Error:', hError);
+            throw hError;
+        }
 
         // 2. Crear las Líneas de Movimiento
         const journalLines = lines.map(line => ({
@@ -64,16 +112,25 @@ async function createAccountingEntry({ date, description, type, document_number,
             cuenta_codigo: line.account_code,
             debe: line.debit || 0,
             haber: line.credit || 0,
-            glosa_linea: line.glosa || description,
-            empresa_id: empresaId
+            centro_costo_id: (typeof line.centro_costo_id === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(line.centro_costo_id)) ? line.centro_costo_id : null,
+            empresa_id: finalEmpresaId
         }));
+        debugLog('Lines Payload:', journalLines);
 
         const { error: lError } = await supabase.from(T.PC_MOVIMIENTOS).insert(journalLines);
-        if (lError) throw lError;
+        if (lError) {
+            debugLog('Lines Error:', lError);
+            throw lError;
+        }
 
+        debugLog('Accounting Entry Created Successfully:', header.id);
         return { success: true, id: header.id };
     } catch (e) {
-        console.error('Accounting Entry Error:', e);
+        console.error('Accounting Entry Error Details:', {
+            message: e.message,
+            stack: e.stack,
+            context: { date, description, type, document_number, linesCount: lines?.length, userId, empresaId }
+        });
         return { success: false, error: e.message };
     }
 }
@@ -220,7 +277,12 @@ const authenticateToken = (req, res, next) => {
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) return res.status(403).json({ error: 'Token inválido o expirado.' });
         req.user = user;
-        req.empresa_id = user.empresa_id || 1; // Fallback a empresa 1 para compatibilidad
+        
+        // Robust enterprise ID: Ensure we have a value and avoid issues with numeric vs uuid strings
+        let eid = user.empresa_id || 1;
+        // Si el valor parece un número pero es string, lo dejamos como tal. 
+        // El frontend suele enviar UUIDs si la base de datos los usa.
+        req.empresa_id = eid;
         next();
     });
 };
@@ -607,7 +669,7 @@ app.put('/api/recipes/:productCode', authenticateToken, async (req, res) => {
     }
 });
 
-app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, async (req, res) => {
+app.get('/api/admin/migrate-purchases', async (req, res) => {
     try {
         // Since we can't run raw SQL via RPC easily, we'll try to use the ALTER TABLE command via a custom RPC if it exists, 
         // otherwise this serves as documentation.
@@ -628,6 +690,73 @@ app.get('/api/admin/migrate-purchases', authenticateToken, checkSuperAdmin, asyn
             ALTER TABLE ventas ADD COLUMN IF NOT EXISTS category text;
             ALTER TABLE compras ADD COLUMN IF NOT EXISTS document_number text;
             ALTER TABLE ventas ADD COLUMN IF NOT EXISTS document_number text;
+            ALTER TABLE compras ADD COLUMN IF NOT EXISTS document_type text DEFAULT 'factura';
+            -- Nuevas Tablas Contabilidad Pro
+            CREATE TABLE IF NOT EXISTS plan_cuentas (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                codigo TEXT UNIQUE NOT NULL,
+                nombre TEXT NOT NULL,
+                tipo TEXT NOT NULL,
+                nivel INTEGER DEFAULT 1,
+                padre_id TEXT REFERENCES plan_cuentas(codigo),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                empresa_id UUID 
+            );
+
+            -- Asegurar que las columnas existan y tengan el tipo correcto en las tablas originales
+            ALTER TABLE asientos ADD COLUMN IF NOT EXISTS empresa_id TEXT;
+            ALTER TABLE asientos ADD COLUMN IF NOT EXISTS usuario_id TEXT;
+            ALTER TABLE asiento_movimientos ADD COLUMN IF NOT EXISTS empresa_id TEXT;
+            
+            -- No forzamos el tipo si ya existe para evitar errores de casting complejos
+            -- Pero para tablas nuevas, el código de arriba ya las crea bien.
+            -- Para las existentes, intentaremos asegurar el periodo si falta
+            ALTER TABLE asientos ALTER COLUMN periodo SET NOT NULL; 
+            
+            -- Tablas de respaldo por si acaso (v2)
+            CREATE TABLE IF NOT EXISTS asientos_v2 (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                fecha DATE NOT NULL,
+                glosa TEXT NOT NULL,
+                periodo TEXT,
+                tipo_origen TEXT DEFAULT 'manual', 
+                referencia_id TEXT, 
+                numero TEXT, 
+                usuario_id TEXT, 
+                empresa_id TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            );
+
+            -- Plan de Cuentas Extendido
+            INSERT INTO plan_cuentas (codigo, nombre, tipo, nivel) VALUES 
+            ('1', 'ACTIVO', 'activo', 1), 
+            ('1.1', 'Activo Circulante', 'activo', 2), 
+            ('1.1.01', 'Caja', 'activo', 3), 
+            ('1.1.02', 'Banco', 'activo', 3), 
+            ('1.1.03', 'Tarjeta Débito (Socio)', 'activo', 3),
+            ('1.1.04', 'Cuentas x Cobrar', 'activo', 3), 
+            ('1.1.05', 'Anticipos Sueldo', 'activo', 3),
+            ('1.1.06', 'IVA Crédito Fiscal', 'activo', 3),
+            ('1.1.09', 'Inventario MP/Mercaderías', 'activo', 3),
+            ('2', 'PASIVO', 'pasivo', 1), 
+            ('2.1', 'Pasivo Circulante', 'pasivo', 2), 
+            ('2.1.01', 'Cuentas x Pagar', 'pasivo', 3), 
+            ('2.1.02', 'IVA Débito Fiscal', 'pasivo', 3),
+            ('2.1.03', 'Retenciones x Pagar', 'pasivo', 3),
+            ('3', 'PATRIMONIO', 'patrimonio', 1),
+            ('3.1', 'Capital', 'patrimonio', 2),
+            ('3.1.01', 'Capital Social', 'patrimonio', 3),
+            ('4', 'INGRESOS', 'ingreso', 1), 
+            ('4.1', 'Ventas', 'ingreso', 2), 
+            ('4.1.01', 'Ingresos x Ventas', 'ingreso', 3),
+            ('5', 'COSTOS Y GASTOS', 'gasto', 1), 
+            ('5.1', 'Costos de Venta', 'costo', 2), 
+            ('5.1.01', 'Costo Mercaderías / Comisión', 'costo', 3), 
+            ('5.2', 'Gastos Adm.', 'gasto', 2), 
+            ('5.2.01', 'Gastos Generales', 'gasto', 3),
+            ('5.2.02', 'Honorarios Profesionales', 'gasto', 3),
+            ('5.1.02', 'Costo de Insumos / Producción', 'costo', 3)
+            ON CONFLICT (codigo) DO UPDATE SET nombre = EXCLUDED.nombre;
         `;
         const { error } = await supabase.rpc('exec_sql', { sql });
         if (error) throw error;
@@ -812,7 +941,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 });
 
 app.post('/api/purchases', authenticateToken, async (req, res) => {
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category, document_number } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category, document_number, centro_costo_id } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -821,11 +950,10 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             date,
             provider_id: providerId || null,
             net, iva, total,
-            payment_method: payment_method || null,
-            account_id: account_id || null,
-            document_type: document_type || 'factura',
             document_number: document_number || null,
-            empresa_id: req.empresa_id
+            empresa_id: req.empresa_id,
+            paid_amount: (payment_method && payment_method !== 'credit') ? total : 0,
+            payment_status: (payment_method && payment_method !== 'credit') ? 'pagado' : 'pendiente'
         };
 
         // Try to insert with ALL columns first
@@ -835,14 +963,15 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             description: description || null,
             quotation_id: (quotation_id && !isNaN(quotation_id)) ? quotation_id : null,
             project_ref: project_ref || null,
-            purchase_category: purchase_category || 'general'
+            purchase_category: purchase_category || 'general',
+            centro_costo_id: centro_costo_id || null
         };
 
         let result = await supabase.from(T.PURCHASES).insert(fullData).select().single();
 
         if (result.error && result.error.message.includes('column')) {
             console.warn("Retrying purchase insert without new columns...", result.error.message);
-            const { project_ref: _p, purchase_category: _c, document_number: _dn, quotation_id: _qid, ...fallbackData } = fullData;
+            const { project_ref: _p, purchase_category: _c, document_number: _dn, quotation_id: _qid, centro_costo_id: _cc, ...fallbackData } = fullData;
             result = await supabase.from(T.PURCHASES).insert({ ...fallbackData, empresa_id: req.empresa_id }).select().single();
         }
 
@@ -892,21 +1021,26 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             else if (acc?.type === 'debit') finalPaymentMethod = 'transfer';
         }
 
-        let paymentAccount = '1.1.01'; // Default: Caja
-        if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01';
-        else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.02';
+        // SIEMPRE usar 2.1.01 (Cuentas por Pagar) para el asiento original (Devengo)
+        const paymentAccount = '2.1.01';
 
         const docRef = document_number || purchase.id;
         const glosa = type === 'expense' ? `Gasto: ${description} (Doc #${docRef})` : `Compra a proveedor (Doc #${docRef})`;
-        const inventoryAccount = type === 'expense' ? '5.1.02' : '1.1.09'; // Gasto Operacional vs Inventario
+        const inventoryAccount = type === 'expense' ? '5.1.02' : '1.1.09'; 
+
+        let centroCostoId = centro_costo_id || null;
+        if (!centroCostoId && type === 'mp') {
+            const { data: cc } = await supabase.from(T.COST_CENTERS).select('id').eq('codigo', 'OPER').single();
+            centroCostoId = cc?.id || null;
+        }
 
         const journalLines = [
-            { account_code: inventoryAccount, debit: net, glosa: glosa },
+            { account_code: inventoryAccount, debit: net, glosa: glosa, centro_costo_id: centroCostoId },
             { account_code: paymentAccount, credit: total, glosa: glosa }
         ];
 
         if (iva > 0) {
-            journalLines.push({ account_code: '1.1.06', debit: iva, glosa: `IVA Crédito #${docRef}` });
+            journalLines.push({ account_code: '1.1.06', debit: iva, glosa: `IVA Crédito #${docRef}`, centro_costo_id: centroCostoId });
         }
 
         await createAccountingEntry({
@@ -919,7 +1053,26 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             lines: journalLines
         });
 
-        res.json({ success: true, message: 'Registro exitoso.' });
+        // 2. Si NO es crédito, crear el asiento de PAGO inmediatamente
+        if (finalPaymentMethod && finalPaymentMethod !== 'credit') {
+            let realPaymentAccount = '1.1.01'; // Caja
+            if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit' || finalPaymentMethod === 'transferencia') {
+                realPaymentAccount = '1.1.02'; // Bancos
+            }
+
+            await createAccountingEntry({
+                date,
+                description: `Pago automático al contado (Doc #${docRef})`,
+                type: 'pago_compra_auto',
+                document_number: purchase.id.toString(),
+                userId: req.user.id,
+                empresaId: req.empresa_id,
+                lines: [
+                    { account_code: '2.1.01', debit: total, glosa: `Limpieza pasivo Doc #${docRef}` },
+                    { account_code: realPaymentAccount, credit: total, glosa: `Pago efectivo Doc #${docRef}` }
+                ]
+            });
+        }
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -1063,7 +1216,8 @@ app.post('/api/sales/:id/payment', authenticateToken, async (req, res) => {
 // ========== UPDATE PURCHASE (with accounting recalculation) ==========
 app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     const purchaseId = req.params.id;
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category } = req.body;
+    debugLog(`--- HIT: PUT /api/purchases/${purchaseId} ---`);
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category, centro_costo_id } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -1073,7 +1227,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             for (const it of oldItems) {
                 const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', it.mp_code).single();
                 if (rm) {
-                    await supabase.from(T.MP).update({ stock: Math.max(0, rm.stock - it.quantity) }).eq('code', it.mp_code);
+                    const oldQty = Number(it.quantity) || 0;
+                    await supabase.from(T.MP).update({ stock: Math.max(0, (rm.stock || 0) - oldQty) }).eq('code', it.mp_code);
                 }
             }
         }
@@ -1093,16 +1248,20 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             ...purchaseData,
             type: type || 'mp',
             description: description || null,
-            quotation_id: (quotation_id && !isNaN(quotation_id)) ? quotation_id : null,
+            quotation_id: (quotation_id && !isNaN(Number(quotation_id))) ? Number(quotation_id) : null,
             project_ref: project_ref || null,
-            purchase_category: purchase_category || 'general'
+            purchase_category: purchase_category || 'general',
+            centro_costo_id: (typeof centro_costo_id === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(centro_costo_id)) ? centro_costo_id : null,
+            net: Number(net) || 0,
+            iva: Number(iva) || 0,
+            total: Number(total) || 0
         };
 
         let result = await supabase.from(T.PURCHASES).update(fullUpdate).eq('id', purchaseId).eq('empresa_id', req.empresa_id);
 
         if (result.error && result.error.message.includes('column')) {
             console.warn("Retrying purchase update without new columns...");
-            const { project_ref: _p, purchase_category: _c, ...fallbackUpdate } = fullUpdate;
+            const { project_ref: _p, purchase_category: _c, centro_costo_id: _cc, ...fallbackUpdate } = fullUpdate;
             result = await supabase.from(T.PURCHASES).update(fallbackUpdate).eq('id', purchaseId).eq('empresa_id', req.empresa_id);
         }
         if (result.error) throw result.error;
@@ -1136,7 +1295,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
                         await supabase.from(T.PURCHASE_ITEMS).insert(insertItem);
                         const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
                         if (rm) {
-                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + item.quantity }).eq('code', item.mpCode);
+                            const newQty = Number(item.quantity) || 0;
+                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + newQty }).eq('code', item.mpCode);
                         }
                     }
                 }
@@ -1148,40 +1308,57 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             .from(T.PC_ASIENTOS)
             .select('id')
             .eq('referencia_id', purchaseId.toString())
-            .in('tipo_origen', ['compra', 'compra_push', 'compra_pull', 'gasto']);
+            .in('tipo_origen', ['compra', 'compra_push', 'compra_pull', 'gasto', 'erp_compra', 'pago_compra_auto']);
 
         if (oldEntriesPro && oldEntriesPro.length > 0) {
             const proIds = oldEntriesPro.map(e => e.id);
-            await supabase.from(T.PC_MOVIMIENTOS).delete().in('asiento_id', proIds);
-            await supabase.from(T.PC_ASIENTOS).delete().in('id', proIds);
+            await supabase.from(T.PC_MOVIMIENTOS).delete().in('asiento_id', proIds).eq('empresa_id', req.empresa_id);
+            await supabase.from(T.PC_ASIENTOS).delete().in('id', proIds).eq('empresa_id', req.empresa_id);
         }
 
-        // 5. CREATE new accounting entry with updated values
+        // Create accounting entry
+        debugLog(`Processing accounting for purchase ${purchaseId}...`, { type, payment_method, account_id, total, net, iva });
+        
         let finalPaymentMethod = payment_method;
         if (account_id) {
             const { data: acc } = await supabase.from(T.ACCOUNTS).select('type').eq('id', account_id).single();
             if (acc?.type === 'credit') finalPaymentMethod = 'credit';
             else if (acc?.type === 'debit') finalPaymentMethod = 'transfer';
+            debugLog('Detected payment account type:', acc?.type);
         }
 
-        let paymentAccount = '1.1.01'; // Default: Caja
-        if (finalPaymentMethod === 'credit') paymentAccount = '2.1.01';
-        else if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit') paymentAccount = '1.1.02';
+        // SIEMPRE usar 2.1.01 para el Devengo
+        const paymentAccount = '2.1.01';
+
+        // Obtener Centro de Costos "Operaciones" si es producción y no se envió uno
+        let centroCostoId = centro_costo_id || null;
+        const isUUID = (str) => typeof str === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(str);
+        if (centroCostoId && !isUUID(centroCostoId)) {
+            centroCostoId = null;
+        }
+
+        if (!centroCostoId && type === 'mp') {
+            const { data: cc } = await supabase.from(T.COST_CENTERS).select('id').eq('codigo', 'OPER').single();
+            centroCostoId = cc?.id || null;
+            debugLog('Using default cost center Operaciones:', centroCostoId);
+        }
 
         const docRef = req.body.document_number || purchaseId;
         const glosa = type === 'expense' ? `Gasto: ${description} (Doc #${docRef})` : `Compra a proveedor (Doc #${docRef})`;
         const inventoryAccount = type === 'expense' ? '5.1.02' : '1.1.09';
 
         const journalLines = [
-            { account_code: inventoryAccount, debit: net, glosa: glosa },
-            { account_code: paymentAccount, credit: total, glosa: glosa }
+            { account_code: inventoryAccount, debit: Number(net) || 0, glosa: glosa, centro_costo_id: centroCostoId },
+            { account_code: paymentAccount, credit: Number(total) || 0, glosa: glosa }
         ];
 
-        if (iva > 0) {
-            journalLines.push({ account_code: '1.1.06', debit: iva, glosa: `IVA Crédito #${docRef}` });
+        if (Number(iva) > 0) {
+            journalLines.push({ account_code: '1.1.06', debit: Number(iva) || 0, glosa: `IVA Crédito #${docRef}`, centro_costo_id: centroCostoId });
         }
 
-        await createAccountingEntry({
+        debugLog('Ready to create accounting entry with lines:', journalLines);
+
+        const acResult = await createAccountingEntry({
             date,
             description: glosa,
             type: type === 'expense' ? 'gasto' : ((quotation_id || project_ref) ? 'compra_pull' : 'compra_push'),
@@ -1191,14 +1368,49 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             lines: journalLines
         });
 
+        if (!acResult.success) {
+            debugLog('Accounting Entry Fail in Purchase Endpoint:', acResult.error);
+            throw new Error(`Contabilidad: ${acResult.error}`);
+        }
+
+        // 5. Si NO es crédito, crear el asiento de PAGO inmediatamente
+        if (finalPaymentMethod && finalPaymentMethod !== 'credit') {
+            let realPaymentAccount = '1.1.01'; // Caja
+            if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit' || finalPaymentMethod === 'transferencia') {
+                realPaymentAccount = '1.1.02'; // Bancos
+            }
+
+            const cleanTotal = Number(total) || 0;
+            await createAccountingEntry({
+                date,
+                description: `Pago automático al contado (Doc #${docRef})`,
+                type: 'pago_compra_auto',
+                document_number: purchaseId.toString(),
+                userId: req.user.id,
+                empresaId: req.empresa_id,
+                lines: [
+                    { account_code: '2.1.01', debit: cleanTotal, glosa: `Limpieza pasivo Doc #${docRef}` },
+                    { account_code: realPaymentAccount, credit: cleanTotal, glosa: `Pago efectivo Doc #${docRef}` }
+                ]
+            });
+
+            // Asegurar que el registro de compra quede como PAGADA en el ERP
+            await supabase.from(T.PURCHASES).update({
+                paid_amount: cleanTotal,
+                payment_status: 'pagado'
+            }).eq('id', purchaseId);
+        }
+
+        debugLog('Accounting Entry SUCCESS for Purchase:', purchaseId);
         res.json({ success: true, message: 'Compra actualizada y contabilidad recalculada exitosamente.' });
     } catch (e) {
+        debugLog(`ERROR in PUT /api/purchases/${req.params.id}:`, e.message);
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
 app.post('/api/sales', authenticateToken, async (req, res) => {
-    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number } = req.body;
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number, document_type } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -1214,7 +1426,9 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             machine_id: machine_id || null,
             event_name: event_name || null,
             transferred: false,
-            document_number: document_number || null
+            document_number: document_number || null,
+            paid_amount: (payment_method && payment_method !== 'credit') ? total : 0,
+            payment_status: (payment_method && payment_method !== 'credit') ? 'pagado' : 'pendiente'
         };
 
         let { data: sale, error: sError } = await supabase.from(T.SALES).insert({ ...payload, category, quotation_id, empresa_id: req.empresa_id }).select().single();
@@ -1248,17 +1462,15 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
         }
 
         // Create Accounting Entry
-        let paymentAccount = '1.1.01'; // Default: Caja
+        debugLog('Processing accounting for new SALE...', { total, net, iva, payment_method });
+        // SIEMPRE usar 1.1.03 (Cuentas por Cobrar) para el Devengo de Venta
+        const mainDebitAccount = '1.1.03';
         const commissionAmount = commission || 0;
         const discountAmount = discount || 0;
-
-        if (payment_method === 'machine' || payment_method === 'transfer') {
-            paymentAccount = '1.1.03'; // Tarjeta Débito Privada (Socio)
-        }
-
+        
         const docRef = document_number || sale.id;
         const journalLines = [
-            { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Venta #${docRef} (${payment_method})` },
+            { account_code: mainDebitAccount, debit: total - commissionAmount, glosa: `Venta #${docRef} (${payment_method})` },
             { account_code: '4.1.01', credit: net - discountAmount, glosa: `Ingreso neto venta #${docRef}` }
         ];
 
@@ -1266,12 +1478,13 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             journalLines.push({ account_code: '5.1.01', debit: commissionAmount, glosa: `Comisión máquina venta #${docRef}` });
         }
 
-        // Only include IVA in ledger if NOT cash (as per user: cash doesn't go to ledger accounts)
-        if (payment_method !== 'cash' && !is_iva_exempt && iva > 0) {
+        if (!is_iva_exempt && iva > 0) {
             journalLines.push({ account_code: '2.1.02', credit: iva, glosa: `IVA Débito venta #${docRef}` });
         }
 
-        await createAccountingEntry({
+        debugLog('Sale accounting lines ready:', journalLines);
+
+        const acResult = await createAccountingEntry({
             date,
             description: `Venta de productos (${event_name || 'General'})`,
             type: 'venta_' + (category || 'push'),
@@ -1280,6 +1493,33 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             empresaId: req.empresa_id,
             lines: journalLines
         });
+
+        // 2. Si NO es crédito, crear el asiento de COBRO inmediatamente
+        if (payment_method && payment_method !== 'credit') {
+            let realCashAccount = '1.1.01'; // Caja
+            if (['transfer', 'machine', 'debit', 'transferencia', 'tarjeta'].includes(payment_method)) {
+                realCashAccount = '1.1.02'; // Bancos
+            }
+
+            await createAccountingEntry({
+                date,
+                description: `Cobro automático al contado (Doc #${docRef})`,
+                type: 'pago_venta_auto',
+                document_number: sale.id.toString(),
+                userId: req.user.id,
+                empresaId: req.empresa_id,
+                lines: [
+                    { account_code: realCashAccount, debit: total, glosa: `Ingreso efectivo Doc #${docRef}` },
+                    { account_code: '1.1.03', credit: total, glosa: `Limpieza CxC Doc #${docRef}` }
+                ]
+            });
+        }
+
+        if (!acResult.success) {
+            debugLog('Accounting Entry Fail in Create SALE Endpoint:', acResult.error);
+        } else {
+            debugLog('Accounting Entry SUCCESS for new SALE');
+        }
 
         res.json({ success: true, message: 'Venta registrada exitosamente.' });
     } catch (e) {
@@ -1290,7 +1530,8 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 // ========== UPDATE SALE (with accounting recalculation) ==========
 app.put('/api/sales/:id', authenticateToken, async (req, res) => {
     const saleId = req.params.id;
-    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number } = req.body;
+    debugLog(`--- HIT: PUT /api/sales/${saleId} ---`);
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number, document_type } = req.body;
     const dateFromBody = req.body.date || req.body.fecha;
 
     try {
@@ -1310,7 +1551,9 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             is_iva_exempt: is_iva_exempt || false,
             machine_id: machine_id || null,
             event_name: event_name || null,
-            document_number: document_number || null
+            document_number: document_number || null,
+            paid_amount: (payment_method && payment_method !== 'credit') ? total : 0,
+            payment_status: (payment_method && payment_method !== 'credit') ? 'pagado' : 'pendiente'
         };
 
         let { error: updateError } = await supabase.from(T.SALES).update({ ...updatePayload, category, quotation_id }).eq('id', saleId).eq('empresa_id', req.empresa_id);
@@ -1346,26 +1589,22 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             .from(T.PC_ASIENTOS)
             .select('id')
             .eq('referencia_id', saleId.toString())
-            .in('tipo_origen', ['venta', 'venta_push', 'venta_pull']);
+            .in('tipo_origen', ['venta', 'venta_push', 'venta_pull', 'erp_venta', 'pago_venta_auto']);
 
         if (oldEntriesPro && oldEntriesPro.length > 0) {
             const proIds = oldEntriesPro.map(e => e.id);
-            await supabase.from(T.PC_MOVIMIENTOS).delete().in('asiento_id', proIds);
-            await supabase.from(T.PC_ASIENTOS).delete().in('id', proIds);
+            await supabase.from(T.PC_MOVIMIENTOS).delete().in('asiento_id', proIds).eq('empresa_id', req.empresa_id);
+            await supabase.from(T.PC_ASIENTOS).delete().in('id', proIds).eq('empresa_id', req.empresa_id);
         }
 
         // 5. CREATE new accounting entry with updated values
-        let paymentAccount = '1.1.01'; // Default: Caja
-        const commissionAmount = commission || 0;
-        const discountAmount = discount || 0;
-
-        if (payment_method === 'machine' || payment_method === 'transfer') {
-            paymentAccount = '1.1.03'; // Tarjeta Débito Privada (Socio)
-        }
-
+        debugLog(`Processing accounting for updated SALE ${saleId}...`, { total, net, iva, payment_method });
+        // SIEMPRE usar 1.1.03 (Cuentas por Cobrar) para el Devengo de Venta
+        const mainDebitAccount = '1.1.03';
+        
         const docRef = document_number || saleId;
         const journalLines = [
-            { account_code: paymentAccount, debit: total - commissionAmount, glosa: `Ingreso líquido Venta #${docRef} (${payment_method})` },
+            { account_code: mainDebitAccount, debit: total - commissionAmount, glosa: `Venta #${docRef} (${payment_method})` },
             { account_code: '4.1.01', credit: net - discountAmount, glosa: `Ingreso neto Venta #${docRef}` }
         ];
 
@@ -1373,11 +1612,13 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             journalLines.push({ account_code: '5.1.01', debit: commissionAmount, glosa: `Comisión máquina Venta #${docRef}` });
         }
 
-        if (payment_method !== 'cash' && !is_iva_exempt && (iva || 0) > 0) {
+        if (!is_iva_exempt && (iva || 0) > 0) {
             journalLines.push({ account_code: '2.1.02', credit: iva, glosa: `IVA Débito Venta #${docRef}` });
         }
 
-        await createAccountingEntry({
+        debugLog('Updated sale accounting lines ready:', journalLines);
+
+        const acResult = await createAccountingEntry({
             date: targetDate,
             description: `Venta de productos (${event_name || 'General'})`,
             type: 'venta_' + (category || 'push'),
@@ -1387,8 +1628,37 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             lines: journalLines
         });
 
+        if (!acResult.success) {
+            debugLog('Accounting Entry Fail in Update SALE Endpoint:', acResult.error);
+            throw new Error(`Contabilidad: ${acResult.error}`);
+        }
+
+        debugLog('Accounting Entry SUCCESS for updated SALE:', saleId);
+
+        // 6. Si NO es crédito, crear el asiento de COBRO inmediatamente
+        if (payment_method && payment_method !== 'credit') {
+            let realCashAccount = '1.1.01'; // Caja
+            if (['transfer', 'machine', 'debit', 'transferencia', 'tarjeta'].includes(payment_method)) {
+                realCashAccount = '1.1.02'; // Bancos
+            }
+
+            await createAccountingEntry({
+                date: targetDate,
+                description: `Cobro automático al contado (Doc #${docRef})`,
+                type: 'pago_venta_auto',
+                document_number: saleId.toString(),
+                userId: req.user.id,
+                empresaId: req.empresa_id,
+                lines: [
+                    { account_code: realCashAccount, debit: total, glosa: `Ingreso efectivo Doc #${docRef}` },
+                    { account_code: '1.1.03', credit: total, glosa: `Limpieza CxC Doc #${docRef}` }
+                ]
+            });
+        }
+
         res.json({ success: true, message: 'Venta actualizada y contabilidad recalculada exitosamente.' });
     } catch (e) {
+        debugLog(`ERROR in PUT /api/sales/${req.params.id}:`, e.message);
         res.status(500).json({ success: false, error: e.message });
     }
 });
@@ -1467,9 +1737,19 @@ app.post('/api/sales/bulk-transfer', authenticateToken, async (req, res) => {
 });
 
 app.get('/api/accounting-entries', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase.from(T.ACCOUNTING_ENTRIES).select('*').eq('empresa_id', req.empresa_id).order('date', { ascending: false });
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data || []);
+    // Redirigir a la lógica unificada en /api/accounting/ledger preservando compatibilidad
+    try {
+        const { data: entries, error: eError } = await supabase
+            .from(T.PC_ASIENTOS)
+            .select('*')
+            .eq('empresa_id', req.empresa_id)
+            .order('fecha', { ascending: false });
+
+        if (eError) throw eError;
+        res.json(entries || []);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/api/production', authenticateToken, async (req, res) => {
@@ -2220,33 +2500,53 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
 // --- Accounting System Endpoints ---
 
 app.get('/api/accounting/accounts', authenticateToken, async (req, res) => {
-    const { data, error } = await supabase.from(T.ACCOUNTING_ACCOUNTS).select('*').order('code');
+    const { data, error } = await supabase.from(T.ACCOUNTING_ACCOUNTS).select('*').order('codigo');
     if (error) return res.status(500).json({ error: error.message });
     res.json(data);
 });
-
-app.get('/api/accounting/ledger', authenticateToken, async (req, res) => {
+app.get(['/api/accounting/ledger', '/api/accounting-entries'], authenticateToken, async (req, res) => {
+    const periodo = req.query.periodo; 
+    console.log(`[LEDGER] Request for period: ${periodo} (Empresa: ${req.empresa_id})`);
+    
     try {
-        const { data: entries, error: eError } = await supabase
-            .from(T.ACCOUNTING_ENTRIES)
+        console.log(`[LEDGER] Querying ${T.PC_ASIENTOS} for empresa: ${req.empresa_id}`);
+        
+        let query = supabase
+            .from(T.PC_ASIENTOS)
             .select(`
                 *,
-                lines:accounting_lines(
+                lineas:${T.PC_MOVIMIENTOS}!fk_asiento(
                     *,
-                    account:accounting_accounts(name, code)
+                    account:${T.ACCOUNTING_ACCOUNTS}!asiento_movimientos_cuenta_codigo_fkey(nombre, codigo)
                 )
-            `)
-            .order('date', { ascending: false });
+            `);
 
-        if (eError) throw eError;
+        if (req.empresa_id) {
+            query = query.eq('empresa_id', req.empresa_id);
+        }
 
-        // Map it to the format the frontend expects
+        if (periodo && periodo !== 'all' && periodo !== 'force') {
+            query = query.eq('periodo', periodo);
+        }
+
+        const { data: entries, error: eError } = await query.order('fecha', { ascending: false });
+
+        if (eError) {
+            console.error('[LEDGER] DB Error:', eError);
+            throw eError;
+        }
+        console.log(`[LEDGER] Found ${entries?.length || 0} entries`);
+        if (entries && entries.length > 0) {
+            console.log('[LEDGER] First Entry Structure:', JSON.stringify(entries[0], null, 2));
+        }
+
+        // Map it to the format the frontend expects (compatibilidad)
         const formattedLedger = entries.map(entry => ({
             ...entry,
-            lines: (entry.lines || []).map(l => ({
+            lineas: (entry.lineas || []).map(l => ({
                 ...l,
-                account_name: l.account?.name,
-                account_code: l.account?.code
+                account_name: l.account?.nombre,
+                account_code: l.account?.codigo
             }))
         }));
 
@@ -2257,6 +2557,13 @@ app.get('/api/accounting/ledger', authenticateToken, async (req, res) => {
     }
 });
 
+app.get('/api/cost-centers', authenticateToken, async (req, res) => {
+    const { data, error } = await supabase.from(T.COST_CENTERS).select('*').eq('empresa_id', req.empresa_id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+});
+
+
 app.post('/api/accounting/expenses', authenticateToken, async (req, res) => {
     const { date, description, amount, account_origin_code, category_code } = req.body;
 
@@ -2265,6 +2572,7 @@ app.post('/api/accounting/expenses', authenticateToken, async (req, res) => {
         description,
         type: 'gasto',
         userId: req.user.id,
+        empresaId: req.empresa_id,
         lines: [
             { account_code: category_code || '5.1.02', debit: amount }, // Gasto Operacional
             { account_code: account_origin_code || '1.1.01', credit: amount } // Pago (Caja)
@@ -2290,6 +2598,32 @@ app.post('/api/accounting/transfers', authenticateToken, async (req, res) => {
     });
 
     res.json(result);
+});
+
+app.post('/api/accounting/entries', authenticateToken, async (req, res) => {
+    const { fecha, glosa, lineas, tipo_origen, referencia_id } = req.body;
+
+    try {
+        const result = await createAccountingEntry({
+            date: fecha,
+            description: glosa,
+            type: tipo_origen || 'manual',
+            document_number: referencia_id,
+            userId: req.user.id,
+            empresaId: req.empresa_id,
+            lines: (lineas || []).map(l => ({
+                account_code: l.cuenta_codigo,
+                debit: l.debe || 0,
+                credit: l.haber || 0,
+                glosa: glosa
+            }))
+        });
+
+        res.json(result);
+    } catch (e) {
+        console.error('Error creating manual entry:', e);
+        res.status(500).json({ error: e.message });
+    }
 });
 
 app.post('/api/quotations', authenticateToken, async (req, res) => {

@@ -16,8 +16,27 @@ export function exportToExcel(data, filename = 'export', sheetName = 'Datos') {
     // Agregar la hoja al libro
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
-    // Generar el archivo y descargarlo
-    XLSX.writeFile(wb, `${filename}.xlsx`);
+    // Generar el archivo y descargarlo usando un método más compatible con navegadores modernos
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'binary' });
+
+    function s2ab(s) {
+        const buf = new ArrayBuffer(s.length);
+        const view = new Uint8Array(buf);
+        for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
+        return buf;
+    }
+
+    const blob = new Blob([s2ab(wbout)], { type: "application/octet-stream" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${filename}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }, 0);
 }
 
 /**
@@ -183,23 +202,30 @@ export function formatLedgerForExport(ledger) {
         'venta_push': 'Venta PUSH',
         'gasto': 'GASTO',
         'transferencia': 'TRANSFERENCIA',
-        'consumo': 'PRODUCCIÓN'
+        'consumo': 'PRODUCCIÓN',
+        'pago_compra_auto': 'PAGO AUTO COMPRA',
+        'pago_venta_auto': 'COBRO AUTO VENTA',
+        'pago_compra': 'PAGO COMPRA',
+        'pago_venta': 'COBRO VENTA'
     };
     const formatted = [];
     ledger.forEach(entry => {
-        const typeLabel = typeLabels[entry.entry_type] || entry.entry_type.toUpperCase();
-        entry.lines.forEach(line => {
+        const entryType = entry.entry_type || entry.tipo_origen || 'manual';
+        const typeLabel = typeLabels[entryType] || entryType.toUpperCase();
+        const lines = entry.lines || entry.lineas || [];
+        
+        lines.forEach(line => {
             formatted.push({
-                'Fecha': entry.date,
+                'Fecha': entry.date || entry.fecha || '-',
                 'Tipo': typeLabel,
-                'Descripción': entry.description,
-                'Documento': entry.document_number || '-',
+                'Descripción': entry.description || entry.glosa || '-',
+                'Documento': entry.document_number || entry.referencia_id || '-',
                 'Proyecto': entry.project_name || '-',
-                'Código Cuenta': line.account_code,
-                'Cuenta': line.account_name,
+                'Código Cuenta': line.account_code || line.cuenta_codigo,
+                'Cuenta': line.account_name || '-',
                 'Glosa Línea': line.glosa || '-',
-                'Debe': line.debit || 0,
-                'Haber': line.credit || 0
+                'Debe': line.debit || line.debe || 0,
+                'Haber': line.credit || line.haber || 0
             });
         });
     });

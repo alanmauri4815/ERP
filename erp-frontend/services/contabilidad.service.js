@@ -32,23 +32,95 @@ export async function initPlanCuentas(planDefault) {
     return await db.getAll('plan_cuentas');
 }
 
-/* ---------------- ASIENTOS Y DIARIO ---------------- */
-
 export async function crearAsiento({ fecha, glosa, lineas, periodo, tipo_origen = 'manual', referencia_id = null, numero = null }) {
-    const totalDebe = lineas.reduce((sum, l) => sum + (l.debe || 0), 0);
-    const totalHaber = lineas.reduce((sum, l) => sum + (l.haber || 0), 0);
-    if (Math.abs(totalDebe - totalHaber) > 1) throw new Error(`Partida doble no cuadra: $${totalDebe} vs $${totalHaber}`);
-    const asiento = await db.insert('asientos', { fecha, glosa, periodo: periodo || fecha.substring(0, 7), tipo_origen, referencia_id, numero });
-    for (const linea of lineas) {
-        await db.insert('asiento_movimientos', { asiento_id: asiento.id, cuenta_codigo: linea.cuenta_codigo, debe: linea.debe || 0, haber: linea.haber || 0, centro_costo_id: linea.centro_costo_id || null });
+    try {
+        const totalDebe = lineas.reduce((sum, l) => sum + (l.debe || 0), 0);
+        const totalHaber = lineas.reduce((sum, l) => sum + (l.haber || 0), 0);
+        
+        if (Math.abs(totalDebe - totalHaber) > 1) {
+            throw new Error(`Partida doble no cuadra: $${totalDebe} vs $${totalHaber}`);
+        }
+
+        const payload = { 
+            fecha, 
+            glosa, 
+            lineas,
+            periodo: periodo || fecha.substring(0, 7), 
+            tipo_origen, 
+            referencia_id, 
+            numero 
+        };
+
+        // Guardar en el Backend (Sistema Pro)
+        const result = await erpFetch('/accounting/entries', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        // Opcional: Guardar en Local (Legacy/Offline support)
+        const { lineas: movementsLines, ...headerData } = payload;
+        const asiento = await db.insert('asientos', { ...headerData });
+
+        for (const linea of lineas) {
+            await db.insert('asiento_movimientos', { 
+                asiento_id: asiento.id, 
+                cuenta_codigo: linea.cuenta_codigo, 
+                debe: linea.debe || 0, 
+                haber: linea.haber || 0, 
+                centro_costo_id: linea.centro_costo_id || null
+            });
+        }
+        return result || asiento;
+    } catch (error) {
+        console.error("Error crítico en crearAsiento:", error);
+        throw error;
     }
-    return asiento;
 }
 
+import { erpFetch } from './erp-api.js';
+
 export async function getLibroDiario(periodo) {
+    // Helper para normalizar fecha/periodo
+    const normalizeDate = (d) => {
+        if (!d) return '';
+        if (d.includes('T')) return d.split('T')[0];
+        if (d.includes('/')) {
+            const parts = d.split('/');
+            if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        return d;
+    };
+
+    // Intentar obtener desde el backend (Sistema Pro)
+    const data = await erpFetch(`/accounting/ledger?periodo=${periodo || 'all'}`);
+    if (data && Array.isArray(data)) {
+        if (periodo && periodo !== 'force' && periodo !== 'all') {
+            return data.filter(a => {
+                const normalized = normalizeDate(a.fecha);
+                return normalized.startsWith(periodo) || a.periodo === periodo;
+            });
+        }
+        return data;
+    }
+
+    // Fallback al local si falla el backend o no hay conexión
     const [asientos, movimientos] = await Promise.all([db.getAll('asientos'), db.getAll('asiento_movimientos')]);
     const filtered = (periodo && periodo !== 'force') ? asientos.filter(a => a.periodo === periodo) : asientos;
     return filtered.map(a => ({ ...a, lineas: movimientos.filter(m => m.asiento_id === a.id) })).sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+}
+
+export async function getCuentasDetalle() {
+    const cuentas = await erpFetch('/accounting/accounts');
+    if (cuentas && Array.isArray(cuentas)) {
+        // Mapear campos si es necesario (backend usa nombre/codigo, frontend podría esperar algo distinto)
+        return cuentas.filter(c => c.nivel === 3 || !c.nivel).map(c => ({
+            ...c,
+            nombre: c.nombre || c.name,
+            codigo: c.codigo || c.code
+        }));
+    }
+    const local = await db.getAll('plan_cuentas');
+    return local.filter(c => c.nivel === 3);
 }
 
 export async function getLibroMayor(cuentaCodigo, periodo) {
@@ -381,10 +453,7 @@ export async function getCuentas() {
     return await db.getAll('plan_cuentas');
 }
 
-export async function getCuentasDetalle() {
-    const cuentas = await getCuentas();
-    return cuentas.filter(c => c.nivel === 3);
-}
+// getCuentasDetalle movida al inicio del archivo con soporte API
 
 export async function getBalance8Columnas(periodo = null) {
     const [cuentas, asientos, movimientos] = await Promise.all([
@@ -638,63 +707,173 @@ export async function calcularLiquidacion(trabajador, periodo) {
 export async function sincronizarOperacionesERP(ventasERP = [], comprasERP = []) {
     let count = 0;
 
-    // Get existing accounting entries to avoid duplicates
-    const existingEntries = await db.getAll('asientos');
-    const existingRefs = new Set(existingEntries.map(e => `${e.tipo_origen}_${e.referencia_id}`));
+    // Obtener asientos existentes para evitar duplicados. 
+    // Ahora consultamos preferentemente al Backend para que sea fiable en multi-sesión
+    let existingEntries = [];
+    try {
+        const backendLedger = await erpFetch('/accounting/ledger?periodo=all');
+        if (backendLedger && Array.isArray(backendLedger)) {
+            existingEntries = backendLedger;
+        } else {
+            existingEntries = await db.getAll('asientos');
+        }
+    } catch (e) {
+        existingEntries = await db.getAll('asientos');
+    }
 
-    // Sync Sales
+    const existingRefs = new Set();
+    
+    existingEntries.forEach(e => {
+        if (e.referencia_id) {
+            const ref = String(e.referencia_id);
+            const type = e.tipo_origen || e.entry_type || '';
+            
+            // Registrar combinaciones conocidas
+            existingRefs.add(`${type}_${ref}`);
+            
+            // Normalizar alias comunes
+            if (type.startsWith('venta')) {
+                existingRefs.add(`erp_venta_${ref}`);
+                existingRefs.add(`erp_cobro_venta_${ref}`);
+            }
+            if (type.startsWith('compra')) {
+                existingRefs.add(`erp_compra_${ref}`);
+                existingRefs.add(`erp_pago_compra_${ref}`);
+            }
+            // Soporte para tipos con guion bajo
+            if (type === 'erp_venta' || type === 'erp_compra') {
+                existingRefs.add(type + '_' + ref);
+            }
+        }
+    });
+
+    // Helper para normalizar fecha/periodo
+    const normalizeDate = (d) => {
+        if (!d) return { iso: new Date().toISOString().split('T')[0], periodo: new Date().toISOString().substring(0, 7) };
+        let iso = d;
+        if (typeof d !== 'string') {
+            try {
+                iso = new Date(d).toISOString().split('T')[0];
+            } catch(e) {
+                iso = new Date().toISOString().split('T')[0];
+            }
+        }
+        
+        if (iso.includes('T')) iso = iso.split('T')[0];
+        if (iso.includes('/')) {
+            const parts = iso.split('/');
+            if (parts[2]?.length === 4) iso = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            else if (parts[0]?.length === 4) iso = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        }
+        return { iso, periodo: iso.substring(0, 7) };
+    };
+
+    // Sincronizar Ventas
     for (const venta of ventasERP) {
         const key = `erp_venta_${venta.id}`;
         if (existingRefs.has(key)) continue;
 
         try {
             const total = parseFloat(venta.total) || 0;
+            if (total <= 0) continue;
+
             const neto = Math.round(total / (1 + IVA_RATE));
             const iva = total - neto;
+            const paymentMethod = venta.payment_method || 'cash';
+            const isCredit = paymentMethod === 'credit';
+            const { iso: fechaISO, periodo: periodoISO } = normalizeDate(venta.date || venta.created_at);
 
+            // 1. Asiento de Venta (Devengo)
             await crearAsiento({
-                fecha: venta.date || venta.created_at?.substring(0, 10) || new Date().toISOString().substring(0, 10),
+                fecha: fechaISO,
                 glosa: `Venta ERP #${venta.id} - ${venta.client_name || 'Cliente'}`,
-                periodo: (venta.date || venta.created_at?.substring(0, 7) || new Date().toISOString().substring(0, 7)),
+                periodo: periodoISO,
                 tipo_origen: 'erp_venta',
                 referencia_id: venta.id,
+                numero: venta.document_number || venta.id,
                 lineas: [
-                    { cuenta_codigo: '1.1.01', debe: total, haber: 0 },
+                    { cuenta_codigo: '1.1.03', debe: total, haber: 0 },
                     { cuenta_codigo: '4.1.01', debe: 0, haber: neto },
                     { cuenta_codigo: '2.1.02', debe: 0, haber: iva }
                 ]
             });
+
+            // 2. Asiento de Cobro (si no es crédito)
+            if (!isCredit) {
+                let cuentaCobro = '1.1.01'; // Efectivo
+                if (['transfer', 'machine', 'debit', 'transferencia', 'tarjeta'].includes(paymentMethod)) cuentaCobro = '1.1.02'; 
+                
+                await crearAsiento({
+                    fecha: fechaISO,
+                    glosa: `Cobro Venta ERP #${venta.id} (${paymentMethod})`,
+                    periodo: periodoISO,
+                    tipo_origen: 'erp_cobro_venta',
+                    referencia_id: venta.id,
+                    numero: venta.document_number || venta.id,
+                    lineas: [
+                        { cuenta_codigo: cuentaCobro, debe: total, haber: 0 },
+                        { cuenta_codigo: '1.1.03', debe: 0, haber: total }
+                    ]
+                });
+            }
             count++;
         } catch (e) {
-            console.warn(`Sync venta ${venta.id} falló:`, e.message);
+            console.error(`Error sincronizando venta ${venta.id}:`, e);
         }
     }
 
-    // Sync Purchases
+    // Sincronizar Compras
     for (const compra of comprasERP) {
         const key = `erp_compra_${compra.id}`;
         if (existingRefs.has(key)) continue;
 
         try {
             const total = parseFloat(compra.total) || 0;
+            if (total <= 0) continue;
+
             const neto = Math.round(total / (1 + IVA_RATE));
             const iva = total - neto;
+            const paymentMethod = compra.payment_method || 'cash';
+            const isCredit = paymentMethod === 'credit';
 
+            const { iso: fechaISO, periodo: periodoISO } = normalizeDate(compra.date || compra.created_at);
+
+            // 1. Asiento de Compra (Devengo)
             await crearAsiento({
-                fecha: compra.date || compra.created_at?.substring(0, 10) || new Date().toISOString().substring(0, 10),
+                fecha: fechaISO,
                 glosa: `Compra ERP #${compra.id} - ${compra.provider_name || 'Proveedor'}`,
-                periodo: (compra.date || compra.created_at?.substring(0, 7) || new Date().toISOString().substring(0, 7)),
+                periodo: periodoISO,
                 tipo_origen: 'erp_compra',
                 referencia_id: compra.id,
+                numero: compra.document_number || compra.id,
                 lineas: [
                     { cuenta_codigo: '5.1.01', debe: neto, haber: 0 },
                     { cuenta_codigo: '1.1.06', debe: iva, haber: 0 },
                     { cuenta_codigo: '2.1.01', debe: 0, haber: total }
                 ]
             });
+
+            // 2. Asiento de Pago (si no es crédito)
+            if (!isCredit) {
+                let cuentaPago = '1.1.01'; // Efectivo
+                if (['transfer', 'debit', 'transferencia'].includes(paymentMethod)) cuentaPago = '1.1.02'; 
+                
+                await crearAsiento({
+                    fecha: fechaISO,
+                    glosa: `Pago Compra ERP #${compra.id} (${paymentMethod})`,
+                    periodo: periodoISO,
+                    tipo_origen: 'erp_pago_compra',
+                    referencia_id: compra.id,
+                    numero: compra.document_number || compra.id,
+                    lineas: [
+                        { cuenta_codigo: '2.1.01', debe: total, haber: 0 },
+                        { cuenta_codigo: cuentaPago, debe: 0, haber: total }
+                    ]
+                });
+            }
             count++;
         } catch (e) {
-            console.warn(`Sync compra ${compra.id} falló:`, e.message);
+            console.error(`Error sincronizando compra ${compra.id}:`, e);
         }
     }
 

@@ -52,8 +52,7 @@ async function renderAuxiliar(container, tipo, titulo, subtitulo) {
       totalPendiente += (total - pagado);
     });
 
-    // Sync journal entries in background
-    syncToJournal(items, tipo).catch(e => console.warn('Sync journal:', e.message));
+
 
     container.innerHTML = `
       <div class="section-header">
@@ -176,7 +175,10 @@ function renderRow(item, tipo) {
   return `
     <tr style="border-bottom:1px solid var(--border);">
       <td style="padding:0.6rem;">${item.date || '-'}</td>
-      <td style="padding:0.6rem;font-family:monospace;">${docNum}</td>
+      <td style="padding:0.6rem;font-family:monospace;">
+        <small style="opacity:0.6;font-weight:bold;">${(item.document_type || (tipo === 'compras' ? 'FAC' : 'BOL')).toUpperCase().substring(0,3)}</small> 
+        ${docNum}
+      </td>
       <td style="padding:0.6rem;font-weight:500;">${nombre}</td>
       <td style="padding:0.6rem;text-align:right;font-family:monospace;font-weight:bold;">${formatCLP(total)}</td>
       <td style="padding:0.6rem;text-align:right;font-family:monospace;color:#10b981;">${formatCLP(pagado)}</td>
@@ -315,62 +317,4 @@ function openAbonoModal(tipo, docId, docTotal, docPaid, docName, docRef, contain
   };
 }
 
-/* ---------- AUTO-SYNC TO JOURNAL ENTRIES ---------- */
 
-async function syncToJournal(items, tipo) {
-  const existingEntries = await db.getAll('asientos').catch(() => []);
-  const existingRefs = new Set(existingEntries.map(e => `${e.tipo_origen}_${e.referencia_id}`));
-
-  let synced = 0;
-  for (const item of items) {
-    const tipoOrigen = tipo === 'compras' ? 'erp_compra' : 'erp_venta';
-    const key = `${tipoOrigen}_${item.id}`;
-    if (existingRefs.has(key)) continue;
-
-    const total = parseFloat(item.total) || 0;
-    if (total === 0) continue;
-
-    const neto = parseFloat(item.net) || Math.round(total / (1 + IVA_RATE));
-    const iva = total - neto;
-    const fecha = item.date || new Date().toISOString().substring(0, 10);
-    const periodo = fecha.substring(0, 7);
-
-    try {
-      if (tipo === 'compras') {
-        const docNum = item.document_number ? `Fact. ${item.document_number}` : 'S/N';
-        const desc = item.description || (item.items?.length ? `${item.items.length} ítems` : '');
-        await crearAsiento({
-          fecha,
-          glosa: `Compra ${docNum} — ${item.provider_name || 'Proveedor'}${desc ? ' — ' + desc : ''}`,
-          periodo,
-          tipo_origen: tipoOrigen,
-          referencia_id: item.id,
-          lineas: [
-            { cuenta_codigo: '5.1.01', debe: neto, haber: 0 },
-            { cuenta_codigo: '1.1.06', debe: iva, haber: 0 },
-            { cuenta_codigo: '2.1.01', debe: 0, haber: total }
-          ]
-        });
-      } else {
-        const docNumV = item.document_number ? `Boleta/Fact. ${item.document_number}` : (item.items?.length ? `${item.items.length} productos` : 'S/N');
-        await crearAsiento({
-          fecha,
-          glosa: `Venta ${docNumV} — ${item.client_name || 'Consumidor Final'}`,
-          periodo,
-          tipo_origen: tipoOrigen,
-          referencia_id: item.id,
-          lineas: [
-            { cuenta_codigo: '1.1.01', debe: total, haber: 0 },
-            { cuenta_codigo: '4.1.01', debe: 0, haber: neto },
-            { cuenta_codigo: '2.1.02', debe: 0, haber: iva }
-          ]
-        });
-      }
-      synced++;
-    } catch (e) {
-      console.warn(`Sync ${tipoOrigen} #${item.id}:`, e.message);
-    }
-  }
-
-  if (synced > 0) console.log(`✅ ${synced} ${tipo} sincronizadas al Libro Diario`);
-}

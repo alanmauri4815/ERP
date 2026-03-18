@@ -37,6 +37,10 @@ export async function renderDashboard(container, state) {
   const purchases = Array.isArray(rawPurchases) ? rawPurchases : [];
   const sales = Array.isArray(rawSales) ? rawSales : [];
 
+  // Actualizar el estado global para asegurar que la sincronización tenga datos
+  state.history.sales = sales;
+  state.history.purchases = purchases;
+
   // Calcular CxC y CxP Pendientes
   const cxCPending = sales.reduce((s, v) => s + (parseFloat(v.total) - parseFloat(v.paid_amount || 0)), 0);
   const cxPPending = purchases.reduce((s, c) => s + (parseFloat(c.total) - parseFloat(c.paid_amount || 0)), 0);
@@ -127,9 +131,6 @@ export async function renderDashboard(container, state) {
               <button class="btn btn-secondary" onclick="window.renderView('sales')">Nueva Venta</button>
               <button class="btn btn-primary" onclick="window.renderView('production')">Iniciar Producción</button>
               <button class="btn btn-accent" onclick="window.renderView('purchases')">Registrar Compra</button>
-              <button id="btn-sync-dashboard" class="btn btn-success" style="margin-top: 10px;">
-                <i class="fas fa-sync"></i> Sincronizar ERP -> Contabilidad
-              </button>
             </div>
           </div>
         </div>
@@ -223,22 +224,7 @@ export async function renderDashboard(container, state) {
     setTimeout(() => initDashboardChart(state.stats.weeklySales), 100);
   }
 
-  // Sync Logic
-  const btnSync = container.querySelector('#btn-sync-dashboard');
-  if (btnSync) {
-    btnSync.onclick = async () => {
-      btnSync.disabled = true;
-      btnSync.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sincronizando...';
-      try {
-        await window.apiSyncOperations();
-      } catch (e) {
-        console.error(e);
-      } finally {
-        btnSync.disabled = false;
-        btnSync.innerHTML = '<i class="fas fa-sync"></i> Sincronizar ERP -> Contabilidad';
-      }
-    };
-  }
+
 }
 
 function renderStatCard(label, value, color, icon) {

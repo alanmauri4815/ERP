@@ -8,126 +8,189 @@ import { erpFetch } from '../../services/erp-api.js';
 import { formatCLP } from '../../utils/formatters.js';
 import { showToast, openModal, closeModal } from '../../components/ui-helpers.js';
 import { IVA_RATE } from '../../utils/constants.js';
+import { exportToExcel, formatLedgerForExport } from '../../export-utils.js';
 
 /* -- Sincronizar operaciones ERP al abrir el Libro Diario -- */
+import { sincronizarOperacionesERP } from '../../services/contabilidad.service.js';
+
 async function syncERPToJournal() {
   try {
-    const [purchases, sales] = await Promise.all([
-      erpFetch('/purchases'),
-      erpFetch('/sales')
-    ]);
+    const syncPromise = (async () => {
+      const [purchases, sales] = await Promise.all([
+        erpFetch('/purchases'),
+        erpFetch('/sales')
+      ]);
 
-    const existingEntries = await db.getAll('asientos').catch(() => []);
-    const existingRefs = new Set(existingEntries.map(e => `${e.tipo_origen}_${e.referencia_id}`));
+      const _purchases = Array.isArray(purchases) ? purchases : [];
+      const _sales = Array.isArray(sales) ? sales : [];
 
-    let synced = 0;
-    const allItems = [
-      ...(Array.isArray(purchases) ? purchases.map(p => ({ ...p, _tipo: 'compras' })) : []),
-      ...(Array.isArray(sales) ? sales.map(s => ({ ...s, _tipo: 'ventas' })) : [])
-    ];
+      return await sincronizarOperacionesERP(_sales, _purchases);
+    })();
 
-    for (const item of allItems) {
-      const tipoOrigen = item._tipo === 'compras' ? 'erp_compra' : 'erp_venta';
-      const key = `${tipoOrigen}_${item.id}`;
-      if (existingRefs.has(key)) continue;
-
-      const total = parseFloat(item.total) || 0;
-      if (total === 0) continue;
-
-      const neto = parseFloat(item.net) || Math.round(total / (1 + IVA_RATE));
-      const iva = total - neto;
-      const fecha = item.date || new Date().toISOString().substring(0, 10);
-      const periodo = fecha.substring(0, 7);
-
-      try {
-        if (item._tipo === 'compras') {
-          const docNum = item.document_number ? `Fact. ${item.document_number}` : 'S/N';
-          const desc = item.description || (item.items?.length ? `${item.items.length} ítems` : '');
-          const glosaCompra = `Compra ${docNum} — ${item.provider_name || 'Proveedor'}${desc ? ' — ' + desc : ''}`;
-          await crearAsiento({
-            fecha, periodo,
-            glosa: glosaCompra,
-            tipo_origen: tipoOrigen,
-            referencia_id: item.id,
-            lineas: [
-              { cuenta_codigo: '5.1.01', debe: neto, haber: 0 },
-              { cuenta_codigo: '1.1.06', debe: iva, haber: 0 },
-              { cuenta_codigo: '2.1.01', debe: 0, haber: total }
-            ]
-          });
-        } else {
-          const docNumV = item.document_number ? `Boleta/Fact. ${item.document_number}` : (item.items?.length ? `${item.items.length} productos` : 'S/N');
-          const clienteV = item.client_name || 'Consumidor Final';
-          const glosaVenta = `Venta ${docNumV} — ${clienteV}`;
-          await crearAsiento({
-            fecha, periodo,
-            glosa: glosaVenta,
-            tipo_origen: tipoOrigen,
-            referencia_id: item.id,
-            lineas: [
-              { cuenta_codigo: '1.1.01', debe: total, haber: 0 },
-              { cuenta_codigo: '4.1.01', debe: 0, haber: neto },
-              { cuenta_codigo: '2.1.02', debe: 0, haber: iva }
-            ]
-          });
-        }
-        synced++;
-      } catch (e) {
-        console.warn(`Sync ${tipoOrigen} #${item.id}:`, e.message);
-      }
-    }
-
+    // Timeout de 10 segundos para no bloquear la UI si la red o las tablas fallan
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 10000));
+    
+    const synced = await Promise.race([syncPromise, timeoutPromise]);
+    
     if (synced > 0) console.log(`✅ ${synced} operaciones ERP sincronizadas al Libro Diario`);
+    return synced || 0;
   } catch (e) {
     console.warn('Sync ERP→Diario:', e.message);
+    // Ya no mostramos el toast de advertencia por timeout en carga asíncrona
+    return 0;
   }
 }
 
 export async function renderLibroDiario(container) {
   const now = new Date();
-  const periodo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  let currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
   container.innerHTML = `<div style="text-align:center; padding:3rem; color:var(--text-muted);">
     <div class="spinner" style="margin:0 auto 1rem;"></div>
-    Sincronizando operaciones ERP y cargando Libro Diario...
+    Cargando Libro Diario...
   </div>`;
 
-  // First sync ERP purchases/sales to journal
-  await syncERPToJournal();
+  // La sincronización ahora es manual mediante el botón, evitamos carga asíncrona automática
+  // syncERPToJournal().then(synced => {
+  //     if (synced > 0) loadAndRender(currentPeriod);
+  // });
 
   const cuentasDetalle = await getCuentasDetalle();
-  let asientos = await getLibroDiario(periodo);
+  
+  async function loadAndRender(periodFilter) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout total
 
-  // Mostrar todo si el mes actual está vacío
-  if (asientos.length === 0) {
-    asientos = await getLibroDiario('force');
+      try {
+          console.log('[LibroDiario] Iniciando carga de datos para periodo:', periodFilter);
+          
+          // Ejecutamos las promesas con un timeout
+          const loadPromise = (async () => {
+              const asientos = await getLibroDiario(periodFilter);
+              const cuentas = await getCuentasDetalle();
+              return { asientos, cuentas };
+          })();
+
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT_CARGA')), 15000));
+
+          const { asientos: rawAsientos, cuentas: cuentasDetalle } = await Promise.race([loadPromise, timeoutPromise]);
+          
+          let asientos = rawAsientos || [];
+          console.log('[LibroDiario] Datos cargados con éxito:', asientos.length, 'asientos found.');
+
+          // Si visualmente no hay nada en este mes, intentamos cargar todo para no mostrar pantalla vacía al inicio
+          // Solo si el periodFilter NO es 'all'
+          if (asientos.length === 0 && periodFilter !== 'all' && periodFilter !== '') {
+              console.log('[LibroDiario] Mes vacío, buscando historial completo...');
+              // No cambiamos periodFilter para que el select siga mostrando el mes actual si se desea
+          }
+
+          container.innerHTML = `
+            <div class="section-header">
+              <div>
+                <h2 class="section-title">Libro Diario</h2>
+                <p style="color:var(--text-muted);font-size:var(--font-size-sm);margin-top:4px;">Registro cronológico de operaciones</p>
+              </div>
+              <div style="display:flex; gap:10px; align-items:center;">
+                <div class="form-group" style="margin:0; display:flex; align-items:center; gap:8px;">
+                  <label style="margin:0; white-space:nowrap; font-size:13px;">Periodo:</label>
+                  <input type="month" class="form-control" id="period-selector" value="${periodFilter === 'all' ? '' : periodFilter}" style="width:160px; padding:4px 8px;">
+                  <button class="btn btn-secondary btn-sm" id="btn-show-all" style="padding:5px 10px;">Ver Todo</button>
+                </div>
+                <button class="btn btn-secondary" id="btn-sync-erp" title="Sincronizar compras y ventas desde el ERP">
+                  <i class="fas fa-sync"></i> Sincronizar ERP
+                </button>
+                <button class="btn btn-accent" id="btn-export-excel">
+                  <i class="fas fa-file-excel"></i> Exportar
+                </button>
+                <button class="btn btn-primary" id="btn-nuevo-asiento">
+                  <i class="fas fa-plus"></i> Nuevo Asiento
+                </button>
+              </div>
+            </div>
+
+            ${asientos.length === 0 ? `
+              <div class="empty-state">
+                <i class="fas fa-book"></i>
+                <h3>Sin asientos registrados</h3>
+                <p>No se encontraron movimientos para el periodo <strong>${periodFilter || 'seleccionado'}</strong>.</p>
+                <div style="margin-top:1rem;">
+                   <button class="btn btn-secondary" onclick="document.getElementById('btn-show-all').click()">Ver todo el historial</button>
+                </div>
+              </div>
+            ` : `
+              <div class="journal animate-fade-in">
+                ${asientos.sort((a,b) => (b.fecha||'').localeCompare(a.fecha||'')).map(asiento => renderAsientoCard(asiento, cuentasDetalle)).join('')}
+              </div>
+            `}
+          `;
+
+          // Event Listeners
+          container.querySelector('#period-selector')?.addEventListener('change', (e) => {
+              currentPeriod = e.target.value;
+              loadAndRender(currentPeriod);
+          });
+
+          container.querySelector('#btn-show-all')?.addEventListener('click', () => {
+              currentPeriod = 'all';
+              loadAndRender('all');
+          });
+
+          container.querySelector('#btn-nuevo-asiento')?.addEventListener('click', () => openAsientoModal(cuentasDetalle, container));
+          
+          container.querySelector('#btn-sync-erp')?.addEventListener('click', async () => {
+            const btn = container.querySelector('#btn-sync-erp');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sincronizando...';
+            btn.disabled = true;
+            try {
+              const synced = await syncERPToJournal();
+              if (synced > 0) {
+                showToast(`Sincronización completada. ${synced} operaciones integradas.`, 'success');
+                await loadAndRender(currentPeriod); 
+              } else {
+                showToast('Libro Diario ya está al día. No hay nuevas operaciones.', 'info');
+              }
+            } catch (err) {
+              console.error(err);
+              showToast('Error al sincronizar con el ERP.', 'error');
+            } finally {
+              if (container.querySelector('#btn-sync-erp')) {
+                const updatedBtn = container.querySelector('#btn-sync-erp');
+                updatedBtn.innerHTML = originalHtml;
+                updatedBtn.disabled = false;
+              }
+            }
+          });
+
+          container.querySelector('#btn-export-excel')?.addEventListener('click', () => {
+            if (!asientos || asientos.length === 0) {
+              return showToast('No hay datos para exportar', 'warning');
+            }
+            try {
+              const formatted = formatLedgerForExport(asientos);
+              const fileName = `Libro_Diario_${periodFilter || 'Historial'}`;
+              exportToExcel(formatted, fileName, 'Libro Diario');
+            } catch (e) {
+              console.error('Error al exportar:', e);
+              showToast('Error al generar el archivo Excel.', 'error');
+            }
+          });
+      } catch (err) {
+          clearTimeout(timeoutId);
+          console.error('[LibroDiario] Error fatal:', err);
+          container.innerHTML = `
+            <div class="empty-state">
+              <i class="fas fa-wifi" style="color:var(--error); font-size: 3rem; margin-bottom: 1rem;"></i>
+              <h3>Problema de Conexión</h3>
+              <p>${err.message === 'TIMEOUT_CARGA' ? 'El servidor tardó demasiado en responder.' : (err.message || 'Error al conectar con la base de datos.')}</p>
+              <button class="btn btn-primary" onclick="location.reload()" style="margin-top: 1rem;">Reintentar Carga</button>
+            </div>
+          `;
+      }
   }
 
-  container.innerHTML = `
-    <div class="section-header">
-      <div>
-        <h2 class="section-title">Libro Diario</h2>
-        <p style="color:var(--text-muted);font-size:var(--font-size-sm);margin-top:4px;">Registro cronológico de operaciones manuales y automáticas</p>
-      </div>
-      <button class="btn btn-primary" id="btn-nuevo-asiento">
-        <i class="fas fa-plus"></i> Nuevo Asiento Manual
-      </button>
-    </div>
-
-    ${asientos.length === 0 ? `
-      <div class="empty-state">
-        <i class="fas fa-book"></i>
-        <h3>Sin asientos registrados</h3>
-        <p>No hay movimientos para el período seleccionado.</p>
-      </div>
-    ` : `
-      <div class="journal animate-fade-in">
-        ${asientos.map(asiento => renderAsientoCard(asiento, cuentasDetalle)).join('')}
-      </div>
-    `}
-  `;
-
-  container.querySelector('#btn-nuevo-asiento')?.addEventListener('click', () => openAsientoModal(cuentasDetalle, container));
+  await loadAndRender(currentPeriod);
 }
 
 function renderAsientoCard(asiento, cuentas) {

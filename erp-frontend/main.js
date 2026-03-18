@@ -34,6 +34,26 @@ const API_BASE = (window.location.hostname === 'localhost' || window.location.ho
   : 'https://erp-universal-backend.onrender.com/api';
 console.log('🔗 Conectado con API en:', API_BASE);
 
+// Inyectar indicador de entorno
+setTimeout(() => {
+  const sidebar = document.getElementById('sidebar-user-info');
+  if (sidebar) {
+    const indicator = document.createElement('div');
+    const isLocal = API_BASE.includes('localhost');
+    indicator.style.fontSize = '0.7rem';
+    indicator.style.marginTop = '0.5rem';
+    indicator.style.padding = '0.2rem 0.5rem';
+    indicator.style.borderRadius = '4px';
+    indicator.style.background = isLocal ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)';
+    indicator.style.color = isLocal ? '#3b82f6' : '#10b981';
+    indicator.style.border = `1px solid ${isLocal ? '#3b82f6' : '#10b981'}`;
+    indicator.style.display = 'inline-block';
+    indicator.style.marginLeft = '1.1rem';
+    indicator.innerHTML = `<i class="fas fa-link"></i> ${isLocal ? 'ENTORNO LOCAL' : 'ENTORNO WEB'}`;
+    sidebar.appendChild(indicator);
+  }
+}, 1000);
+
 const mainContent = document.getElementById('main-content');
 const navItems = document.querySelectorAll('.nav-item');
 
@@ -119,7 +139,8 @@ let state = {
     order: 'asc'
   },
   logistics: [],
-  pendingLogistics: []
+  pendingLogistics: [],
+  costCenters: []
 };
 
 window.openSaleModal = function () {
@@ -167,7 +188,7 @@ async function fetchData() {
     const [
       prods, rms, provs, hSales, hPurch, hProd, st, usrs,
       recipes, accs, quotes, clis, pmachines, aAccounts,
-      aLedger, logHistory, pendingLog,
+      aLedger, logHistory, pendingLog, cCenters,
       // Nuevas tablas profesionalizadas
       proPlanCuentas, proAsientos, proMovimientos
     ] = await Promise.all([
@@ -188,6 +209,7 @@ async function fetchData() {
       apiFetch('/accounting/ledger'),
       apiFetch('/logistics'),
       apiFetch('/logistics/pending'),
+      apiFetch('/cost-centers'),
       // Consultas directas a las tablas nuevas via Datastore (con fallback)
       db.getAll('plan_cuentas').catch(e => { console.error(e); return []; }),
       db.getAll('asientos').catch(e => { console.error(e); return []; }),
@@ -210,6 +232,7 @@ async function fetchData() {
     state.paymentMachines = Array.isArray(pmachines) ? pmachines : [];
     state.logistics = Array.isArray(logHistory) ? logHistory : [];
     state.pendingLogistics = Array.isArray(pendingLog) ? pendingLog : [];
+    state.costCenters = Array.isArray(cCenters) ? cCenters : [];
 
     // Asignaciones de Contabilidad Profesional (Sincronizadas con Supabase)
     state.accounting = {
@@ -689,6 +712,13 @@ const views = {
               <option value="n/a">Sin Documento</option>
             </select>
           </div>
+          <div class="form-group">
+            <label>Centro de Costo</label>
+            <select id="pur-cost-center">
+              <option value="">(Default Operaciones)</option>
+              ${state.costCenters?.map(cc => `<option value="${cc.id}">${cc.nombre}</option>`).join('') || ''}
+            </select>
+          </div>
         </div>
         
         <div id="pur-items-container">
@@ -792,8 +822,16 @@ const views = {
             <input type="date" id="sale-date" value="${new Date().toISOString().split('T')[0]}">
           </div>
           <div class="form-group">
-            <label>N° Documento (Boleta/Factura)</label>
+            <label>N° Documento</label>
             <input type="text" id="sale-doc-number" placeholder="Ej: 98765">
+          </div>
+          <div class="form-group">
+            <label>Tipo Documento</label>
+            <select id="sale-doc-type">
+              <option value="boleta">Boleta</option>
+              <option value="factura">Factura</option>
+              <option value="n/a">Sin Documento</option>
+            </select>
           </div>
           <div class="form-group">
             <label>Evento/Feria</label>
@@ -2035,26 +2073,41 @@ function renderHistoryTable(type) {
     <table>
       <thead>
         <tr>
-          <th>ID</th>
-          <th>Fecha</th>
-          <th>Doc</th>
-          <th>Cliente</th>
-          <th>Método Pago</th>
-          <th>Total Bruto</th>
-          <th style="text-align: center">Acción</th>
+          <th style="width: 60px">ID</th>
+          <th style="width: 100px">Fecha</th>
+          <th style="width: 100px">Documento</th>
+          <th>Cliente / Evento</th>
+          <th style="width: 120px">Pago</th>
+          <th style="width: 130px; text-align: right">Total Bruto</th>
+          <th style="width: 100px; text-align: center">Acción</th>
         </tr>
       </thead>
       <tbody>
         ${data.map(h => `
               <tr>
                 <td><strong>#${h.id}</strong></td>
-                <td>${h.date ? h.date.split('T')[0] : '-'}</td>
-                <td><small style="font-weight:700; color:var(--text-muted)">${h.document_number || '-'}</small></td>
-                <td><strong>${h.client_name || 'Venta Directa'}</strong></td>
-                <td>${h.payment_method === 'cash' ? '💵 Efectivo' : h.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transferencia'}</td>
-                <td>$${(h.total || 0).toLocaleString()} ${h.is_iva_exempt ? '<small style="color:var(--warning)">(Exento)</small>' : ''}</td>
+                <td><small>${h.date ? h.date.split('T')[0] : '-'}</small></td>
+                <td>
+                  <span class="badge" style="background:var(--surface-light); font-size:0.7rem; border:1px solid var(--border)">
+                    ${(h.document_type || 'boleta').toUpperCase()}
+                  </span><br>
+                  <small style="font-weight:700; color:var(--primary)">${h.document_number || '-'}</small>
+                </td>
+                <td>
+                  <strong>${h.client_name || 'Venta Directa'}</strong>
+                  ${h.event_name ? `<br><small style="color:var(--text-muted)">🎡 ${h.event_name}</small>` : ''}
+                </td>
+                <td>
+                  <span style="font-size:0.8rem">
+                    ${h.payment_method === 'cash' ? '💵 Efectivo' : h.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transferencia'}
+                  </span>
+                </td>
+                <td style="text-align: right; font-weight:700">
+                  $${(h.total || 0).toLocaleString()} ${h.is_iva_exempt ? '<br><small style="color:var(--warning)">(Exento)</small>' : ''}
+                </td>
                 <td style="text-align: center">
-                  <button class="btn-sm" onclick="window.showTransactionDetails('sale', '${h.id}')" title="Ver detalle de productos">👁️ Detalle</button>
+                  <button class="btn-sm" onclick="window.showTransactionDetails('sale', '${h.id}')" title="Ver detalle de productos">👁️</button>
+                  <button class="btn-sm" onclick="window.editTransaction('sale', '${h.id}')" style="background:var(--secondary)" title="Editar venta">✏️</button>
                 </td>
               </tr>
             `).join('')}
@@ -2212,8 +2265,8 @@ window.showTransactionDetails = (type, id) => {
           </div>
           ` : ''}
           <div>
-            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">N° Documento</label>
-            <strong style="color:var(--accent)">${transaction.document_number || '-'}</strong>
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Documento</label>
+            <strong style="color:var(--accent)">${(transaction.document_type || 'N/A').toUpperCase()} #${transaction.document_number || '-'}</strong>
           </div>
           <div>
             <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Método de Pago</label>
@@ -2396,11 +2449,20 @@ window.editTransaction = (type, id) => {
 
       const saleCategoryEl = document.getElementById('sale-category');
       const saleQuoteEl = document.getElementById('sale-quotation');
+      const saleDocNumEl = document.getElementById('sale-doc-number');
+      const saleDocTypeEl = document.getElementById('sale-doc-type');
+
       if (saleCategoryEl) {
         saleCategoryEl.value = transaction.category || (transaction.quotation_id ? 'pull' : 'push');
       }
       if (saleQuoteEl) {
         saleQuoteEl.value = transaction.quotation_id || '';
+      }
+      if (saleDocNumEl) {
+        saleDocNumEl.value = transaction.document_number || '';
+      }
+      if (saleDocTypeEl) {
+        saleDocTypeEl.value = transaction.document_type || 'boleta';
       }
     } else {
       const typeEl = document.getElementById('pur-type');
@@ -2413,6 +2475,7 @@ window.editTransaction = (type, id) => {
       const projectEl = document.getElementById('pur-project');
       const descEl = document.getElementById('pur-description');
       const expTotalEl = document.getElementById('pur-expense-total');
+      const ccEl = document.getElementById('pur-cost-center');
 
       if (typeEl) typeEl.value = transaction.type || 'mp';
       if (categoryEl) categoryEl.value = transaction.purchase_category || 'general';
@@ -2422,6 +2485,7 @@ window.editTransaction = (type, id) => {
       if (accEl) accEl.value = transaction.account_id || '';
       if (docEl) docEl.value = transaction.document_type || 'factura';
       if (projectEl) projectEl.value = transaction.quotation_id || transaction.project_ref || '';
+      if (ccEl) ccEl.value = transaction.centro_costo_id || '';
 
       const docNumEl = document.getElementById('pur-doc-number');
       if (docNumEl) docNumEl.value = transaction.document_number || '';
@@ -4312,7 +4376,6 @@ window.printQuotation = () => {
         
         .line-divider { border-top: 3px solid #000; margin-bottom: 30px; }
         
-        .main-title { text-align: center;
         .main-title { text-align: center; color: #4a7ebb; font-size: 26px; font-weight: bold; margin-bottom: 30px; letter-spacing: 2px; }
         
         .client-info-grid { margin-bottom: 40px; font-size: 14px; }
@@ -4861,6 +4924,7 @@ function renderView(viewName) {
       setVal('pur-description', '');
       setVal('pur-project', '');
       setVal('pur-expense-total', 0);
+      setVal('pur-cost-center', state.costCenters.find(cc => cc.codigo === 'OPER')?.id || '');
 
       window.togglePurType();
       window.togglePurCategory();
@@ -4894,7 +4958,8 @@ function renderView(viewName) {
           document_type: document.getElementById('pur-doc-type')?.value,
           quotation_id: (projectVal && !projectVal.includes('S-')) ? parseInt(projectVal) : null,
           project_ref: (projectVal && projectVal.includes('S-')) ? projectVal : (projectVal || null),
-          document_number: document.getElementById('pur-doc-number')?.value || null
+          document_number: document.getElementById('pur-doc-number')?.value || null,
+          centro_costo_id: document.getElementById('pur-cost-center')?.value || null
         };
 
         if (type === 'mp') {
@@ -4905,7 +4970,13 @@ function renderView(viewName) {
           body.iva = parseInt(document.getElementById('pur-iva')?.value) || 0;
           body.total = parseInt(document.getElementById('pur-total')?.value) || 0;
 
-          if (!body.items || body.items.length === 0) return alert('Debe agregar al menos un ítem');
+          if (!body.items || body.items.length === 0) {
+            if (body.total > 0 && isEditMode) {
+                console.warn('[PURCHASE] Editando compra antigua sin ítems. Se permite el guardado.');
+            } else {
+                return alert('Debe agregar al menos un ítem');
+            }
+          }
         } else {
           const totalExp = parseInt(document.getElementById('pur-expense-total')?.value) || 0;
           body.description = document.getElementById('pur-description')?.value;
@@ -4989,7 +5060,8 @@ function renderView(viewName) {
         event_name: document.getElementById('sale-event-name').value || null,
         category: document.getElementById('sale-category')?.value || 'push',
         quotation_id: document.getElementById('sale-quotation')?.value || null,
-        document_number: document.getElementById('sale-doc-number')?.value || null
+        document_number: document.getElementById('sale-doc-number')?.value || null,
+        document_type: document.getElementById('sale-doc-type')?.value || 'boleta'
       };
 
       console.log('[DEBUG] Enviando Venta:', body);
