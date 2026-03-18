@@ -26,13 +26,7 @@ const app = express();
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
 // Global Request Logger
-app.use((req, res, next) => {
-    debugLog(`[TRAFFIC] ${req.method} ${req.url}`, {
-        headers: req.headers,
-        body: req.method !== 'GET' ? req.body : null
-    });
-    next();
-});
+// [Logger moved below express.json]
 
 const T = {
     MP: 'materias primas',
@@ -224,7 +218,15 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '5mb' }));
 
-// Request logger
+// Global Request Logger with parsed body
+app.use((req, res, next) => {
+    debugLog(`[TRAFFIC] ${req.method} ${req.url}`, {
+        headers: req.headers,
+        body: req.method !== 'GET' ? req.body : null
+    });
+    next();
+});
+
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
@@ -383,6 +385,8 @@ app.post('/api/auth/register', authenticateToken, checkAdmin, async (req, res) =
 
 app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
     const { username, password, empresa_id } = req.body;
+    debugLog(`[LOGIN] Attempt for "${username}" in empresa: ${empresa_id}. Body keys: ${Object.keys(req.body || {})}`);
+
     try {
         // Multi-Tenant: buscar usuario por username Y empresa_id
         let query = supabase.from(T.USERS).select('*').eq('username', username);
@@ -390,13 +394,24 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
         const { data: user, error } = await query.single();
 
         if (error) {
+            debugLog(`[LOGIN] DB Error or User Not Found: ${error.message} (Code: ${error.code})`);
             console.error('Login DB Error:', error.message, 'Code:', error.code);
             return res.status(401).json({ error: 'Usuario no encontrado en esta empresa.', details: error.message, code: error.code });
         }
-        if (!user) return res.status(401).json({ error: 'Usuario no encontrado.' });
+        if (!user) {
+            debugLog('[LOGIN] No user data returned');
+            return res.status(401).json({ error: 'Usuario no encontrado.' });
+        }
 
-        const validPassword = await bcrypt.compare(password, user.password);
-        if (!validPassword) return res.status(401).json({ error: 'Contraseña incorrecta.' });
+        debugLog(`[LOGIN] User found: ID ${user.id}, Hash length: ${user.password?.length || 0}`);
+        
+        const validPassword = await bcrypt.compare(password || '', user.password);
+        debugLog(`[LOGIN] Password match result: ${validPassword} for user "${username}"`);
+
+        if (!validPassword) {
+            debugLog(`[LOGIN] FAILED: Password mismatch. Sent length: ${password?.length || 0}`);
+            return res.status(401).json({ error: 'Contraseña incorrecta.' });
+        }
 
         // Multi-Tenant: incluir empresa_id en el JWT
         const userEmpresaId = user.empresa_id || 1;
@@ -409,6 +424,8 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
         // Obtener nombre de la empresa
         const { data: empresa } = await supabase.from('empresas').select('nombre').eq('id', userEmpresaId).single();
 
+        debugLog(`[LOGIN] SUCCESS: User "${username}" logged in. Empresa: ${empresa?.nombre}`);
+
         res.json({
             success: true,
             token,
@@ -420,6 +437,7 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
             }
         });
     } catch (e) {
+        debugLog(`[LOGIN EXCEPTION] ${e.message}`);
         res.status(500).json({ error: e.message });
     }
 });
@@ -2632,7 +2650,8 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
         total_net_cost, total_price_net, total_iva, total_price_gross,
         budget, success_probability, products_list,
         items, rut, address, description_proposal, images,
-        external_quote_id, purchase_order_id
+        external_quote_id, purchase_order_id,
+        delivery_time, quote_date
     } = req.body;
 
     console.log('--- CREATE QUOTATION ---');
@@ -2647,6 +2666,7 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
             budget, success_probability, products_list,
             rut, address, description_proposal, images,
             external_quote_id, purchase_order_id,
+            delivery_time, quote_date,
             status: 'draft',
             empresa_id: req.empresa_id
         };
@@ -2699,7 +2719,8 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
         total_net_cost, total_price_net, total_iva, total_price_gross,
         budget, success_probability, products_list,
         items, rut, address, description_proposal, images,
-        external_quote_id, purchase_order_id
+        external_quote_id, purchase_order_id,
+        delivery_time, quote_date
     } = req.body;
 
     try {
@@ -2709,7 +2730,8 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
             total_net_cost, total_price_net, total_iva, total_price_gross,
             budget, success_probability, products_list,
             rut, address, description_proposal, images,
-            external_quote_id, purchase_order_id
+            external_quote_id, purchase_order_id,
+            delivery_time, quote_date
         };
 
         let { error: qError } = await supabase.from(T.QUOTATIONS).update(updateData).eq('id', id).eq('empresa_id', req.empresa_id);

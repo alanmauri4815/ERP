@@ -4279,8 +4279,10 @@ window.viewQuotation = async (id) => {
               <div><p><strong>RUT:</strong> ${displayRut}</p></div>
               <div><p><strong>Orden Compra (OC):</strong> ${q.purchase_order_id || '-'}</p></div>
               <div><p><strong>Dirección:</strong> ${displayAddress}</p></div>
-              <div><p><strong>Fecha Emisión:</strong> ${q.quote_date ? new Date(q.quote_date).toLocaleDateString() : '-'}</p></div>
-              <div style="grid-column: span 2"><p><strong>Plazo de Entrega:</strong> ${q.delivery_time || 'No especificado'}</p></div>
+              <div><p><strong>Fecha Emisión:</strong> ${q.quote_date ? new Date(q.quote_date).toLocaleDateString('es-CL') : '-'}</p></div>
+              <div style="grid-column: span 2; background: rgba(var(--primary-rgb), 0.1); padding: 0.5rem; border-radius: 4px; border: 1px dashed var(--primary)">
+                <p><strong>🚚 Plazo de Entrega:</strong> <span style="font-size: 1.1rem; color: var(--primary); font-weight: 700">${q.delivery_time || 'No especificado'}</span></p>
+              </div>
             `;
       })()}
         </div>
@@ -4396,10 +4398,12 @@ window.printQuotation = () => {
         
         .section-title { color: #4a7ebb; font-size: 18px; font-weight: bold; margin: 40px 0 20px 0; text-transform: uppercase; }
         
-        .bank-details { background: #f9f9f9; padding: 20px; border: 1px dashed #4a7ebb; border-radius: 8px; margin-top: 20px; }
+        .bank-details { background: #f9f9f9; padding: 20px; border: 1px dashed #4a7ebb; border-radius: 8px; margin-top: 20px; break-inside: avoid; page-break-inside: avoid; }
         .bank-details p { font-size: 13px; margin-bottom: 3px; }
         
-        .page-break { page-break-before: always; }
+        .page-break { break-before: page; page-break-before: always; display: block; clear: both; height: 0; margin: 0; padding: 0; }
+        .page-container { page-break-after: always; break-after: page; }
+        .page-container:last-child { page-break-after: auto; break-after: auto; }
         
         @media print {
           body { padding: 0; }
@@ -4408,6 +4412,7 @@ window.printQuotation = () => {
       </style>
     </head>
     <body>
+      <div class="page-container">
       <!-- HOJA 1: COTIZACIÓN -->
       <div class="page-header">
         <div class="logo-section">
@@ -4423,7 +4428,7 @@ window.printQuotation = () => {
           <p>COTIZACIÓN: ${q.external_quote_id || quoteDisplayId}</p>
           ${q.purchase_order_id ? `<p>ORDEN DE COMPRA: ${q.purchase_order_id}</p>` : ''}
           <p>Fecha documento: ${q.quote_date ? q.quote_date.split('-').reverse().join('-') : today}</p>
-          <p>Página 1 de 2</p>
+          <p>Página 1 de 3</p>
         </div>
       </div>
 
@@ -4477,8 +4482,9 @@ window.printQuotation = () => {
         <tr style="font-size:18px"><td class="label-cell" style="background:#eee; border: 1.5px solid #000">TOTAL</td><td style="text-align:right; background:#eee; border: 1.5px solid #000">$ ${Math.round(totalQuoteGross).toLocaleString('es-CL')}</td></tr>
       </table>
 
+      </div> <!-- End Hoja 1 -->
       <div class="page-break"></div>
-
+      <div class="page-container">
       <!-- HOJA 2: ESPECIFICACIONES Y CONDICIONES -->
       <div class="page-header">
         <div class="logo-section">
@@ -4494,7 +4500,7 @@ window.printQuotation = () => {
           <p>COTIZACIÓN: ${q.external_quote_id || quoteDisplayId}</p>
           ${q.purchase_order_id ? `<p>ORDEN DE COMPRA: ${q.purchase_order_id}</p>` : ''}
           <p>Fecha documento: ${q.quote_date ? q.quote_date.split('-').reverse().join('-') : today}</p>
-          <p>Página 2 de 2</p>
+          <p>Página 2 de 3</p>
         </div>
       </div>
       <div class="line-divider"></div>
@@ -4519,6 +4525,29 @@ window.printQuotation = () => {
 
       <h2 class="section-title">PLAZO DE VALIDEZ DE LA COTIZACIÓN:</h2>
       <p style="font-size:14px; margin-left: 20px">Cotización válida por 30 días.</p>
+
+      </div> <!-- End Hoja 2 -->
+      <div class="page-break"></div>
+      <div class="page-container">
+      <!-- HOJA 3: DATOS BANCARIOS Y GARANTÍAS -->
+      <div class="page-header">
+        <div class="logo-section">
+          <img src="${window.LOGO_ROSS_B64 || ''}" class="logo-img" alt="Logo">
+          <div class="company-details">
+            <h2>ROSS Confecciones</h2>
+            <p>Rosa Huentemil Contreras</p>
+            <p>Fono: +569 98745436</p>
+            <p>Mail: ross.confecciones@gmail.com</p>
+          </div>
+        </div>
+        <div class="quote-meta">
+          <p>COTIZACIÓN: ${q.external_quote_id || quoteDisplayId}</p>
+          ${q.purchase_order_id ? `<p>ORDEN DE COMPRA: ${q.purchase_order_id}</p>` : ''}
+          <p>Fecha documento: ${q.quote_date ? q.quote_date.split('-').reverse().join('-') : today}</p>
+          <p>Página 3 de 3</p>
+        </div>
+      </div>
+      <div class="line-divider"></div>
 
       <h2 class="section-title">DATOS BANCARIOS PARA TRANSFERENCIA:</h2>
       <div class="bank-details">
@@ -4547,6 +4576,8 @@ window.printQuotation = () => {
           </div>
         </div>
       </div>
+
+      </div> <!-- End Hoja 3 -->
       <script>
         window.onload = function() { window.print(); }
       </script>

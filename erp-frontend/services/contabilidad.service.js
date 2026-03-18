@@ -708,57 +708,45 @@ export async function sincronizarOperacionesERP(ventasERP = [], comprasERP = [])
     let count = 0;
 
     // Obtener asientos existentes para evitar duplicados. 
-    // Ahora consultamos preferentemente al Backend para que sea fiable en multi-sesión
     let existingEntries = [];
     try {
         const backendLedger = await erpFetch('/accounting/ledger?periodo=all');
-        if (backendLedger && Array.isArray(backendLedger)) {
-            existingEntries = backendLedger;
-        } else {
-            existingEntries = await db.getAll('asientos');
-        }
+        existingEntries = (backendLedger && Array.isArray(backendLedger)) ? backendLedger : await db.getAll('asientos');
     } catch (e) {
         existingEntries = await db.getAll('asientos');
     }
 
-    const existingRefs = new Set();
+    // Mapas para rastrear lo ya sincronizado
+    const syncedDevengos = new Set(); // Ref IDs que ya tienen asiento de Venta/Compra
+    const paidInLedgerVentas = new Map(); // Ref ID -> Total pagado (Haber en 1.1.03)
+    const paidInLedgerCompras = new Map(); // Ref ID -> Total pagado (Debe en 2.1.01)
     
     existingEntries.forEach(e => {
-        if (e.referencia_id) {
-            const ref = String(e.referencia_id);
-            const type = e.tipo_origen || e.entry_type || '';
-            
-            // Registrar combinaciones conocidas
-            existingRefs.add(`${type}_${ref}`);
-            
-            // Normalizar alias comunes
-            if (type.startsWith('venta')) {
-                existingRefs.add(`erp_venta_${ref}`);
-                existingRefs.add(`erp_cobro_venta_${ref}`);
-            }
-            if (type.startsWith('compra')) {
-                existingRefs.add(`erp_compra_${ref}`);
-                existingRefs.add(`erp_pago_compra_${ref}`);
-            }
-            // Soporte para tipos con guion bajo
-            if (type === 'erp_venta' || type === 'erp_compra') {
-                existingRefs.add(type + '_' + ref);
-            }
+        if (!e.referencia_id) return;
+        const ref = String(e.referencia_id);
+        const type = e.tipo_origen || e.entry_type || '';
+
+        // Rastreo de Devengos (Venta/Compra base)
+        if (type === 'erp_venta' || type === 'venta') syncedDevengos.add(`venta_${ref}`);
+        if (type === 'erp_compra' || type === 'compra') syncedDevengos.add(`compra_${ref}`);
+
+        // Rastreo de Pagos/Cobros acumulados
+        const lineas = e.lineas || [];
+        if (type.includes('cobro_venta') || type.includes('pago_venta')) {
+            const abono = lineas.find(l => l.account_code === '1.1.03' || l.cuenta_codigo === '1.1.03')?.haber || 0;
+            if (abono > 0) paidInLedgerVentas.set(ref, (paidInLedgerVentas.get(ref) || 0) + abono);
+        }
+        if (type.includes('pago_compra')) {
+            const abono = lineas.find(l => l.account_code === '2.1.01' || l.cuenta_codigo === '2.1.01')?.debe || 0;
+            if (abono > 0) paidInLedgerCompras.set(ref, (paidInLedgerCompras.get(ref) || 0) + abono);
         }
     });
 
-    // Helper para normalizar fecha/periodo
+    // Helper para normalizar fecha
     const normalizeDate = (d) => {
         if (!d) return { iso: new Date().toISOString().split('T')[0], periodo: new Date().toISOString().substring(0, 7) };
         let iso = d;
-        if (typeof d !== 'string') {
-            try {
-                iso = new Date(d).toISOString().split('T')[0];
-            } catch(e) {
-                iso = new Date().toISOString().split('T')[0];
-            }
-        }
-        
+        if (typeof d !== 'string') { try { iso = new Date(d).toISOString().split('T')[0]; } catch(e) { iso = new Date().toISOString().split('T')[0]; } }
         if (iso.includes('T')) iso = iso.split('T')[0];
         if (iso.includes('/')) {
             const parts = iso.split('/');
@@ -770,53 +758,57 @@ export async function sincronizarOperacionesERP(ventasERP = [], comprasERP = [])
 
     // Sincronizar Ventas
     for (const venta of ventasERP) {
-        const key = `erp_venta_${venta.id}`;
-        if (existingRefs.has(key)) continue;
+        const ref = String(venta.id);
+        const totalVenta = parseFloat(venta.total) || 0;
+        const totalPagadoERP = parseFloat(venta.paid_amount) || 0;
+        if (totalVenta <= 0) continue;
 
         try {
-            const total = parseFloat(venta.total) || 0;
-            if (total <= 0) continue;
-
-            const neto = Math.round(total / (1 + IVA_RATE));
-            const iva = total - neto;
-            const paymentMethod = venta.payment_method || 'cash';
-            const isCredit = paymentMethod === 'credit';
             const { iso: fechaISO, periodo: periodoISO } = normalizeDate(venta.date || venta.created_at);
 
-            // 1. Asiento de Venta (Devengo)
-            await crearAsiento({
-                fecha: fechaISO,
-                glosa: `Venta ERP #${venta.id} - ${venta.client_name || 'Cliente'}`,
-                periodo: periodoISO,
-                tipo_origen: 'erp_venta',
-                referencia_id: venta.id,
-                numero: venta.document_number || venta.id,
-                lineas: [
-                    { cuenta_codigo: '1.1.03', debe: total, haber: 0 },
-                    { cuenta_codigo: '4.1.01', debe: 0, haber: neto },
-                    { cuenta_codigo: '2.1.02', debe: 0, haber: iva }
-                ]
-            });
-
-            // 2. Asiento de Cobro (si no es crédito)
-            if (!isCredit) {
-                let cuentaCobro = '1.1.01'; // Efectivo
-                if (['transfer', 'machine', 'debit', 'transferencia', 'tarjeta'].includes(paymentMethod)) cuentaCobro = '1.1.02'; 
-                
+            // 1. Asiento de Venta (Devengo) si no existe
+            if (!syncedDevengos.has(`venta_${ref}`)) {
+                const neto = Math.round(totalVenta / (1.19));
+                const iva = totalVenta - neto;
                 await crearAsiento({
                     fecha: fechaISO,
-                    glosa: `Cobro Venta ERP #${venta.id} (${paymentMethod})`,
+                    glosa: `Venta ERP #${venta.id} - ${venta.client_name || 'Cliente'}`,
+                    periodo: periodoISO,
+                    tipo_origen: 'erp_venta',
+                    referencia_id: venta.id,
+                    numero: venta.document_number || venta.id,
+                    lineas: [
+                        { cuenta_codigo: '1.1.03', debe: totalVenta, haber: 0 },
+                        { cuenta_codigo: '4.1.01', debe: 0, haber: neto },
+                        { cuenta_codigo: '2.1.02', debe: 0, haber: iva }
+                    ]
+                });
+                count++;
+            }
+
+            // 2. Asiento de Cobro (Abonos) si hay diferencia
+            const yaPagadoEnLibro = paidInLedgerVentas.get(ref) || 0;
+            const deltaPago = totalPagadoERP - yaPagadoEnLibro;
+
+            if (deltaPago > 1) { // Margen de 1 peso por redondeo
+                const method = venta.payment_method || 'transferencia';
+                let cuentaCobro = '1.1.01'; // Default: Caja
+                if (['transfer', 'machine', 'debit', 'transferencia', 'tarjeta'].includes(method)) cuentaCobro = '1.1.02';
+
+                await crearAsiento({
+                    fecha: fechaISO,
+                    glosa: `Cobro Venta ERP #${venta.id} (Abono detectado)`,
                     periodo: periodoISO,
                     tipo_origen: 'erp_cobro_venta',
                     referencia_id: venta.id,
                     numero: venta.document_number || venta.id,
                     lineas: [
-                        { cuenta_codigo: cuentaCobro, debe: total, haber: 0 },
-                        { cuenta_codigo: '1.1.03', debe: 0, haber: total }
+                        { cuenta_codigo: cuentaCobro, debe: deltaPago, haber: 0 },
+                        { cuenta_codigo: '1.1.03', debe: 0, haber: deltaPago }
                     ]
                 });
+                count++;
             }
-            count++;
         } catch (e) {
             console.error(`Error sincronizando venta ${venta.id}:`, e);
         }
@@ -824,54 +816,57 @@ export async function sincronizarOperacionesERP(ventasERP = [], comprasERP = [])
 
     // Sincronizar Compras
     for (const compra of comprasERP) {
-        const key = `erp_compra_${compra.id}`;
-        if (existingRefs.has(key)) continue;
+        const ref = String(compra.id);
+        const totalCompra = parseFloat(compra.total) || 0;
+        const totalPagadoERP = parseFloat(compra.paid_amount) || 0;
+        if (totalCompra <= 0) continue;
 
         try {
-            const total = parseFloat(compra.total) || 0;
-            if (total <= 0) continue;
-
-            const neto = Math.round(total / (1 + IVA_RATE));
-            const iva = total - neto;
-            const paymentMethod = compra.payment_method || 'cash';
-            const isCredit = paymentMethod === 'credit';
-
             const { iso: fechaISO, periodo: periodoISO } = normalizeDate(compra.date || compra.created_at);
 
-            // 1. Asiento de Compra (Devengo)
-            await crearAsiento({
-                fecha: fechaISO,
-                glosa: `Compra ERP #${compra.id} - ${compra.provider_name || 'Proveedor'}`,
-                periodo: periodoISO,
-                tipo_origen: 'erp_compra',
-                referencia_id: compra.id,
-                numero: compra.document_number || compra.id,
-                lineas: [
-                    { cuenta_codigo: '5.1.01', debe: neto, haber: 0 },
-                    { cuenta_codigo: '1.1.06', debe: iva, haber: 0 },
-                    { cuenta_codigo: '2.1.01', debe: 0, haber: total }
-                ]
-            });
-
-            // 2. Asiento de Pago (si no es crédito)
-            if (!isCredit) {
-                let cuentaPago = '1.1.01'; // Efectivo
-                if (['transfer', 'debit', 'transferencia'].includes(paymentMethod)) cuentaPago = '1.1.02'; 
-                
+            // 1. Asiento de Compra (Devengo) si no existe
+            if (!syncedDevengos.has(`compra_${ref}`)) {
+                const neto = Math.round(totalCompra / (1.19));
+                const iva = totalCompra - neto;
                 await crearAsiento({
                     fecha: fechaISO,
-                    glosa: `Pago Compra ERP #${compra.id} (${paymentMethod})`,
+                    glosa: `Compra ERP #${compra.id} - ${compra.provider_name || 'Proveedor'}`,
+                    periodo: periodoISO,
+                    tipo_origen: 'erp_compra',
+                    referencia_id: compra.id,
+                    numero: compra.document_number || compra.id,
+                    lineas: [
+                        { cuenta_codigo: '5.1.01', debe: totalCompra - iva, haber: 0 },
+                        { cuenta_codigo: '1.1.06', debe: iva, haber: 0 },
+                        { cuenta_codigo: '2.1.01', debe: 0, haber: totalCompra }
+                    ]
+                });
+                count++;
+            }
+
+            // 2. Asiento de Pago (Abonos) si hay diferencia
+            const yaPagadoEnLibro = paidInLedgerCompras.get(ref) || 0;
+            const deltaPago = totalPagadoERP - yaPagadoEnLibro;
+
+            if (deltaPago > 1) {
+                const method = compra.payment_method || 'transferencia';
+                let cuentaPago = '1.1.01';
+                if (['transfer', 'debit', 'transferencia', 'tarjeta'].includes(method)) cuentaPago = '1.1.02';
+
+                await crearAsiento({
+                    fecha: fechaISO,
+                    glosa: `Pago Compra ERP #${compra.id} (Abono detectado)`,
                     periodo: periodoISO,
                     tipo_origen: 'erp_pago_compra',
                     referencia_id: compra.id,
                     numero: compra.document_number || compra.id,
                     lineas: [
-                        { cuenta_codigo: '2.1.01', debe: total, haber: 0 },
-                        { cuenta_codigo: cuentaPago, debe: 0, haber: total }
+                        { cuenta_codigo: '2.1.01', debe: deltaPago, haber: 0 },
+                        { cuenta_codigo: cuentaPago, debe: 0, haber: deltaPago }
                     ]
                 });
+                count++;
             }
-            count++;
         } catch (e) {
             console.error(`Error sincronizando compra ${compra.id}:`, e);
         }
