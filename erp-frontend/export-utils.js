@@ -231,3 +231,57 @@ export function formatLedgerForExport(ledger) {
     });
     return formatted;
 }
+
+/**
+ * Formatea datos del libro de compras para exportación
+ * @param {Array} purchases - Array de compras
+ * @returns {Array} Libro de compras formateado para Excel
+ */
+export function formatLibroComprasForExport(purchases) {
+    return purchases.map(p => {
+        const total = parseFloat(p.total) || 0;
+        const pagado = parseFloat(p.paid_amount) || 0;
+        const neto = parseFloat(p.net) || Math.round(total / 1.19);
+        const iva = parseFloat(p.iva) || Math.round(total - neto);
+        
+        return {
+            'Fecha': p.date || '-',
+            'Tipo Doc': (p.document_type || 'FAC').toUpperCase(),
+            'N° Documento': p.document_number || '-',
+            'Proveedor': p.provider_name || 'Sin Proveedor',
+            'Neto': neto,
+            'IVA': iva,
+            'Total': total,
+            'Pagado': pagado,
+            'Saldo': Math.max(0, total - pagado),
+            'Estado': p.payment_status || (pagado >= total ? 'Pagado' : (pagado > 0 ? 'Parcial' : 'Pendiente'))
+        };
+    });
+}
+
+/**
+ * Formatea datos del libro de ventas para exportación
+ * @param {Array} sales - Array de ventas
+ * @returns {Array} Libro de ventas formateado para Excel
+ */
+export function formatLibroVentasForExport(sales) {
+    return sales.map(s => {
+        const total = parseFloat(s.total) || 0;
+        const pagado = parseFloat(s.paid_amount) || 0;
+        const neto = parseFloat(s.net) || Math.round(total / 1.19);
+        const iva = parseFloat(s.iva) || Math.round(total - neto);
+
+        return {
+            'Fecha': s.date || '-',
+            'Tipo Doc': (s.document_type || 'BOL').toUpperCase(),
+            'N° Documento': s.document_number || '-',
+            'Cliente': s.client_name || 'Consumidor Final',
+            'Neto': neto,
+            'IVA': iva,
+            'Total': total,
+            'Pagado': pagado,
+            'Saldo': Math.max(0, total - pagado),
+            'Estado': s.payment_status || (pagado >= total ? 'Pagado' : (pagado > 0 ? 'Parcial' : 'Pendiente'))
+        };
+    });
+}

@@ -9,6 +9,7 @@ import { db } from '../../services/datastore.js';
 import { formatCLP } from '../../utils/formatters.js';
 import { showToast, openModal, closeModal } from '../../components/ui-helpers.js';
 import { IVA_RATE } from '../../utils/constants.js';
+import { exportToExcel, formatLibroComprasForExport, formatLibroVentasForExport } from '../../export-utils.js';
 
 export async function renderLibroCompras(container) {
   await renderAuxiliar(container, 'compras', 'Libro de Compras', 'Registro de facturas recibidas — datos del módulo de Compras ERP');
@@ -60,8 +61,11 @@ async function renderAuxiliar(container, tipo, titulo, subtitulo) {
           <h2 class="section-title">${titulo}</h2>
           <p style="color:var(--text-muted);font-size:0.85rem;margin-top:4px;">${subtitulo}</p>
         </div>
-        <div style="display:flex;gap:0.5rem;align-items:center;">
+        <div style="display:flex;gap:0.75rem;align-items:center;">
           <span style="font-size:0.8rem;color:var(--text-muted);"><i class="fas fa-sync-alt"></i> ${items.length} registros</span>
+          <button id="btn-export-excel" class="btn-sm" style="background:#10b981;color:white;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:6px;font-weight:600;">
+            <i class="fas fa-file-excel"></i> Exportar a Excel
+          </button>
         </div>
       </div>
 
@@ -137,6 +141,21 @@ async function renderAuxiliar(container, tipo, titulo, subtitulo) {
         openAbonoModal(tipo, id, docTotal, docPaid, docName, docRef, container);
       });
     });
+
+    // Attach export handler
+    const exportBtn = container.querySelector('#btn-export-excel');
+    if (exportBtn) {
+      exportBtn.onclick = () => {
+        const dateStr = new Date().toISOString().split('T')[0];
+        const filename = `${titulo.replace(/\s+/g, '_')}_${dateStr}`;
+        const formattedData = tipo === 'compras' 
+          ? formatLibroComprasForExport(items)
+          : formatLibroVentasForExport(items);
+        
+        exportToExcel(formattedData, filename, titulo);
+        showToast('Archivo Excel generado', 'success');
+      };
+    }
 
   } catch (err) {
     console.error('Error renderAuxiliar:', err);
