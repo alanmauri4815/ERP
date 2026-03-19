@@ -17,6 +17,7 @@ import { renderDashboard as renderProDashboard } from './modules/dashboard/dashb
 import { renderPlanCuentas } from './modules/plan-cuentas/plan-cuentas.page.js'
 import { renderLibroDiario } from './modules/libro-diario/libro-diario.page.js'
 import { renderLibroMayor } from './modules/libro-mayor/libro-mayor.page.js'
+import { renderTomaInventario } from './modules/inventarios/toma-inventario.page.js'
 import { renderBalanceComprobacion as renderEstadosFinancieros, renderBalanceGeneral, renderEstadoResultados } from './modules/estados-financieros/estados-financieros.page.js'
 import { renderRemuneraciones } from './modules/rrhh/remuneraciones.page.js'
 import { renderLibroCompras, renderLibroVentas } from './modules/libros-auxiliares/compras-ventas.page.js'
@@ -262,6 +263,7 @@ async function getRecipe(pid) {
 
 const views = {
   dashboard: () => `<div id="dashboard-pro-container"></div>`,
+  inventory_taking: () => `<div id="inventory-taking-container"></div>`,
 
   inventory_products: () => `
     <header class="animate-fade">
@@ -427,8 +429,16 @@ const views = {
           <div class="form-group"><label>Nombre del Insumo</label><input type="text" id="nrm-name" required></div>
           <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 1rem">
             <div class="form-group"><label>Lote (Cant. Precio)</label><input type="number" id="nrm-batch-size" value="1" step="0.001" required></div>
-            <div class="form-group"><label>Unidad de Medida</label><input type="text" id="nrm-unit" required placeholder="Mts, Kg, Uni"></div>
+            <div class="form-group">
+                <label>Tipo de Insumo</label>
+                <select id="nrm-type" style="width: 100%">
+                    <option value="MP">📦 Material / Insumo</option>
+                    <option value="MO">👷 Mano de Obra</option>
+                    <option value="Servicio">🛠️ Servicio / Externo</option>
+                </select>
+            </div>
           </div>
+          <div class="form-group"><label>Unidad de Medida</label><input type="text" id="nrm-unit" required placeholder="Mts, Kg, Uni"></div>
           
           <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; border: 1px solid var(--success)">
             <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem">
@@ -581,9 +591,9 @@ const views = {
               <tr class="item-row">
                 <td style="text-align: center; color: var(--text-muted)">${i + 1}</td>
                 <td>
-                  <input type="text" class="prod-item-code" data-index="${i}" list="production-products-list" placeholder="Código o producto nuevo..." style="width:100%">
+                  <input type="text" class="prod-item-code" data-index="${i}" list="production-products-list" placeholder="Código o producto nuevo..." style="width:100%" oninput="window.updateProdRecipeView()">
                 </td>
-                <td><input type="number" class="prod-item-qty" step="1" value="0" placeholder="0" oninput="window.updateProdTotals()"></td>
+                <td><input type="number" class="prod-item-qty" step="1" value="0" placeholder="0" oninput="window.updateProdRecipeView()"></td>
                 <td><input type="number" class="prod-item-mp" step="0.01" value="0" oninput="window.updateProdTotals()"></td>
                 <td><input type="number" class="prod-item-mo" step="0.01" value="0" oninput="window.updateProdTotals()"></td>
                 <td style="text-align: center"><input type="checkbox" class="prod-item-register" title="Registrar nuevo producto"></td>
@@ -591,6 +601,16 @@ const views = {
             `).join('')}
           </tbody>
         </table>
+
+        <!-- Recipe/Materials Visualizer -->
+        <div id="production-material-summary" style="margin-top: 1.5rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display:none">
+          <h4 style="margin: 0 0 1rem 0; color: var(--secondary); font-size: 0.9rem">
+            🔬 Composición y Consumos Proyectados
+          </h4>
+          <div id="material-summary-content" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; font-size: 0.8rem">
+            <!-- Will be populated by updateProdRecipeView -->
+          </div>
+        </div>
         <div class="form-actions">
           <button type="button" onclick="this.closest('.modal').style.display='none'" style="background: var(--surface-light)">Cancelar</button>
           <button id="btn-submit-production" style="background: var(--accent)">🚀 <span id="btn-prod-text">Iniciar Producción</span></button>
@@ -2617,6 +2637,7 @@ window.editItem = (type, code) => {
     document.getElementById('nrm-code').value = m.code;
     document.getElementById('nrm-name').value = m.name;
     document.getElementById('nrm-batch-size').value = m.batch_size || 1;
+    document.getElementById('nrm-type').value = m.type || 'MP';
     document.getElementById('nrm-unit').value = m.unit;
 
     // UI Loading for pricing
@@ -2877,12 +2898,92 @@ window.editProduction = (id) => {
   window.updateProdTotals();
 };
 
+window.updateProdRecipeView = async () => {
+  const rows = document.querySelectorAll('#production-items-body .item-row');
+  const container = document.getElementById('production-material-summary');
+  const content = document.getElementById('material-summary-content');
+
+  let totalMP = 0;
+  let totalMO = 0;
+  const materialAggregation = {}; // { mp_code: { qty, cost, name } }
+
+  for (const row of rows) {
+    const code = row.querySelector('.prod-item-code').value.trim();
+    const qtyInput = row.querySelector('.prod-item-qty');
+    const qty = parseFloat(qtyInput.value) || 0;
+    
+    if (!code || qty <= 0) continue;
+
+    // 1. Try treating it as a Finished Product (Recipe-based)
+    const existsInProducts = state.products.some(p => p.code === code);
+    if (existsInProducts) {
+        try {
+            const recipes = await apiFetch(`/recipes/${code}`);
+            if (recipes && recipes.length > 0) {
+                recipes.forEach(r => {
+                    const consumption = (parseFloat(r.quantity) || 0) * qty;
+                    const cost = (parseFloat(r.unit_cost) || 0) * qty;
+                    totalMP += cost;
+                    
+                    if (!materialAggregation[r.mp_code]) {
+                        materialAggregation[r.mp_code] = { qty: 0, cost: 0, name: r.mp_name || r.mp_code };
+                    }
+                    materialAggregation[r.mp_code].qty += consumption;
+                    materialAggregation[r.mp_code].cost += cost;
+                });
+            }
+        } catch (e) { console.error('Error fetching recipe:', e); }
+    } else {
+        // 2. Try treating it as a Direct Material (PULL logic)
+        const rm = state.rawMaterials.find(m => m.code === code);
+        if (rm) {
+           const itemCost = (parseFloat(rm.cost_net) || 0) * qty;
+           if (rm.type === 'MP') {
+               totalMP += itemCost;
+               if (!materialAggregation[code]) {
+                   materialAggregation[code] = { qty: 0, cost: 0, name: rm.name };
+               }
+               materialAggregation[code].qty += qty;
+               materialAggregation[code].cost += itemCost;
+           } else if (rm.type === 'MO' || rm.type === 'Servicio') {
+               totalMO += itemCost;
+           }
+        }
+    }
+  }
+
+  // Update UI cost inputs automatically
+  const mpField = document.getElementById('prod-material-cost');
+  const moField = document.getElementById('prod-general-expenses');
+  if (mpField) mpField.value = Math.round(totalMP);
+  if (moField) moField.value = Math.round(totalMO);
+
+  // Render Summary
+  if (Object.keys(materialAggregation).length > 0) {
+    container.style.display = 'block';
+    content.innerHTML = Object.entries(materialAggregation).map(([code, m]) => `
+      <div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-light)">
+        <div style="font-weight:600; color: var(--secondary)">${m.name}</div>
+        <div style="font-size: 0.75rem; opacity: 0.8">
+          📦 Consumo: <b style="color: var(--text)">${m.qty.toLocaleString()}</b> <br>
+          💰 Costo: <b style="color: var(--success)">$${Math.round(m.cost).toLocaleString()}</b>
+        </div>
+      </div>
+    `).join('');
+  } else {
+    container.style.display = 'none';
+  }
+
+  window.updateProdTotals();
+};
+
 window.updateProdTotals = () => {
   const modal = document.getElementById('production-modal');
   if (!modal) return;
   const rows = modal.querySelectorAll('.item-row');
-  let totalMP = 0;
-  let totalMO = 0;
+  let totalRowsMP = 0;
+  let totalRowsMO = 0;
+  
   rows.forEach(row => {
     const qty = parseFloat(row.querySelector('.prod-item-qty').value) || 0;
     const mp = parseFloat(row.querySelector('.prod-item-mp').value) || 0;
@@ -4642,8 +4743,8 @@ function renderView(viewName) {
 
     // Definimos qué puede ver cada uno
     const permissions = {
-      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'],
-      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'],
+      superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'inventory_taking', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'],
+      admin: ['dashboard', 'inventory_products', 'inventory_rm', 'inventory_taking', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'],
       user: ['dashboard', 'inventory_products', 'inventory_rm', 'production', 'sales', 'purchases', 'logistics', 'history', 'quotations', 'pipeline', 'clients_management', 'providers_management', 'direct_sales', 'profile'],
       viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
@@ -4674,6 +4775,8 @@ function renderView(viewName) {
 
   if (!views[viewName]) return;
   mainContent.innerHTML = views[viewName]();
+
+  if (viewName === 'inventory_taking') renderTomaInventario('main-content');
 
   navItems.forEach(item => {
     const isActive = item.dataset.view === viewName;
@@ -5247,7 +5350,7 @@ function renderView(viewName) {
         color: document.getElementById('nrm-color').value,
         size: document.getElementById('nrm-size').value,
         parent_code: document.getElementById('nrm-parent').value,
-        type: 'MP'
+        type: document.getElementById('nrm-type').value
       };
 
       if (isEditMode) {
@@ -5317,9 +5420,11 @@ function renderView(viewName) {
   }
 
   if (viewName === 'production') {
-    window.toggleProdCategory = function () {
+    window.toggleProdCategory = async function () {
       const cat = document.getElementById('prod-category')?.value;
       const projectGroup = document.getElementById('prod-project-group');
+      const quoteSelect = document.getElementById('prod-quotation');
+
       if (projectGroup) {
         if (cat === 'pull') {
           projectGroup.style.display = 'block';
@@ -5327,8 +5432,41 @@ function renderView(viewName) {
           projectGroup.style.padding = '0.5rem';
           projectGroup.style.borderRadius = '8px';
           projectGroup.style.background = 'rgba(234, 179, 8, 0.05)';
+          
+          // Add listener to load quote items
+          quoteSelect.onchange = async () => {
+             const quoteId = quoteSelect.value;
+             if (!quoteId) return;
+             
+             try {
+                const quote = await apiFetch(`/quotations/${quoteId}`);
+                if (quote && quote.items) {
+                    const rows = document.querySelectorAll('#production-items-body .item-row');
+                    // Reset
+                    rows.forEach(r => {
+                         r.querySelector('.prod-item-code').value = '';
+                         r.querySelector('.prod-item-qty').value = '0';
+                         r.querySelector('.prod-item-mp').value = '0';
+                         r.querySelector('.prod-item-mo').value = '0';
+                    });
+                    
+                    // Fill with quote items
+                    quote.items.forEach((item, i) => {
+                        if (rows[i]) {
+                             rows[i].querySelector('.prod-item-code').value = item.product_code || item.code || '';
+                             rows[i].querySelector('.prod-item-qty').value = item.quantity || 1;
+                             rows[i].querySelector('.prod-item-mp').value = item.cost_unit || item.unit_price || 0;
+                        }
+                    });
+                    window.updateProdTotals();
+                }
+             } catch (e) {
+                console.error('Error loading quote items:', e);
+             }
+          };
         } else {
           projectGroup.style.display = 'none';
+          quoteSelect.onchange = null;
         }
       }
     };

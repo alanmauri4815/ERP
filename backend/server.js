@@ -1803,49 +1803,67 @@ app.post('/api/production', authenticateToken, async (req, res) => {
         let totalProductionCost = 0;
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
-            if (item.productCode && item.quantity > 0) {
+            const code = item.productCode;
+            const qty = parseFloat(item.quantity) || 0;
+            
+            if (code && qty > 0) {
                 const { error: itemError } = await supabase.from(T.PRODUCTION_ITEMS).insert({
                     production_id: prod.id,
                     item_number: i + 1,
-                    product_code: item.productCode,
-                    quantity: item.quantity,
+                    product_code: code,
+                    quantity: qty,
                     mo_cost: item.mo_cost || 0,
                     material_cost: item.material_cost || 0
                 });
-                if (itemError) throw new Error(`Error en ítem ${i + 1} (${item.productCode}): ${itemError.message}`);
+                if (itemError) throw new Error(`Error en ítem ${i + 1} (${code}): ${itemError.message}`);
 
-                // Update product stock (multi-tenant)
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.productCode).eq('empresa_id', req.empresa_id).single();
-                await supabase.from(T.PRODUCTS).update({ stock: (p?.stock || 0) + item.quantity }).eq('code', item.productCode).eq('empresa_id', req.empresa_id);
+                // --- SMART STOCK IMPACT ---
+                
+                // 1. Insumos/Direct Materials (Subtract Stock)
+                const { data: rmDir } = await supabase.from(T.MP).select('stock, type, cost_net').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                if (rmDir && rmDir.type === 'MP') {
+                    debugLog(`[PROD] Direct Material: ${code}. Subtracting ${qty}`);
+                    await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
+                    totalProductionCost += (parseFloat(rmDir.cost_net) || 0) * qty;
+                    await checkLowStockAlerts(code);
+                }
 
-                // Update MP stock based on recipe (multi-tenant)
-                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', item.productCode).eq('empresa_id', req.empresa_id);
-                for (const r of recipe) {
-                    const consumptionQty = (r.quantity * item.quantity);
-                    const consumptionCost = r.unit_cost ? (r.unit_cost * item.quantity) : (consumptionQty * 0);
-                    totalProductionCost += consumptionCost;
+                // 2. Finished Products (Add PT Stock + Subtract Recipe)
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                if (p) {
+                    debugLog(`[PROD] Finished Product: ${code}. Adding ${qty}`);
+                    await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) + qty }).eq('code', code).eq('empresa_id', req.empresa_id);
 
-                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).single();
-                    const newStock = (rm?.stock || 0) - consumptionQty;
-                    await supabase.from(T.MP).update({ stock: newStock }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
+                    // Subtract Recipe
+                    const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', code).eq('empresa_id', req.empresa_id);
+                    if (recipes && recipes.length > 0) {
+                        for (const r of recipes) {
+                            const cQty = (parseFloat(r.quantity) || 0) * qty;
+                            const cCost = (parseFloat(r.unit_cost) || 0) * qty;
+                            totalProductionCost += cCost;
 
-                    // Check alert
-                    await checkLowStockAlerts(r.mp_code);
+                            const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                            if (rmComp) {
+                                await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
+                                await checkLowStockAlerts(r.mp_code);
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        // Create Accounting Entry for Consumption
+        // Create Accounting Entry for Consumption/Transformation
         if (totalProductionCost > 0) {
             await createAccountingEntry({
                 date,
-                description: `Consumo de Materias Primas - Producción #${prod.id}`,
+                description: `Consumo/Transformación Producción #${prod.id}`,
                 type: 'consumo',
                 userId: req.user.id,
                 empresaId: req.empresa_id,
                 lines: [
-                    { account_code: '1.1.09', debit: totalProductionCost }, // Inventario PT
-                    { account_code: '1.1.09', credit: totalProductionCost } // Inventario MP
+                    { account_code: '1.1.08', debit: Math.round(totalProductionCost) }, // Inventario PT (Activo +)
+                    { account_code: '1.1.09', credit: Math.round(totalProductionCost) } // Inventario MP (Activo -)
                 ]
             });
         }
@@ -1862,25 +1880,39 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
     const productionDate = date || new Date().toISOString();
 
     try {
+        // 0. REVERSE OLD ACCOUNTING ENTRY
+        await supabase.from(T.PC_ASIENTOS).delete()
+            .eq('empresa_id', req.empresa_id)
+            .ilike('description', `%Producción #${prodId}%`);
+
         // 1. REVERSE OLD STOCK IMPACT
         const { data: oldItems } = await supabase.from(T.PRODUCTION_ITEMS).select('*').eq('production_id', prodId);
 
         if (oldItems) {
             for (const item of oldItems) {
-                // Subtract from PT stock (multi-tenant)
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.product_code).eq('empresa_id', req.empresa_id).single();
-                if (p) {
-                    await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) - item.quantity }).eq('code', item.product_code).eq('empresa_id', req.empresa_id);
+                const code = item.product_code;
+                const qty = parseFloat(item.quantity) || 0;
+
+                // A. Reverse Direct Material Impact
+                const { data: rmDir } = await supabase.from(T.MP).select('stock, type').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                if (rmDir && rmDir.type === 'MP') {
+                     await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) + qty }).eq('code', code).eq('empresa_id', req.empresa_id);
                 }
 
-                // Add back to MP stock based on recipe (multi-tenant)
-                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', item.product_code).eq('empresa_id', req.empresa_id);
-                if (recipe) {
-                    for (const r of recipe) {
-                        const consumptionQty = (r.quantity * item.quantity);
-                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).single();
-                        if (rm) {
-                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + consumptionQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
+                // B. Reverse Product/PT Impact
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                if (p) {
+                    await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
+
+                    // Reverse Recipe components
+                    const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', code).eq('empresa_id', req.empresa_id);
+                    if (recipes && recipes.length > 0) {
+                        for (const r of recipes) {
+                            const cQty = (parseFloat(r.quantity) || 0) * qty;
+                            const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                            if (rmComp) {
+                                await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) + cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
+                            }
                         }
                     }
                 }
@@ -1891,90 +1923,81 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
         await supabase.from(T.PRODUCTION_ITEMS).delete().eq('production_id', prodId);
 
         // 3. UPDATE PRODUCTION HEADER
-        const updateData = { date: productionDate };
+        const updateData = { date: productionDate, material_cost: material_cost || 0, general_expenses: general_expenses || 0 };
         if (production_category) updateData.production_category = production_category;
         if (quotation_id && !isNaN(quotation_id)) updateData.quotation_id = parseInt(quotation_id);
-        updateData.material_cost = material_cost || 0;
-        updateData.general_expenses = general_expenses || 0;
 
         let updateResult = await supabase.from(T.PRODUCTION).update(updateData).eq('id', prodId).eq('empresa_id', req.empresa_id);
-
-        // Fallback if new columns don't exist yet
         if (updateResult.error && updateResult.error.message.includes('column')) {
-            console.warn('Retrying production update without new columns...', updateResult.error.message);
-            const fallbackData = { date: productionDate };
-            if (production_category) fallbackData.production_category = production_category;
-            if (quotation_id && !isNaN(quotation_id)) fallbackData.quotation_id = parseInt(quotation_id);
-            updateResult = await supabase.from(T.PRODUCTION).update(fallbackData).eq('id', prodId).eq('empresa_id', req.empresa_id);
+             delete updateData.material_cost;
+             delete updateData.general_expenses;
+             updateResult = await supabase.from(T.PRODUCTION).update(updateData).eq('id', prodId).eq('empresa_id', req.empresa_id);
         }
-
         if (updateResult.error) throw updateResult.error;
 
-        // 4. INSERT NEW ITEMS AND APPLY NEW STOCK IMPACT
+        // 4. INSERT NEW ITEMS AND APPLY NEW SMART IMPACT
         let totalProductionCost = 0;
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
-            if (item.productCode && item.quantity > 0) {
+            const code = item.productCode;
+            const qty = parseFloat(item.quantity) || 0;
+
+            if (code && qty > 0) {
                 const { error: itemError } = await supabase.from(T.PRODUCTION_ITEMS).insert({
                     production_id: prodId,
                     item_number: i + 1,
-                    product_code: item.productCode,
-                    quantity: item.quantity,
+                    product_code: code,
+                    quantity: qty,
                     mo_cost: item.mo_cost || 0,
                     material_cost: item.material_cost || 0
                 });
-                if (itemError) throw new Error(`Error en ítem ${i + 1} (${item.productCode}): ${itemError.message}`);
+                if (itemError) throw itemError;
 
-                // Update product stock
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.productCode).single();
-                await supabase.from(T.PRODUCTS).update({ stock: (p?.stock || 0) + item.quantity }).eq('code', item.productCode);
+                // Impact Direct Material
+                const { data: rmDir } = await supabase.from(T.MP).select('stock, type, cost_net').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                if (rmDir && rmDir.type === 'MP') {
+                    await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
+                    totalProductionCost += (parseFloat(rmDir.cost_net) || 0) * qty;
+                }
 
-                // Update MP stock based on recipe
-                const { data: recipe } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', item.productCode);
-                if (recipe) {
-                    for (const r of recipe) {
-                        const consumptionQty = (r.quantity * item.quantity);
-                        const consumptionCost = r.unit_cost ? (r.unit_cost * item.quantity) : 0;
-                        totalProductionCost += consumptionCost;
+                // Impact Product/PT
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                if (p) {
+                    await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) + qty }).eq('code', code).eq('empresa_id', req.empresa_id);
 
-                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).single();
-                        const newStock = (rm?.stock || 0) - consumptionQty;
-                        await supabase.from(T.MP).update({ stock: newStock }).eq('code', r.mp_code);
-                        await checkLowStockAlerts(r.mp_code);
+                    const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', code).eq('empresa_id', req.empresa_id);
+                    if (recipes && recipes.length > 0) {
+                        for (const r of recipes) {
+                            const cQty = (parseFloat(r.quantity) || 0) * qty;
+                            const cCost = (parseFloat(r.unit_cost) || 0) * qty;
+                            totalProductionCost += cCost;
+                            const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                            if (rmComp) {
+                                await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
+                                await checkLowStockAlerts(r.mp_code);
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // 5. UPDATE ACCOUNTING
-        // Delete old entry for this production
-        const { data: oldEntries } = await supabase
-            .from(T.ACCOUNTING_ENTRIES)
-            .select('id')
-            .eq('description', `Consumo de Materias Primas - Producción #${prodId}`)
-            .eq('type', 'consumo');
-
-        if (oldEntries && oldEntries.length > 0) {
-            const entryIds = oldEntries.map(e => e.id);
-            await supabase.from(T.ACCOUNTING_LINES).delete().in('asiento_id', entryIds);
-            await supabase.from(T.ACCOUNTING_ENTRIES).delete().in('id', entryIds);
-        }
-
+        // Create New Accounting Entry
         if (totalProductionCost > 0) {
             await createAccountingEntry({
-                date: productionDate,
-                description: `Consumo de Materias Primas - Producción #${prodId}`,
+                date: productionDate.split('T')[0],
+                description: `Consumo/Transformación Producción #${prodId} (Editado)`,
                 type: 'consumo',
                 userId: req.user.id,
                 empresaId: req.empresa_id,
                 lines: [
-                    { account_code: '1.1.09', debit: totalProductionCost }, // Inventario PT
-                    { account_code: '1.1.09', credit: totalProductionCost } // Inventario MP
+                    { account_code: '1.1.08', debit: Math.round(totalProductionCost) }, // + PT
+                    { account_code: '1.1.09', credit: Math.round(totalProductionCost) } // - MP
                 ]
             });
         }
 
-        res.json({ success: true, message: 'Producción actualizada exitosamente.' });
+        res.json({ success: true, message: 'Producción actualizada con éxito (Stock Re-calculado)' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -2641,6 +2664,193 @@ app.post('/api/accounting/entries', authenticateToken, async (req, res) => {
     } catch (e) {
         console.error('Error creating manual entry:', e);
         res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/accounting/entries/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Multi-tenant delete: ensure it belongs to the empresa
+        // 1. Delete lines first (Supabase should have cascade, but better to be safe)
+        await supabase.from(T.PC_MOVIMIENTOS).delete().eq('asiento_id', id).eq('empresa_id', req.empresa_id);
+        
+        // 2. Delete main entry
+        const { error } = await supabase.from(T.PC_ASIENTOS).delete().eq('id', id).eq('empresa_id', req.empresa_id);
+        
+        if (error) throw error;
+        res.json({ success: true, message: 'Asiento eliminado con éxito' });
+    } catch (e) {
+        console.error('Error deleting accounting entry:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.delete('/api/inventory/takes/:id', authenticateToken, async (req, res) => {
+    const { id } = req.params;
+    try {
+        // 1. Get take data
+        const { data: take, error: takeError } = await supabase
+            .from('inventory_takes')
+            .select('*')
+            .eq('id', id)
+            .eq('empresa_id', req.empresa_id)
+            .single();
+
+        if (takeError) throw takeError;
+
+        const { data: items, error: itemsError } = await supabase
+            .from('inventory_take_items')
+            .select('*')
+            .eq('take_id', id);
+
+        if (itemsError) throw itemsError;
+
+        // 2. Revert Stock Updates
+        const targetTable = take.category === 'mp' ? T.MP : T.PRODUCTS;
+        for (const item of items) {
+             const { data: currentItem } = await supabase.from(targetTable).select('stock').eq('code', item.item_code).eq('empresa_id', req.empresa_id).single();
+             if (currentItem) {
+                 const restoredStock = (parseFloat(currentItem.stock) || 0) - (parseFloat(item.difference) || 0);
+                 await supabase.from(targetTable).update({ stock: restoredStock }).eq('code', item.item_code).eq('empresa_id', req.empresa_id);
+             }
+        }
+
+        // 3. Delete Accounting Entry
+        const docRef = 'INV-' + take.id.toString().slice(-6);
+        const { data: entry } = await supabase.from('asientos').select('id').eq('referencia_id', id).eq('empresa_id', req.empresa_id).limit(1).maybeSingle();
+        // Fallback search by glosa or document number
+        let entryId = entry?.id;
+        if (!entryId) {
+             const { data: entry2 } = await supabase.from('asientos').select('id').ilike('glosa', `%#${take.id.toString().slice(-4)}%`).eq('empresa_id', req.empresa_id).limit(1).maybeSingle();
+             entryId = entry2?.id;
+        }
+
+        if (entryId) {
+            await supabase.from('asiento_movimientos').delete().eq('asiento_id', entryId).eq('empresa_id', req.empresa_id);
+            await supabase.from('asientos').delete().eq('id', entryId).eq('empresa_id', req.empresa_id);
+        }
+
+        // 4. Delete Take Records
+        await supabase.from('inventory_take_items').delete().eq('take_id', id);
+        await supabase.from('inventory_takes').delete().eq('id', id);
+
+        res.json({ success: true, message: 'Toma revertida y eliminada con éxito.' });
+    } catch (e) {
+        console.error('Error reverting inventory take:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.get('/api/inventory/takes', authenticateToken, async (req, res) => {
+    try {
+        const { data: takes, error: takesError } = await supabase
+            .from('inventory_takes')
+            .select('*')
+            .eq('empresa_id', req.empresa_id)
+            .order('date', { ascending: false });
+
+        if (takesError) throw takesError;
+
+        // Fetch items for each take
+        const { data: items, error: itemsError } = await supabase
+            .from('inventory_take_items')
+            .select('*')
+            .eq('empresa_id', req.empresa_id);
+
+        if (itemsError) throw itemsError;
+
+        const result = takes.map(t => ({
+            ...t,
+            items: items.filter(i => i.take_id === t.id)
+        }));
+
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/inventory/adjust', authenticateToken, async (req, res) => {
+    const { items, category, date } = req.body;
+    debugLog(`[INV-ADJUST] Processing ${items?.length} items for category ${category}`);
+
+    try {
+        let totalVariationValue = 0;
+        const targetTable = category === 'mp' ? T.MP : T.PRODUCTS;
+        const targetAccount = category === 'mp' ? '1.1.09' : '1.1.08';
+
+        // 1. Crear Registro de Toma de Inventario (Header)
+        const { data: takeHeader, error: headerError } = await supabase
+            .from('inventory_takes')
+            .insert({
+                date: date || new Date().toISOString().split('T')[0],
+                category,
+                total_items: items.length,
+                total_variation_value: totalVariationValue,
+                user_id: req.user.id,
+                empresa_id: req.empresa_id
+            })
+            .select()
+            .single();
+
+        if (headerError) throw headerError;
+
+        // 2. Procesar cada ítem
+        for (const item of items) {
+            const diffValue = item.difference * item.unit_cost;
+
+            // Guardar detalle de la toma
+            await supabase.from('inventory_take_items').insert({
+                take_id: takeHeader.id,
+                item_code: item.code,
+                item_name: item.name,
+                system_stock: item.old_stock,
+                physical_stock: item.new_stock,
+                difference: item.difference,
+                unit_cost: item.unit_cost,
+                empresa_id: req.empresa_id
+            });
+
+            // Actualizar stock real
+            const { error: updateError } = await supabase
+                .from(targetTable)
+                .update({ stock: item.new_stock })
+                .eq('code', item.code)
+                .eq('empresa_id', req.empresa_id);
+
+            if (updateError) throw updateError;
+        }
+
+        // 3. Crear Asiento Contable
+        if (Math.abs(totalVariationValue) > 0.1) {
+            const description = `Ajuste Toma de Inventario Físico #${takeHeader.id.toString().slice(-4)}`;
+            
+            await createAccountingEntry({
+                date: date || new Date().toISOString().split('T')[0],
+                description,
+                type: 'ajuste_inventario',
+                document_number: 'INV-' + takeHeader.id.toString().slice(-6),
+                userId: req.user.id,
+                empresaId: req.empresa_id,
+                lines: [
+                    { 
+                        account_code: targetAccount, 
+                        debit: totalVariationValue > 0 ? Math.abs(totalVariationValue) : 0, 
+                        credit: totalVariationValue < 0 ? Math.abs(totalVariationValue) : 0 
+                    },
+                    { 
+                        account_code: '5.1.01', 
+                        debit: totalVariationValue < 0 ? Math.abs(totalVariationValue) : 0, 
+                        credit: totalVariationValue > 0 ? Math.abs(totalVariationValue) : 0 
+                    }
+                ]
+            });
+        }
+
+        res.json({ success: true, message: 'Ajuste y Registro procesado correctamente.' });
+    } catch (e) {
+        console.error('Error adjusting inventory:', e);
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 

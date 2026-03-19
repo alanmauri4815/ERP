@@ -149,14 +149,23 @@ export async function getLibroMayor(cuentaCodigo, periodo) {
 }
 
 export async function eliminarAsiento(asientoId) {
-    // 1. Eliminar movimientos asociados
-    const movimientos = await db.getAll('asiento_movimientos');
-    const movsToDelete = movimientos.filter(m => m.asiento_id === asientoId);
-    for (const mov of movsToDelete) {
-        await db.delete('asiento_movimientos', mov.id);
+    try {
+        // 1. Eliminar del Backend (Sistema Pro)
+        await erpFetch(`/accounting/entries/${asientoId}`, { method: 'DELETE' });
+
+        // 2. Eliminar movimientos locales
+        const movimientos = await db.getAll('asiento_movimientos');
+        const movsToDelete = movimientos.filter(m => m.asiento_id === asientoId);
+        for (const mov of movsToDelete) {
+            await db.delete('asiento_movimientos', mov.id);
+        }
+        // 3. Eliminar el asiento local
+        return await db.delete('asientos', asientoId);
+    } catch (e) {
+        console.error("Error al eliminar asiento en backend, procediendo con local...", e);
+        // Intentar local de todas formas
+        await db.delete('asientos', asientoId);
     }
-    // 2. Eliminar el asiento
-    return await db.delete('asientos', asientoId);
 }
 
 export async function eliminarRegistroAuxiliar(tabla, id, tipoOrigen) {
@@ -724,20 +733,26 @@ export async function sincronizarOperacionesERP(ventasERP = [], comprasERP = [])
     existingEntries.forEach(e => {
         if (!e.referencia_id) return;
         const ref = String(e.referencia_id);
-        const type = e.tipo_origen || e.entry_type || '';
+        const type = (e.tipo_origen || e.entry_type || '').toLowerCase();
 
         // Rastreo de Devengos (Venta/Compra base)
-        if (type === 'erp_venta' || type === 'venta') syncedDevengos.add(`venta_${ref}`);
-        if (type === 'erp_compra' || type === 'compra') syncedDevengos.add(`compra_${ref}`);
+        if (type.includes('venta') && !type.includes('pago') && !type.includes('cobro')) syncedDevengos.add(`venta_${ref}`);
+        if (type.includes('compra') && !type.includes('pago')) syncedDevengos.add(`compra_${ref}`);
 
-        // Rastreo de Pagos/Cobros acumulados
+        // Rastreo de Pagos/Cobros acumulados (ser más flexible con los nombres)
         const lineas = e.lineas || [];
-        if (type.includes('cobro_venta') || type.includes('pago_venta')) {
-            const abono = lineas.find(l => l.account_code === '1.1.03' || l.cuenta_codigo === '1.1.03')?.haber || 0;
+        if (type.includes('cobro') || (type.includes('pago') && type.includes('venta'))) {
+            const abono = lineas.find(l => {
+                const code = l.account_code || l.cuenta_codigo;
+                return code === '1.1.03';
+            })?.haber || 0;
             if (abono > 0) paidInLedgerVentas.set(ref, (paidInLedgerVentas.get(ref) || 0) + abono);
         }
-        if (type.includes('pago_compra')) {
-            const abono = lineas.find(l => l.account_code === '2.1.01' || l.cuenta_codigo === '2.1.01')?.debe || 0;
+        if (type.includes('pago') && type.includes('compra')) {
+            const abono = lineas.find(l => {
+                const code = l.account_code || l.cuenta_codigo;
+                return code === '2.1.01';
+            })?.debe || 0;
             if (abono > 0) paidInLedgerCompras.set(ref, (paidInLedgerCompras.get(ref) || 0) + abono);
         }
     });
@@ -870,6 +885,77 @@ export async function sincronizarOperacionesERP(ventasERP = [], comprasERP = [])
         } catch (e) {
             console.error(`Error sincronizando compra ${compra.id}:`, e);
         }
+    }
+
+    // Sincronizar Inventario de Productos Terminados (PT)
+    try {
+        const productosERP = await erpFetch('/products');
+        if (productosERP && Array.isArray(productosERP)) {
+            let valorActualPT = 0;
+            productosERP.forEach(p => {
+                valorActualPT += (parseFloat(p.stock) || 0) * (parseFloat(p.cost_unit) || 0);
+            });
+
+            // Obtener el saldo actual de 1.1.08 en el ledger
+            const saldoLedgerPT = existingEntries.reduce((total, e) => {
+                const lineas = e.lineas || [];
+                const ptMovs = lineas.filter(l => (l.account_code || l.cuenta_codigo) === '1.1.08');
+                return total + ptMovs.reduce((s, m) => s + (m.debe || 0) - (m.haber || 0), 0);
+            }, 0);
+
+            const diferencia = Math.round(valorActualPT - saldoLedgerPT);
+
+            if (Math.abs(diferencia) > 10) { // Tolerancia mayor para inventario (evitar micro-asientos)
+                await crearAsiento({
+                    fecha: new Date().toISOString().split('T')[0],
+                    glosa: `Ajuste Inventario PT según Módulo de Productos (Valor: ${valorActualPT})`,
+                    tipo_origen: 'ajuste_inventario',
+                    referencia_id: 'auto_pt',
+                    lineas: [
+                        { cuenta_codigo: '1.1.08', debe: diferencia > 0 ? diferencia : 0, haber: diferencia < 0 ? Math.abs(diferencia) : 0 },
+                        { cuenta_codigo: '5.1.01', debe: diferencia < 0 ? Math.abs(diferencia) : 0, haber: diferencia > 0 ? diferencia : 0 }
+                    ]
+                });
+                count++;
+            }
+        }
+    } catch (e) {
+        console.error("Error sincronizando Inventario PT:", e);
+    }
+
+    // Sincronizar Inventario de Materias Primas (MP)
+    try {
+        const mpERP = await erpFetch('/raw-materials');
+        if (mpERP && Array.isArray(mpERP)) {
+            let valorActualMP = 0;
+            mpERP.forEach(m => {
+                valorActualMP += (parseFloat(m.stock) || 0) * (parseFloat(m.cost_net || 0) / (m.batch_size || 1));
+            });
+
+            const saldoLedgerMP = existingEntries.reduce((total, e) => {
+                const lineas = e.lineas || [];
+                const mpMovs = lineas.filter(l => (l.account_code || l.cuenta_codigo) === '1.1.09');
+                return total + mpMovs.reduce((s, m) => s + (m.debe || 0) - (m.haber || 0), 0);
+            }, 0);
+
+            const diferenciaMP = Math.round(valorActualMP - saldoLedgerMP);
+
+            if (Math.abs(diferenciaMP) > 10) {
+                await crearAsiento({
+                    fecha: new Date().toISOString().split('T')[0],
+                    glosa: `Ajuste Automático Inventario MP según Módulo (Valor: ${valorActualMP})`,
+                    tipo_origen: 'ajuste_inventario_mp',
+                    referencia_id: 'auto_mp',
+                    lineas: [
+                        { cuenta_codigo: '1.1.09', debe: diferenciaMP > 0 ? diferenciaMP : 0, haber: diferenciaMP < 0 ? Math.abs(diferenciaMP) : 0 },
+                        { cuenta_codigo: '5.1.01', debe: diferenciaMP < 0 ? Math.abs(diferenciaMP) : 0, haber: diferenciaMP > 0 ? diferenciaMP : 0 }
+                    ]
+                });
+                count++;
+            }
+        }
+    } catch (e) {
+        console.error("Error sincronizando Inventario MP:", e);
     }
 
     return count;
