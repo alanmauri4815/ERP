@@ -1427,6 +1427,55 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     }
 });
 
+app.delete('/api/purchases/:id', authenticateToken, async (req, res) => {
+    const purchaseId = req.params.id;
+    debugLog(`--- HIT: DELETE /api/purchases/${purchaseId} ---`);
+
+    try {
+        // 1. Get purchase info to reverse stock
+        const { data: purchase } = await supabase.from(T.PURCHASES).select('*').eq('id', purchaseId).eq('empresa_id', req.empresa_id).single();
+        if (!purchase) return res.status(404).json({ success: false, error: 'Compra no encontrada' });
+
+        // 2. Reverse stock for items
+        const { data: items } = await supabase.from(T.PURCHASE_ITEMS).select('*').eq('purchase_id', purchaseId);
+        if (items) {
+            for (const it of items) {
+                if (it.mp_code && it.mp_code !== '__otros__') {
+                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', it.mp_code).single();
+                    if (rm) {
+                        const qty = Number(it.quantity) || 0;
+                        await supabase.from(T.MP).update({ stock: Math.max(0, (rm.stock || 0) - qty) }).eq('code', it.mp_code);
+                    }
+                }
+            }
+        }
+
+        // 3. Delete Accounting Entries
+        const { data: entries } = await supabase
+            .from(T.PC_ASIENTOS)
+            .select('id')
+            .eq('referencia_id', purchaseId.toString())
+            .in('tipo_origen', ['compra', 'compra_push', 'compra_pull', 'gasto', 'erp_compra', 'pago_compra_auto']);
+
+        if (entries && entries.length > 0) {
+            const ids = entries.map(e => e.id);
+            await supabase.from(T.PC_MOVIMIENTOS).delete().in('asiento_id', ids).eq('empresa_id', req.empresa_id);
+            await supabase.from(T.PC_ASIENTOS).delete().in('id', ids).eq('empresa_id', req.empresa_id);
+        }
+
+        // 4. Delete Purchase Items & Header
+        await supabase.from(T.PURCHASE_ITEMS).delete().eq('purchase_id', purchaseId);
+        const { error: delErr } = await supabase.from(T.PURCHASES).delete().eq('id', purchaseId).eq('empresa_id', req.empresa_id);
+        
+        if (delErr) throw delErr;
+
+        res.json({ success: true, message: 'Compra eliminada y stock revertido correctamente.' });
+    } catch (e) {
+        debugLog(`ERROR in DELETE /api/purchases/${purchaseId}:`, e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 app.post('/api/sales', authenticateToken, async (req, res) => {
     const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number, document_type } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];

@@ -647,18 +647,18 @@ const views = {
         <input type="hidden" id="pur-edit-mode" value="false">
         <input type="hidden" id="pur-edit-id" value="">
 
-        <div style="background: rgba(var(--primary-rgb), 0.05); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px dashed var(--primary)">
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem">
+        <div style="background: var(--surface-light); padding: 1.25rem; border-radius: 0.75rem; margin-bottom: 1.5rem; border: 1px solid var(--border-strong)">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.25rem">
             <div class="form-group" style="margin:0">
-              <label style="font-weight: 600">Tipo de Registro</label>
-              <select id="pur-type" onchange="window.togglePurType()" style="font-size: 1.1rem; padding: 0.5rem">
+              <label style="font-weight: 600; color: var(--text)">Tipo de Registro</label>
+              <select id="pur-type" onchange="window.togglePurType()" style="font-size: 1rem">
                 <option value="mp">Compra de Insumos (Inventariable)</option>
                 <option value="expense">Informe de Gasto / Caja Chica (Gasto Operacional)</option>
               </select>
             </div>
             <div class="form-group" style="margin:0">
-              <label style="font-weight: 600">Categoría de Compra</label>
-              <select id="pur-category" onchange="window.togglePurCategory()" style="font-size: 1.1rem; padding: 0.5rem">
+              <label style="font-weight: 600; color: var(--text)">Categoría de Compra</label>
+              <select id="pur-category" onchange="window.togglePurCategory()" style="font-size: 1rem">
                 <option value="general">📦 General (sin producción específica)</option>
                 <option value="pull">🔄 Pull (de cotización ganada)</option>
                 <option value="push">🚀 Push (para fabricar y vender)</option>
@@ -668,7 +668,7 @@ const views = {
           </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem">
           <div class="form-group" id="pur-prov-group">
             <label style="font-weight: 600">Proveedor</label>
             <div style="display: flex; gap: 0.5rem">
@@ -676,29 +676,28 @@ const views = {
                 <option value="">Sin Proveedor / Boleta</option>
                 ${state.providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
               </select>
-              <button type="button" onclick="window.openProviderModal(); document.getElementById('prov-modal').style.display='flex'; document.getElementById('prov-modal').style.zIndex='10000';" style="padding: 0 0.75rem; background: var(--secondary)" title="Nuevo Proveedor">+</button>
+              <button type="button" onclick="window.openProviderModal(); document.getElementById('prov-modal').style.display='flex'; document.getElementById('prov-modal').style.zIndex='10000';" style="padding: 0 0.75rem" title="Nuevo Proveedor">+</button>
             </div>
           </div>
           <div class="form-group">
             <label style="font-weight: 600">Fecha de Registro</label>
-            <input type="date" id="pur-date" value="${new Date().toISOString().split('T')[0]}">
+            <input type="date" id="pur-date" value="${new Date().toISOString().split('T')[0]}" required>
           </div>
           <div class="form-group">
-            <label style="font-weight: 600">N° Documento (Boleta/Factura)</label>
+            <label style="font-weight: 600">N° Documento</label>
             <input type="text" id="pur-doc-number" placeholder="Ej: 12345">
           </div>
           <div class="form-group" id="pur-project-group">
-            <label style="font-weight: 600; color: var(--secondary)">📁 Asociar a Proyecto (ABC)</label>
-            <select id="pur-project" style="border: 1px solid var(--secondary)">
+            <label style="font-weight: 600; color: var(--secondary)">📁 Proyecto Asociado</label>
+            <select id="pur-project" style="border: 1px solid var(--secondary)44">
               <option value="">Gasto General (Sin Proyecto)</option>
               <optgroup label="Cotizaciones Aprobadas / En Producción">
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — 👤 ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''}</option>`).join('')}
               </optgroup>
               <optgroup label="Ventas Realizadas">
                 ${state.history.sales.slice(0, 10).map(s => `<option value="S-${s.id}">💰 Venta #${s.id} - ${s.client_name || 'Vta Directa'}</option>`).join('')}
               </optgroup>
             </select>
-            <small style="font-size: 0.7rem; opacity: 0.7">Vincula este costo a un ingreso para calcular utilidad real.</small>
           </div>
         </div>
 
@@ -2235,7 +2234,17 @@ function renderHistoryTable(type) {
                   <strong>${h.type === 'expense' ? (h.description || 'Gasto General') : (h.provider_name || 'Sin Proveedor')}</strong>
                 </td>
                 <td style="font-weight: 600">$${(h.total || 0).toLocaleString()}</td>
-                <td><button class="btn-sm" onclick="window.showTransactionDetails('purchase', '${h.id}')">👁️ Ver</button></td>
+                <td style="text-align: center">
+                  <div style="display: flex; gap: 0.3rem; justify-content: center">
+                    <button class="btn-sm" onclick="window.showTransactionDetails('purchase', '${h.id}')" title="Ver detalle">👁️</button>
+                    ${currentUser?.role === 'superadmin' || currentUser?.role === 'admin' ? `
+                      <button class="btn-sm" onclick="window.editTransaction('purchase', '${h.id}')" style="background:var(--secondary)" title="Editar">✏️</button>
+                    ` : ''}
+                    ${currentUser?.role === 'superadmin' ? `
+                      <button class="btn-sm" onclick="window.deletePurchase('${h.id}')" style="background:var(--danger)" title="Eliminar">🗑️</button>
+                    ` : ''}
+                  </div>
+                </td>
               </tr>
             `;
     }).join('')}
@@ -5094,19 +5103,31 @@ function renderView(viewName) {
       }
     };
 
-    document.getElementById('btn-submit-purchase')?.addEventListener('click', async () => {
+    document.getElementById('btn-submit-purchase')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const btn = e.currentTarget;
+      const originalText = btn.textContent;
+      
       console.log('[PURCHASE] Botón de guardar presionado');
       try {
         const isEditMode = document.getElementById('pur-edit-mode')?.value === 'true';
         const editId = document.getElementById('pur-edit-id')?.value;
         const type = document.getElementById('pur-type')?.value;
-        console.log('[PURCHASE] Mode:', isEditMode ? 'EDIT' : 'NEW', '| ID:', editId, '| Type:', type);
+        const date = document.getElementById('pur-date')?.value;
+        if (!date) return alert('Debe seleccionar una fecha');
+
+        const totalVal = parseInt(document.getElementById('pur-total')?.value) || (type === 'expense' ? parseInt(document.getElementById('pur-expense-total')?.value) : 0) || 0;
+        const provId = document.getElementById('pur-prov')?.value;
+
+        // Disable button to prevent double-click
+        btn.disabled = true;
+        btn.textContent = 'Procesando...';
 
         const projectVal = document.getElementById('pur-project')?.value || null;
         const body = {
           type: type,
           purchase_category: document.getElementById('pur-category')?.value || 'general',
-          date: document.getElementById('pur-date')?.value,
+          date: date,
           payment_method: document.getElementById('pur-payment-method')?.value,
           account_id: document.getElementById('pur-account')?.value || null,
           document_type: document.getElementById('pur-doc-type')?.value,
@@ -5116,19 +5137,39 @@ function renderView(viewName) {
           centro_costo_id: document.getElementById('pur-cost-center')?.value || null
         };
 
+        // --- DUPLICATE CHECK ---
+        if (!isEditMode && state.history.purchases?.length > 0) {
+          const last = state.history.purchases[0];
+          const isSameDate = (last.date && last.date.split('T')[0] === date);
+          const isSameTotal = (Number(last.total) === totalVal);
+          const isSameProvider = (String(last.provider_id) === String(provId));
+          const isSameType = (last.type === type);
+          const isSameQuotation = (last.quotation_id == body.quotation_id);
+          const isSameProjectRef = (last.project_ref == body.project_ref);
+
+          if (isSameDate && isSameTotal && isSameProvider && isSameType && isSameQuotation && isSameProjectRef) {
+            if (!confirm('⚠️ ALERTA DE DUPLICADO: Se detectó una compra idéntica registrada recientemente (mismo proveedor, fecha, monto y proyecto). ¿Desea registrarla de todos modos?')) {
+              btn.disabled = false;
+              btn.textContent = originalText;
+              return;
+            }
+          }
+        }
+
         if (type === 'mp') {
           body.providerId = document.getElementById('pur-prov')?.value;
           body.items = getTableItems('pur');
-          console.log('[PURCHASE] Items encontrados:', body.items?.length, body.items);
           body.net = parseInt(document.getElementById('pur-net')?.value) || 0;
           body.iva = parseInt(document.getElementById('pur-iva')?.value) || 0;
           body.total = parseInt(document.getElementById('pur-total')?.value) || 0;
 
           if (!body.items || body.items.length === 0) {
+            btn.disabled = false;
+            btn.textContent = originalText;
             if (body.total > 0 && isEditMode) {
-                console.warn('[PURCHASE] Editando compra antigua sin ítems. Se permite el guardado.');
+                console.warn('[PURCHASE] Editando compra antigua sin ítems.');
             } else {
-                return alert('Debe agregar al menos un ítem');
+                return alert('Debe agregar al menos un ítem con cantidad válida');
             }
           }
         } else {
@@ -5138,29 +5179,59 @@ function renderView(viewName) {
           body.iva = 0;
           body.total = totalExp;
 
-          if (!body.description) return alert('Debe ingresar una descripción para el gasto');
-          if (body.total <= 0) return alert('El monto debe ser mayor a cero');
+          if (!body.description) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+            return alert('Debe ingresar una descripción para el gasto');
+          }
+          if (body.total <= 0) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+            return alert('El monto debe ser mayor a cero');
+          }
         }
 
-        console.log('[PURCHASE] Enviando body:', JSON.stringify(body).substring(0, 300));
+        console.log('[PURCHASE] Enviando body:', body);
 
         let res;
         if (isEditMode) {
-          res = await putData(`/purchases/${editId}`, body);
+          res = await apiFetch(`/purchases/${editId}`, { method: 'PUT', body: JSON.stringify(body) });
         } else {
-          res = await postData('/purchases', body);
+          res = await apiFetch('/purchases', { method: 'POST', body: JSON.stringify(body) });
         }
-        console.log('[PURCHASE] Respuesta:', res);
 
-        // Hide modal immediately if successful (postData/putData already alert and refresh)
-        const modal = document.getElementById('buy-modal');
-        if (modal) modal.style.display = 'none';
+        if (res && res.success) {
+          alert(res.message || 'Compra registrada con éxito');
+          const modal = document.getElementById('buy-modal');
+          if (modal) modal.style.display = 'none';
+          fetchData(); 
+        } else {
+          alert('No se pudo guardar: ' + (res?.error || 'Error desconocido del servidor'));
+        }
 
       } catch (e) {
-        console.error('[PURCHASE] Error capturado:', e);
-        alert('Error al procesar: ' + e.message);
+        console.error('[PURCHASE] Error fatal:', e);
+        alert('Error inesperado: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
       }
     });
+
+    window.deletePurchase = async function (id) {
+      if (!confirm('¿Seguro que desea eliminar esta compra? Esta acción revertirá el stock de los insumos asociados y eliminará el asiento contable. Esta es una acción permanente.')) return;
+      try {
+        const res = await apiFetch(`/purchases/${id}`, { method: 'DELETE' });
+        if (res && res.success) {
+          alert(res.message);
+          fetchData();
+        } else {
+          alert('Error: ' + (res?.error || 'No se pudo eliminar'));
+        }
+      } catch (e) {
+        alert('Error fatal al eliminar: ' + e.message);
+      }
+    };
   }
 
   if (viewName === 'sales') {
