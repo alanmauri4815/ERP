@@ -1801,6 +1801,34 @@ app.post('/api/production', authenticateToken, async (req, res) => {
         const prod = result.data;
 
         let totalProductionCost = 0;
+
+        // --- PULL MODE: Subtract materials from linked quotation ---
+        if (quotation_id && !isNaN(quotation_id)) {
+            debugLog(`[PROD] PULL Production detected for Quote #${quotation_id}. Processing custom materials.`);
+            const { data: quoteItems } = await supabase.from(T.QUOTE_ITEMS)
+                .select('*')
+                .eq('quotation_id', quotation_id)
+                .eq('empresa_id', req.empresa_id);
+
+            if (quoteItems) {
+                for (const qItem of quoteItems) {
+                    if (qItem.item_type === 'material') {
+                        const code = qItem.item_code || qItem.description;
+                        const qty = parseFloat(qItem.quantity) || 0;
+                        const cost = parseFloat(qItem.total_cost) || 0;
+                        
+                        // Subtract from stock if we have a match in MP table
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                        if (rm) {
+                            await supabase.from(T.MP).update({ stock: (parseFloat(rm.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
+                            await checkLowStockAlerts(code);
+                        }
+                        totalProductionCost += cost;
+                    }
+                }
+            }
+        }
+
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             const code = item.productCode;
@@ -1817,37 +1845,39 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                 });
                 if (itemError) throw new Error(`Error en ítem ${i + 1} (${code}): ${itemError.message}`);
 
-                // --- SMART STOCK IMPACT ---
+                // --- STOCK IMPACT (ONLY IF NOT HANDLED BY QUOTE) ---
                 
-                // 1. Insumos/Direct Materials (Subtract Stock)
-                const { data: rmDir } = await supabase.from(T.MP).select('stock, type, cost_net').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
-                if (rmDir && rmDir.type === 'MP') {
-                    debugLog(`[PROD] Direct Material: ${code}. Subtracting ${qty}`);
-                    await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
-                    totalProductionCost += (parseFloat(rmDir.cost_net) || 0) * qty;
-                    await checkLowStockAlerts(code);
-                }
-
-                // 2. Finished Products (Add PT Stock + Subtract Recipe)
+                // 1. Products (Add PT Stock)
                 const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
                 if (p) {
                     debugLog(`[PROD] Finished Product: ${code}. Adding ${qty}`);
                     await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) + qty }).eq('code', code).eq('empresa_id', req.empresa_id);
 
-                    // Subtract Recipe
-                    const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', code).eq('empresa_id', req.empresa_id);
-                    if (recipes && recipes.length > 0) {
-                        for (const r of recipes) {
-                            const cQty = (parseFloat(r.quantity) || 0) * qty;
-                            const cCost = (parseFloat(r.unit_cost) || 0) * qty;
-                            totalProductionCost += cCost;
-
-                            const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
-                            if (rmComp) {
-                                await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
-                                await checkLowStockAlerts(r.mp_code);
+                    // If NOT in Pull mode, or if project items didn't cover it, use standard recipe
+                    if (!quotation_id) {
+                        const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', code).eq('empresa_id', req.empresa_id);
+                        if (recipes && recipes.length > 0) {
+                            for (const r of recipes) {
+                                const cQty = (parseFloat(r.quantity) || 0) * qty;
+                                const cCost = (parseFloat(r.unit_cost) || 0) * qty;
+                                totalProductionCost += cCost;
+                                const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                                if (rmComp) {
+                                    await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                                    await checkLowStockAlerts(r.mp_code);
+                                }
                             }
                         }
+                    }
+                }
+                
+                // 2. Direct Materials (Only if not in Pull mode, to avoid double subtraction)
+                if (!quotation_id) {
+                    const { data: rmDir } = await supabase.from(T.MP).select('stock, type, cost_net').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                    if (rmDir && rmDir.type === 'MP') {
+                        await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
+                        totalProductionCost += (parseFloat(rmDir.cost_net) || 0) * qty;
+                        await checkLowStockAlerts(code);
                     }
                 }
             }
@@ -1886,34 +1916,57 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
             .ilike('description', `%Producción #${prodId}%`);
 
         // 1. REVERSE OLD STOCK IMPACT
+        const { data: prodHeader } = await supabase.from(T.PRODUCTION).select('production_category, quotation_id').eq('id', prodId).single();
         const { data: oldItems } = await supabase.from(T.PRODUCTION_ITEMS).select('*').eq('production_id', prodId);
+
+        // A. Reverse Quotation Materials (if PULL)
+        if (prodHeader && prodHeader.production_category === 'pull' && prodHeader.quotation_id) {
+            const { data: oldQuoteItems } = await supabase.from(T.QUOTE_ITEMS)
+                .select('*').eq('quotation_id', prodHeader.quotation_id).eq('empresa_id', req.empresa_id);
+            if (oldQuoteItems) {
+                for (const qItem of oldQuoteItems) {
+                    if (qItem.item_type === 'material') {
+                        const code = qItem.item_code || qItem.description;
+                        const qty = parseFloat(qItem.quantity) || 0;
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                        if (rm) {
+                            await supabase.from(T.MP).update({ stock: (parseFloat(rm.stock) || 0) + qty }).eq('code', code).eq('empresa_id', req.empresa_id);
+                        }
+                    }
+                }
+            }
+        }
 
         if (oldItems) {
             for (const item of oldItems) {
                 const code = item.product_code;
                 const qty = parseFloat(item.quantity) || 0;
 
-                // A. Reverse Direct Material Impact
-                const { data: rmDir } = await supabase.from(T.MP).select('stock, type').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
-                if (rmDir && rmDir.type === 'MP') {
-                     await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) + qty }).eq('code', code).eq('empresa_id', req.empresa_id);
-                }
-
-                // B. Reverse Product/PT Impact
+                // B. Reverse Product/PT Impact (ONLY PT STOCK ADDITION)
                 const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
                 if (p) {
                     await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
-
-                    // Reverse Recipe components
-                    const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', code).eq('empresa_id', req.empresa_id);
-                    if (recipes && recipes.length > 0) {
-                        for (const r of recipes) {
-                            const cQty = (parseFloat(r.quantity) || 0) * qty;
-                            const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
-                            if (rmComp) {
-                                await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) + cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
+                    
+                    // IF NOT PULL: Reverse Recipe components
+                    if (!prodHeader || prodHeader.production_category !== 'pull') {
+                        const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', code).eq('empresa_id', req.empresa_id);
+                        if (recipes && recipes.length > 0) {
+                            for (const r of recipes) {
+                                const cQty = (parseFloat(r.quantity) || 0) * qty;
+                                const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                                if (rmComp) {
+                                    await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) + cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
+                                }
                             }
                         }
+                    }
+                }
+
+                // C. Reverse Direct Material Impact (IF NOT PULL)
+                if (!prodHeader || prodHeader.production_category !== 'pull') {
+                    const { data: rmDir } = await supabase.from(T.MP).select('stock, type').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                    if (rmDir && rmDir.type === 'MP') {
+                         await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) + qty }).eq('code', code).eq('empresa_id', req.empresa_id);
                     }
                 }
             }
@@ -1937,6 +1990,32 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
 
         // 4. INSERT NEW ITEMS AND APPLY NEW SMART IMPACT
         let totalProductionCost = 0;
+
+        // --- PULL MODE: Subtract materials from linked quotation (New state) ---
+        const finalQuoteId = parseInt(updateData.quotation_id || quotation_id);
+        if ((updateData.production_category === 'pull' || production_category === 'pull') && finalQuoteId) {
+            const { data: quoteItems } = await supabase.from(T.QUOTE_ITEMS)
+                .select('*')
+                .eq('quotation_id', finalQuoteId)
+                .eq('empresa_id', req.empresa_id);
+
+            if (quoteItems) {
+                for (const qItem of quoteItems) {
+                    if (qItem.item_type === 'material') {
+                        const code = qItem.item_code || qItem.description;
+                        const qty = parseFloat(qItem.quantity) || 0;
+                        const cost = parseFloat(qItem.total_cost) || 0;
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                        if (rm) {
+                            await supabase.from(T.MP).update({ stock: (parseFloat(rm.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
+                            await checkLowStockAlerts(code);
+                        }
+                        totalProductionCost += cost;
+                    }
+                }
+            }
+        }
+
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             const code = item.productCode;
@@ -1947,36 +2026,44 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
                     production_id: prodId,
                     item_number: i + 1,
                     product_code: code,
-                    quantity: qty,
+                     quantity: qty,
                     mo_cost: item.mo_cost || 0,
                     material_cost: item.material_cost || 0
                 });
                 if (itemError) throw itemError;
 
-                // Impact Direct Material
-                const { data: rmDir } = await supabase.from(T.MP).select('stock, type, cost_net').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
-                if (rmDir && rmDir.type === 'MP') {
-                    await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
-                    totalProductionCost += (parseFloat(rmDir.cost_net) || 0) * qty;
-                }
-
-                // Impact Product/PT
+                // --- NEW IMPACT ---
+                
+                // 1. Products (Add PT Stock)
                 const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
                 if (p) {
                     await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) + qty }).eq('code', code).eq('empresa_id', req.empresa_id);
 
-                    const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', code).eq('empresa_id', req.empresa_id);
-                    if (recipes && recipes.length > 0) {
-                        for (const r of recipes) {
-                            const cQty = (parseFloat(r.quantity) || 0) * qty;
-                            const cCost = (parseFloat(r.unit_cost) || 0) * qty;
-                            totalProductionCost += cCost;
-                            const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
-                            if (rmComp) {
-                                await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
-                                await checkLowStockAlerts(r.mp_code);
+                    // If NOT in Pull mode, or if project items didn't cover it, use standard recipe
+                    if (updateData.production_category !== 'pull' && production_category !== 'pull') {
+                        const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', code).eq('empresa_id', req.empresa_id);
+                        if (recipes && recipes.length > 0) {
+                            for (const r of recipes) {
+                                const cQty = (parseFloat(r.quantity) || 0) * qty;
+                                const cCost = (parseFloat(r.unit_cost) || 0) * qty;
+                                totalProductionCost += cCost;
+                                const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                                if (rmComp) {
+                                    await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
+                                    await checkLowStockAlerts(r.mp_code);
+                                }
                             }
                         }
+                    }
+                }
+                
+                // 2. Direct Materials (Only if not in Pull mode)
+                if (updateData.production_category !== 'pull' && production_category !== 'pull') {
+                    const { data: rmDir } = await supabase.from(T.MP).select('stock, type, cost_net').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
+                    if (rmDir && rmDir.type === 'MP') {
+                        await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
+                        totalProductionCost += (parseFloat(rmDir.cost_net) || 0) * qty;
+                        await checkLowStockAlerts(code);
                     }
                 }
             }

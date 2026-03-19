@@ -2902,69 +2902,89 @@ window.updateProdRecipeView = async () => {
   const rows = document.querySelectorAll('#production-items-body .item-row');
   const container = document.getElementById('production-material-summary');
   const content = document.getElementById('material-summary-content');
+  const isPull = document.getElementById('prod-category')?.value === 'pull';
+  const quoteId = document.getElementById('prod-quotation')?.value;
 
   let totalMP = 0;
   let totalMO = 0;
-  const materialAggregation = {}; // { mp_code: { qty, cost, name } }
+  let totalSvc = 0;
+  const materialAggregation = {};
 
-  for (const row of rows) {
-    const code = row.querySelector('.prod-item-code').value.trim();
-    const qtyInput = row.querySelector('.prod-item-qty');
-    const qty = parseFloat(qtyInput.value) || 0;
-    
-    if (!code || qty <= 0) continue;
+  // --- Logic for PULL (Custom) ---
+  if (isPull && quoteId && window.currentProductionItems) {
+      // In PULL mode, we list all materials found in the quotation items
+      window.currentProductionItems.forEach(item => {
+          const isMaterial = (item.item_type === 'material' || item.type === 'MP');
+          const isLabor = (item.item_type === 'labor' || item.type === 'MO');
+          const isService = (item.item_type === 'service' || item.type === 'Servicio');
 
-    // 1. Try treating it as a Finished Product (Recipe-based)
-    const existsInProducts = state.products.some(p => p.code === code);
-    if (existsInProducts) {
-        try {
-            const recipes = await apiFetch(`/recipes/${code}`);
-            if (recipes && recipes.length > 0) {
-                recipes.forEach(r => {
-                    const consumption = (parseFloat(r.quantity) || 0) * qty;
-                    const cost = (parseFloat(r.unit_cost) || 0) * qty;
-                    totalMP += cost;
-                    
-                    if (!materialAggregation[r.mp_code]) {
-                        materialAggregation[r.mp_code] = { qty: 0, cost: 0, name: r.mp_name || r.mp_code };
-                    }
-                    materialAggregation[r.mp_code].qty += consumption;
-                    materialAggregation[r.mp_code].cost += cost;
-                });
+          const cost = (parseFloat(item.total_cost) || (parseFloat(item.unit_cost) * parseFloat(item.quantity))) || 0;
+          
+          if (isMaterial) {
+              totalMP += cost;
+              const name = item.description || item.name || 'Material S.N.';
+              if (!materialAggregation[name]) materialAggregation[name] = { qty: 0, cost: 0, name };
+              materialAggregation[name].qty += (parseFloat(item.quantity) || 0);
+              materialAggregation[name].cost += cost;
+          } else if (isLabor) {
+              totalMO += cost;
+          } else if (isService) {
+              totalSvc += cost;
+          }
+      });
+  } 
+  // --- Logic for PUSH (Standard) ---
+  else {
+      for (const row of rows) {
+        const code = row.querySelector('.prod-item-code').value.trim();
+        const qty = parseFloat(row.querySelector('.prod-item-qty').value) || 0;
+        if (!code || qty <= 0) continue;
+
+        const prod = state.products.find(p => p.code === code);
+        if (prod) {
+            try {
+                const recipes = await apiFetch(`/recipes/${code}`);
+                if (recipes && recipes.length > 0) {
+                    recipes.forEach(r => {
+                        const consumption = (parseFloat(r.quantity) || 0) * qty;
+                        const cost = (parseFloat(r.unit_cost) || 0) * qty;
+                        totalMP += cost;
+                        if (!materialAggregation[r.mp_code]) {
+                            materialAggregation[r.mp_code] = { qty: 0, cost: 0, name: r.mp_name || r.mp_code };
+                        }
+                        materialAggregation[r.mp_code].qty += consumption;
+                        materialAggregation[r.mp_code].cost += cost;
+                    });
+                }
+            } catch (e) { console.error('Error fetching recipe:', e); }
+        } else {
+            const rm = state.rawMaterials.find(m => m.code === code);
+            if (rm) {
+               const cost = (parseFloat(rm.cost_net) || 0) * qty;
+               if (rm.type === 'MP') {
+                   totalMP += cost;
+                   if (!materialAggregation[code]) materialAggregation[code] = { qty: 0, cost: 0, name: rm.name };
+                   materialAggregation[code].qty += qty;
+                   materialAggregation[code].cost += cost;
+               } else { totalMO += cost; }
             }
-        } catch (e) { console.error('Error fetching recipe:', e); }
-    } else {
-        // 2. Try treating it as a Direct Material (PULL logic)
-        const rm = state.rawMaterials.find(m => m.code === code);
-        if (rm) {
-           const itemCost = (parseFloat(rm.cost_net) || 0) * qty;
-           if (rm.type === 'MP') {
-               totalMP += itemCost;
-               if (!materialAggregation[code]) {
-                   materialAggregation[code] = { qty: 0, cost: 0, name: rm.name };
-               }
-               materialAggregation[code].qty += qty;
-               materialAggregation[code].cost += itemCost;
-           } else if (rm.type === 'MO' || rm.type === 'Servicio') {
-               totalMO += itemCost;
-           }
         }
-    }
+      }
   }
 
-  // Update UI cost inputs automatically
+  // Update Header Totals
   const mpField = document.getElementById('prod-material-cost');
   const moField = document.getElementById('prod-general-expenses');
   if (mpField) mpField.value = Math.round(totalMP);
-  if (moField) moField.value = Math.round(totalMO);
+  if (moField) moField.value = Math.round(totalMO + totalSvc);
 
-  // Render Summary
+  // Render Visualizer
   if (Object.keys(materialAggregation).length > 0) {
     container.style.display = 'block';
-    content.innerHTML = Object.entries(materialAggregation).map(([code, m]) => `
+    content.innerHTML = Object.entries(materialAggregation).map(([key, m]) => `
       <div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-light)">
-        <div style="font-weight:600; color: var(--secondary)">${m.name}</div>
-        <div style="font-size: 0.75rem; opacity: 0.8">
+        <div style="font-weight:600; color: var(--secondary); font-size:0.75rem">${m.name}</div>
+        <div style="font-size: 0.7rem; opacity: 0.8">
           📦 Consumo: <b style="color: var(--text)">${m.qty.toLocaleString()}</b> <br>
           💰 Costo: <b style="color: var(--success)">$${Math.round(m.cost).toLocaleString()}</b>
         </div>
@@ -5456,7 +5476,7 @@ function renderView(viewName) {
              
              try {
                 const quote = await apiFetch(`/quotations/${quoteId}`);
-                if (quote && quote.items) {
+                if (quote) {
                     const rows = document.querySelectorAll('#production-items-body .item-row');
                     // Reset
                     rows.forEach(r => {
@@ -5466,15 +5486,17 @@ function renderView(viewName) {
                          r.querySelector('.prod-item-mo').value = '0';
                     });
                     
-                    // Fill with quote items
-                    quote.items.forEach((item, i) => {
-                        if (rows[i]) {
-                             rows[i].querySelector('.prod-item-code').value = item.product_code || item.code || '';
-                             rows[i].querySelector('.prod-item-qty').value = item.quantity || 1;
-                             rows[i].querySelector('.prod-item-mp').value = item.cost_unit || item.unit_price || 0;
-                        }
-                    });
-                    window.updateProdTotals();
+                    // Fill Row 1 with Quotation Main Result
+                    if (rows[0]) {
+                        // Priority: name of the project + quantity of project
+                        rows[0].querySelector('.prod-item-code').value = quote.name || 'Proyecto Genérico';
+                        rows[0].querySelector('.prod-item-qty').value = quote.quantity || 1;
+                        rows[0].querySelector('.prod-item-mp').value = quote.total_net_cost || 0;
+                    }
+
+                    // Store these items for the summary view
+                    window.currentProductionItems = quote.items || [];
+                    window.updateProdRecipeView();
                 }
              } catch (e) {
                 console.error('Error loading quote items:', e);
