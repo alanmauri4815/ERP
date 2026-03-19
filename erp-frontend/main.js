@@ -5202,6 +5202,22 @@ function renderView(viewName) {
       if (!body.date) return alert('Por favor, ingrese una fecha válida.');
       if (body.items.length === 0) return alert('Debe agregar al menos un ítem');
 
+      // --- STOCK VALIDATION BLOCK ---
+      for (const item of body.items) {
+          const product = state.products.find(p => p.code?.toLowerCase() === item.product_code?.toLowerCase());
+          if (product) {
+              const currentStock = parseFloat(product.stock) || 0;
+              const requestedQty = parseFloat(item.quantity) || 0;
+              if (currentStock < requestedQty) {
+                  return alert(`❌ Stock insuficiente para "${product.name}" (${product.code}). \n\nDisponible: ${currentStock} \nSolicitado: ${requestedQty} \n\nDebe producir o comprar más antes de vender.`);
+              }
+          } else {
+              // It's a custom code (maybe created in Pull quotation but not in master yet)
+              // We could allow it if it's explicitly Pull, but usually it should be in master to have stock.
+              return alert(`❌ El código de producto "${item.product_code}" no existe en el maestro o no tiene stock registrado.`);
+          }
+      }
+
       let res;
       if (isEditMode) {
         res = await putData(`/sales/${editId}`, body, false, false);

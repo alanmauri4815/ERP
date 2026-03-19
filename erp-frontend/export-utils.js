@@ -181,13 +181,29 @@ export function formatPurchasesForExport(purchases) {
  * @returns {Array} Producción formateada para Excel
  */
 export function formatProductionForExport(production) {
-    return production.map(p => ({
-        'ID': p.id,
-        'Fecha': p.date,
-        'Producto': p.product_code,
-        'Cantidad': p.quantity,
-        'Estado': p.status
-    }));
+    const formatted = [];
+    production.forEach(p => {
+        if (p.items && p.items.length > 0) {
+            p.items.forEach(item => {
+                formatted.push({
+                    'ID': p.id,
+                    'Fecha': p.date,
+                    'Producto': item.product_code,
+                    'Cantidad': item.quantity,
+                    'Estado': p.status || 'Completada'
+                });
+            });
+        } else {
+            formatted.push({
+                'ID': p.id,
+                'Fecha': p.date,
+                'Producto': p.product_code || '-',
+                'Cantidad': p.quantity || 0,
+                'Estado': p.status || 'Completada'
+            });
+        }
+    });
+    return formatted;
 }
 /**
  * Formatea datos del libro diario para exportación
