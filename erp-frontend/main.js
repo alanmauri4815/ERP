@@ -706,37 +706,33 @@ const views = {
           <input type="text" id="pur-description" placeholder="Ej: Compra de hilos, Almuerzo terreno, etc.">
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; background: rgba(255,255,255,0.02); padding: 1rem; border-radius: 8px">
-          <div class="form-group">
-            <label>Método de Pago</label>
-            <select id="pur-payment-method">
-              <option value="transfer">Transferencia</option>
-              <option value="debit">Débito</option>
-              <option value="credit">Crédito</option>
-              <option value="cash">Efectivo / Caja Chica</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Cuenta / Fondo</label>
-            <select id="pur-account">
-              <option value="">Seleccionar cuenta...</option>
-              ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Tipo Documento</label>
-            <select id="pur-doc-type">
-              <option value="factura">Factura</option>
-              <option value="boleta">Boleta / Comprobante</option>
-              <option value="n/a">Sin Documento</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Centro de Costo</label>
-            <select id="pur-cost-center">
-              <option value="">(Default Operaciones)</option>
-              ${state.costCenters?.map(cc => `<option value="${cc.id}">${cc.nombre}</option>`).join('') || ''}
-            </select>
+        </div>
+
+        <div style="background: var(--surface-light); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px solid var(--border)">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; align-items: start">
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600">Método de Pago Sugerido</label>
+              <select id="pur-payment-method">
+                <option value="transfer">Transferencia</option>
+                <option value="debit">Débito</option>
+                <option value="credit">Crédito (Cuentas por Pagar)</option>
+                <option value="cash">Efectivo / Caja Chica</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600">Cuenta / Fondo Origen</label>
+              <select id="pur-account">
+                <option value="">Seleccionar cuenta...</option>
+                ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600; color: var(--success)">
+                <input type="checkbox" id="pur-auto-pay" checked>
+                Pagar ahora al contado
+              </label>
+              <small style="display:block; opacity: 0.7; font-size: 0.7rem">Registra el egreso de dinero y marca como pagada de inmediato.</small>
+            </div>
           </div>
         </div>
         
@@ -900,10 +896,14 @@ const views = {
             </select>
           </div>
         </div>
-        <div style="display: flex; gap: 2rem; margin-bottom: 1rem; align-items: center;">
+        <div style="display: flex; gap: 2rem; margin-bottom: 1rem; align-items: center; background: var(--surface-light); padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border)">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--success); font-weight: 600;">
+            <input type="checkbox" id="sale-auto-collect" checked>
+            <span>Cobrar ahora al contado</span>
+          </label>
           <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
             <input type="checkbox" id="sale-iva-exempt" onchange="window.recalculateSaleTotals()">
-            <span>Exento de IVA (venta sin documento tributario)</span>
+            <span>Exento de IVA</span>
           </label>
         </div>
 
@@ -2125,8 +2125,15 @@ function renderHistoryTable(type) {
                   $${(h.total || 0).toLocaleString()} ${h.is_iva_exempt ? '<br><small style="color:var(--warning)">(Exento)</small>' : ''}
                 </td>
                 <td style="text-align: center">
-                  <button class="btn-sm" onclick="window.showTransactionDetails('sale', '${h.id}')" title="Ver detalle de productos">👁️</button>
-                  <button class="btn-sm" onclick="window.editTransaction('sale', '${h.id}')" style="background:var(--secondary)" title="Editar venta">✏️</button>
+                  <div style="display: flex; gap: 0.3rem; justify-content: center">
+                    <button class="btn-sm" onclick="window.showTransactionDetails('sale', '${h.id}')" title="Ver detalle">👁️ Ver</button>
+                    ${currentUser?.role === 'superadmin' || currentUser?.role === 'admin' ? `
+                      <button class="btn-sm" onclick="window.editTransaction('sale', '${h.id}')" style="background:var(--secondary)" title="Editar">✏️ Editar</button>
+                    ` : ''}
+                    ${currentUser?.role === 'superadmin' ? `
+                      <button class="btn-sm" onclick="window.deleteSale('${h.id}')" style="background:var(--danger)" title="Eliminar">🗑️ Borrar</button>
+                    ` : ''}
+                  </div>
                 </td>
               </tr>
             `).join('')}
@@ -2190,9 +2197,9 @@ function renderHistoryTable(type) {
                 </td>
                 <td style="text-align: center">
                    <div style="display: flex; gap: 0.3rem; justify-content: center">
-                     <button class="btn-sm" onclick="window.showTransactionDetails('production', '${p.id}')">👁️</button>
-                     <button class="btn-sm" onclick="window.editProduction(${p.id})" style="background:var(--secondary)">✏️</button>
-                     <button class="btn-sm" onclick="window.deleteProduction(${p.id})" style="background:var(--danger)">🗑️</button>
+                     <button class="btn-sm" onclick="window.showTransactionDetails('production', '${p.id}')">👁️ Ver</button>
+                     <button class="btn-sm" onclick="window.editProduction(${p.id})" style="background:var(--secondary)">✏️ Editar</button>
+                     <button class="btn-sm" onclick="window.deleteProduction(${p.id})" style="background:var(--danger)">🗑️ Borrar</button>
                    </div>
                 </td>
               </tr>
@@ -2236,12 +2243,12 @@ function renderHistoryTable(type) {
                 <td style="font-weight: 600">$${(h.total || 0).toLocaleString()}</td>
                 <td style="text-align: center">
                   <div style="display: flex; gap: 0.3rem; justify-content: center">
-                    <button class="btn-sm" onclick="window.showTransactionDetails('purchase', '${h.id}')" title="Ver detalle">👁️</button>
+                    <button class="btn-sm" onclick="window.showTransactionDetails('purchase', '${h.id}')" title="Ver detalle">👁️ Ver</button>
                     ${currentUser?.role === 'superadmin' || currentUser?.role === 'admin' ? `
-                      <button class="btn-sm" onclick="window.editTransaction('purchase', '${h.id}')" style="background:var(--secondary)" title="Editar">✏️</button>
+                      <button class="btn-sm" onclick="window.editTransaction('purchase', '${h.id}')" style="background:var(--secondary)" title="Editar">✏️ Editar</button>
                     ` : ''}
                     ${currentUser?.role === 'superadmin' ? `
-                      <button class="btn-sm" onclick="window.deletePurchase('${h.id}')" style="background:var(--danger)" title="Eliminar">🗑️</button>
+                      <button class="btn-sm" onclick="window.deletePurchase('${h.id}')" style="background:var(--danger)" title="Eliminar">🗑️ Borrar</button>
                     ` : ''}
                   </div>
                 </td>
@@ -5134,7 +5141,8 @@ function renderView(viewName) {
           quotation_id: (projectVal && !projectVal.includes('S-')) ? parseInt(projectVal) : null,
           project_ref: (projectVal && projectVal.includes('S-')) ? projectVal : (projectVal || null),
           document_number: document.getElementById('pur-doc-number')?.value || null,
-          centro_costo_id: document.getElementById('pur-cost-center')?.value || null
+          centro_costo_id: document.getElementById('pur-cost-center')?.value || null,
+          auto_pay: document.getElementById('pur-auto-pay')?.checked
         };
 
         // --- DUPLICATE CHECK ---
@@ -5286,7 +5294,8 @@ function renderView(viewName) {
         category: document.getElementById('sale-category')?.value || 'push',
         quotation_id: document.getElementById('sale-quotation')?.value || null,
         document_number: document.getElementById('sale-doc-number')?.value || null,
-        document_type: document.getElementById('sale-doc-type')?.value || 'boleta'
+        document_type: document.getElementById('sale-doc-type')?.value || 'boleta',
+        auto_collect: document.getElementById('sale-auto-collect')?.checked
       };
 
       console.log('[DEBUG] Enviando Venta:', body);
@@ -5336,6 +5345,20 @@ function renderView(viewName) {
         fetchData();
       }
     });
+    window.deleteSale = async function (id) {
+      if (!confirm('¿Seguro que desea eliminar esta venta? Esta acción revertirá el stock de los productos asociados y eliminará el asiento contable de ingreso. Esta es una acción permanente.')) return;
+      try {
+        const res = await apiFetch(`/sales/${id}`, { method: 'DELETE' });
+        if (res && res.success) {
+          alert(res.message);
+          fetchData();
+        } else {
+          alert('Error: ' + (res?.error || 'No se pudo eliminar'));
+        }
+      } catch (e) {
+        alert('Error fatal al eliminar: ' + e.message);
+      }
+    };
   }
 
   if (viewName === 'inventory_products') {

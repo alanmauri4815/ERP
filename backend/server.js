@@ -959,7 +959,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
 });
 
 app.post('/api/purchases', authenticateToken, async (req, res) => {
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category, document_number, centro_costo_id } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category, document_number, centro_costo_id, auto_pay } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -970,8 +970,8 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             net, iva, total,
             document_number: document_number || null,
             empresa_id: req.empresa_id,
-            paid_amount: (payment_method && payment_method !== 'credit') ? total : 0,
-            payment_status: (payment_method && payment_method !== 'credit') ? 'pagado' : 'pendiente'
+            paid_amount: auto_pay ? total : 0,
+            payment_status: auto_pay ? 'pagado' : 'pendiente'
         };
 
         // Try to insert with ALL columns first
@@ -1071,8 +1071,8 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
             lines: journalLines
         });
 
-        // 2. Si NO es crédito, crear el asiento de PAGO inmediatamente
-        if (finalPaymentMethod && finalPaymentMethod !== 'credit') {
+        // 2. Si se marcó AUTO_PAY, crear el asiento de PAGO inmediatamente
+        if (auto_pay) {
             let realPaymentAccount = '1.1.01'; // Caja
             if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit' || finalPaymentMethod === 'transferencia') {
                 realPaymentAccount = '1.1.02'; // Bancos
@@ -1235,7 +1235,7 @@ app.post('/api/sales/:id/payment', authenticateToken, async (req, res) => {
 app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
     const purchaseId = req.params.id;
     debugLog(`--- HIT: PUT /api/purchases/${purchaseId} ---`);
-    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category, centro_costo_id } = req.body;
+    const { providerId, items, net, iva, total, payment_method, account_id, document_type, type, description, quotation_id, project_ref, purchase_category, centro_costo_id, auto_pay } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -1256,6 +1256,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             provider_id: providerId || req.body.provider_id || null,
             date: date || new Date().toISOString().split('T')[0],
             net, iva, total,
+            paid_amount: auto_pay ? total : 0,
+            payment_status: auto_pay ? 'pagado' : 'pendiente',
             payment_method: payment_method || null,
             account_id: account_id || null,
             document_type: document_type || 'factura',
@@ -1391,8 +1393,8 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             throw new Error(`Contabilidad: ${acResult.error}`);
         }
 
-        // 5. Si NO es crédito, crear el asiento de PAGO inmediatamente
-        if (finalPaymentMethod && finalPaymentMethod !== 'credit') {
+        // 5. Si se marcó AUTO_PAY, crear el asiento de PAGO inmediatamente
+        if (auto_pay) {
             let realPaymentAccount = '1.1.01'; // Caja
             if (finalPaymentMethod === 'transfer' || finalPaymentMethod === 'debit' || finalPaymentMethod === 'transferencia') {
                 realPaymentAccount = '1.1.02'; // Bancos
@@ -1476,8 +1478,56 @@ app.delete('/api/purchases/:id', authenticateToken, async (req, res) => {
     }
 });
 
+app.delete('/api/sales/:id', authenticateToken, async (req, res) => {
+    const saleId = req.params.id;
+    debugLog(`--- HIT: DELETE /api/sales/${saleId} ---`);
+
+    try {
+        // 1. Get sale info and items to reverse stock
+        const { data: sale } = await supabase.from(T.SALES).select('*').eq('id', saleId).eq('empresa_id', req.empresa_id).single();
+        if (!sale) return res.status(404).json({ success: false, error: 'Venta no encontrada' });
+
+        const { data: items } = await supabase.from(T.SALE_ITEMS).select('*').eq('sale_id', saleId);
+        if (items) {
+            for (const it of items) {
+                if (it.product_code) {
+                    const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', it.product_code).single();
+                    if (p) {
+                        const qty = Number(it.quantity) || 0;
+                        await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) + qty }).eq('code', it.product_code);
+                    }
+                }
+            }
+        }
+
+        // 2. Delete Accounting Entries
+        const { data: entries } = await supabase
+            .from(T.PC_ASIENTOS)
+            .select('id')
+            .eq('referencia_id', saleId.toString())
+            .in('tipo_origen', ['venta_push', 'venta_pull', 'pago_venta_auto']);
+
+        if (entries && entries.length > 0) {
+            const entryIds = entries.map(e => e.id);
+            await supabase.from(T.PC_MOVIMIENTOS).delete().in('asiento_id', entryIds).eq('empresa_id', req.empresa_id);
+            await supabase.from(T.PC_ASIENTOS).delete().in('id', entryIds).eq('empresa_id', req.empresa_id);
+        }
+
+        // 3. Delete sale items and sale record
+        await supabase.from(T.SALE_ITEMS).delete().eq('sale_id', saleId);
+        const { error: delErr } = await supabase.from(T.SALES).delete().eq('id', saleId).eq('empresa_id', req.empresa_id);
+        
+        if (delErr) throw delErr;
+
+        res.json({ success: true, message: 'Venta eliminada y stock revertido correctamente.' });
+    } catch (e) {
+        debugLog(`ERROR in DELETE /api/sales/${saleId}:`, e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 app.post('/api/sales', authenticateToken, async (req, res) => {
-    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number, document_type } = req.body;
+    const { clientId, items, net, iva, total, discount, commission, payment_method, account_id, is_iva_exempt, machine_id, event_name, category, quotation_id, document_number, document_type, auto_collect } = req.body;
     const date = req.body.date || new Date().toISOString().split('T')[0];
 
     try {
@@ -1494,8 +1544,8 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             event_name: event_name || null,
             transferred: false,
             document_number: document_number || null,
-            paid_amount: (payment_method && payment_method !== 'credit') ? total : 0,
-            payment_status: (payment_method && payment_method !== 'credit') ? 'pagado' : 'pendiente'
+            paid_amount: auto_collect ? total : 0,
+            payment_status: auto_collect ? 'pagado' : 'pendiente'
         };
 
         let { data: sale, error: sError } = await supabase.from(T.SALES).insert({ ...payload, category, quotation_id, empresa_id: req.empresa_id }).select().single();
@@ -1561,8 +1611,8 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             lines: journalLines
         });
 
-        // 2. Si NO es crédito, crear el asiento de COBRO inmediatamente
-        if (payment_method && payment_method !== 'credit') {
+        // 2. Si se marcó AUTO_COLLECT, crear el asiento de COBRO inmediatamente
+        if (auto_collect) {
             let realCashAccount = '1.1.01'; // Caja
             if (['transfer', 'machine', 'debit', 'transferencia', 'tarjeta'].includes(payment_method)) {
                 realCashAccount = '1.1.02'; // Bancos
