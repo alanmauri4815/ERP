@@ -2562,12 +2562,12 @@ window.editTransaction = (type, id) => {
           if (codeSel) {
             codeSel.value = type === 'sale' ? item.product_code : item.mp_code;
             if (codeSel.value === '__otros__' || (!codeSel.value && item.custom_name)) {
-                codeSel.value = '__otros__';
-                const customNameInput = row.querySelector('.item-custom-name');
-                if (customNameInput) {
-                    customNameInput.style.display = 'block';
-                    customNameInput.value = item.custom_name || item.product_name || item.mp_name || '';
-                }
+              codeSel.value = '__otros__';
+              const customNameInput = row.querySelector('.item-custom-name');
+              if (customNameInput) {
+                customNameInput.style.display = 'block';
+                customNameInput.value = item.custom_name || item.product_name || item.mp_name || '';
+              }
             }
           }
           if (priceInp) priceInp.value = item.unit_price || 0;
@@ -2926,64 +2926,64 @@ window.updateProdRecipeView = async () => {
 
   // --- Logic for PULL (Custom) ---
   if (isPull && quoteId && window.currentProductionItems) {
-      // In PULL mode, we list all materials found in the quotation items
-      window.currentProductionItems.forEach(item => {
-          const isMaterial = (item.item_type === 'material' || item.type === 'MP');
-          const isLabor = (item.item_type === 'labor' || item.type === 'MO');
-          const isService = (item.item_type === 'service' || item.type === 'Servicio');
+    // In PULL mode, we list all materials found in the quotation items
+    window.currentProductionItems.forEach(item => {
+      const isMaterial = (item.item_type === 'material' || item.type === 'MP');
+      const isLabor = (item.item_type === 'labor' || item.type === 'MO');
+      const isService = (item.item_type === 'service' || item.type === 'Servicio');
 
-          const cost = (parseFloat(item.total_cost) || (parseFloat(item.unit_cost) * parseFloat(item.quantity))) || 0;
-          
-          if (isMaterial) {
-              totalMP += cost;
-              const name = item.description || item.name || 'Material S.N.';
-              if (!materialAggregation[name]) materialAggregation[name] = { qty: 0, cost: 0, name };
-              materialAggregation[name].qty += (parseFloat(item.quantity) || 0);
-              materialAggregation[name].cost += cost;
-          } else if (isLabor) {
-              totalMO += cost;
-          } else if (isService) {
-              totalSvc += cost;
-          }
-      });
-  } 
+      const cost = (parseFloat(item.total_cost) || (parseFloat(item.unit_cost) * parseFloat(item.quantity))) || 0;
+
+      if (isMaterial) {
+        totalMP += cost;
+        const name = item.description || item.name || 'Material S.N.';
+        if (!materialAggregation[name]) materialAggregation[name] = { qty: 0, cost: 0, name };
+        materialAggregation[name].qty += (parseFloat(item.quantity) || 0);
+        materialAggregation[name].cost += cost;
+      } else if (isLabor) {
+        totalMO += cost;
+      } else if (isService) {
+        totalSvc += cost;
+      }
+    });
+  }
   // --- Logic for PUSH (Standard) ---
   else {
-      for (const row of rows) {
-        const code = row.querySelector('.prod-item-code').value.trim();
-        const qty = parseFloat(row.querySelector('.prod-item-qty').value) || 0;
-        if (!code || qty <= 0) continue;
+    for (const row of rows) {
+      const code = row.querySelector('.prod-item-code').value.trim();
+      const qty = parseFloat(row.querySelector('.prod-item-qty').value) || 0;
+      if (!code || qty <= 0) continue;
 
-        const prod = state.products.find(p => p.code === code);
-        if (prod) {
-            try {
-                const recipes = await apiFetch(`/recipes/${code}`);
-                if (recipes && recipes.length > 0) {
-                    recipes.forEach(r => {
-                        const consumption = (parseFloat(r.quantity) || 0) * qty;
-                        const cost = (parseFloat(r.unit_cost) || 0) * qty;
-                        totalMP += cost;
-                        if (!materialAggregation[r.mp_code]) {
-                            materialAggregation[r.mp_code] = { qty: 0, cost: 0, name: r.mp_name || r.mp_code };
-                        }
-                        materialAggregation[r.mp_code].qty += consumption;
-                        materialAggregation[r.mp_code].cost += cost;
-                    });
-                }
-            } catch (e) { console.error('Error fetching recipe:', e); }
-        } else {
-            const rm = state.rawMaterials.find(m => m.code === code);
-            if (rm) {
-               const cost = (parseFloat(rm.cost_net) || 0) * qty;
-               if (rm.type === 'MP') {
-                   totalMP += cost;
-                   if (!materialAggregation[code]) materialAggregation[code] = { qty: 0, cost: 0, name: rm.name };
-                   materialAggregation[code].qty += qty;
-                   materialAggregation[code].cost += cost;
-               } else { totalMO += cost; }
-            }
+      const prod = state.products.find(p => p.code === code);
+      if (prod) {
+        try {
+          const recipes = await apiFetch(`/recipes/${code}`);
+          if (recipes && recipes.length > 0) {
+            recipes.forEach(r => {
+              const consumption = (parseFloat(r.quantity) || 0) * qty;
+              const cost = (parseFloat(r.unit_cost) || 0) * qty;
+              totalMP += cost;
+              if (!materialAggregation[r.mp_code]) {
+                materialAggregation[r.mp_code] = { qty: 0, cost: 0, name: r.mp_name || r.mp_code };
+              }
+              materialAggregation[r.mp_code].qty += consumption;
+              materialAggregation[r.mp_code].cost += cost;
+            });
+          }
+        } catch (e) { console.error('Error fetching recipe:', e); }
+      } else {
+        const rm = state.rawMaterials.find(m => m.code === code);
+        if (rm) {
+          const cost = (parseFloat(rm.cost_net) || 0) * qty;
+          if (rm.type === 'MP') {
+            totalMP += cost;
+            if (!materialAggregation[code]) materialAggregation[code] = { qty: 0, cost: 0, name: rm.name };
+            materialAggregation[code].qty += qty;
+            materialAggregation[code].cost += cost;
+          } else { totalMO += cost; }
         }
       }
+    }
   }
 
   // Update Header Totals
@@ -3017,7 +3017,7 @@ window.updateProdTotals = () => {
   const rows = modal.querySelectorAll('.item-row');
   let totalRowsMP = 0;
   let totalRowsMO = 0;
-  
+
   rows.forEach(row => {
     const qty = parseFloat(row.querySelector('.prod-item-qty').value) || 0;
     const mp = parseFloat(row.querySelector('.prod-item-mp').value) || 0;
@@ -4171,7 +4171,7 @@ window.viewQuotation = async (id) => {
       const totalEstimatedCost = q.items.reduce((sum, it) => sum + (it.total_cost || 0), 0);
       const totalRealPurchase = (q.related_purchases || []).reduce((sum, p) => sum + (p.total || 0), 0);
       const totalRealSales = (q.related_sales || []).reduce((sum, s) => sum + (s.total || 0), 0);
-      
+
       // Indicadores de IVA y Utilidad Neta solicitados por el usuario
       const totalIvaSales = (q.related_sales || []).reduce((sum, s) => sum + (s.iva || 0), 0);
       const totalIvaPurchases = (q.related_purchases || []).reduce((sum, p) => {
@@ -4656,7 +4656,7 @@ window.printQuotation = () => {
       ` : ''}
 
       <h2 class="section-title">PLAZO DE ENTREGA:</h2>
-      <p style="font-size:14px; margin-left: 20px"><strong>${q.delivery_time || 'Por confirmar'}</strong> a contar de la confirmación del pedido y pago inicial.</p>
+      <p style="font-size:14px; margin-left: 20px"><strong>${q.delivery_time || 'Por confirmar'}</strong> a contar de la confirmación de la O.C. y especificaciones.</p>
 
       <h2 class="section-title">PLAZO DE VALIDEZ DE LA COTIZACIÓN:</h2>
       <p style="font-size:14px; margin-left: 20px">Cotización válida por 30 días.</p>
@@ -4858,7 +4858,7 @@ function renderView(viewName) {
   if (viewName === 'login') {
     console.log('--- LOGIN VIEW INIT ---');
     const select = document.getElementById('login-empresa');
-    
+
     // Función de fallback seguro
     const setFallback = () => {
       console.warn('⚠️ Usando fallback de empresa por defecto');
@@ -5073,7 +5073,7 @@ function renderView(viewName) {
     };
 
     document.getElementById('pur-doc-type')?.addEventListener('change', () => {
-        if (typeof calculateTotals === 'function') calculateTotals('pur');
+      if (typeof calculateTotals === 'function') calculateTotals('pur');
     });
 
     window.openPurchaseModal = function () {
@@ -5112,7 +5112,7 @@ function renderView(viewName) {
       e.preventDefault();
       const btn = e.currentTarget;
       const originalText = btn.textContent;
-      
+
       console.log('[PURCHASE] Botón de guardar presionado');
       try {
         const isEditMode = document.getElementById('pur-edit-mode')?.value === 'true';
@@ -5173,9 +5173,9 @@ function renderView(viewName) {
             btn.disabled = false;
             btn.textContent = originalText;
             if (body.total > 0 && isEditMode) {
-                console.warn('[PURCHASE] Editando compra antigua sin ítems.');
+              console.warn('[PURCHASE] Editando compra antigua sin ítems.');
             } else {
-                return alert('Debe agregar al menos un ítem con cantidad válida');
+              return alert('Debe agregar al menos un ítem con cantidad válida');
             }
           }
         } else {
@@ -5210,7 +5210,7 @@ function renderView(viewName) {
           alert(res.message || 'Compra registrada con éxito');
           const modal = document.getElementById('buy-modal');
           if (modal) modal.style.display = 'none';
-          fetchData(); 
+          fetchData();
         } else {
           alert('No se pudo guardar: ' + (res?.error || 'Error desconocido del servidor'));
         }
@@ -5302,18 +5302,18 @@ function renderView(viewName) {
 
       // --- STOCK VALIDATION BLOCK ---
       for (const item of body.items) {
-          const product = state.products.find(p => p.code?.toLowerCase() === item.product_code?.toLowerCase());
-          if (product) {
-              const currentStock = parseFloat(product.stock) || 0;
-              const requestedQty = parseFloat(item.quantity) || 0;
-              if (currentStock < requestedQty) {
-                  return alert(`❌ Stock insuficiente para "${product.name}" (${product.code}). \n\nDisponible: ${currentStock} \nSolicitado: ${requestedQty} \n\nDebe producir o comprar más antes de vender.`);
-              }
-          } else {
-              // It's a custom code (maybe created in Pull quotation but not in master yet)
-              // We could allow it if it's explicitly Pull, but usually it should be in master to have stock.
-              return alert(`❌ El código de producto "${item.product_code}" no existe en el maestro o no tiene stock registrado.`);
+        const product = state.products.find(p => p.code?.toLowerCase() === item.product_code?.toLowerCase());
+        if (product) {
+          const currentStock = parseFloat(product.stock) || 0;
+          const requestedQty = parseFloat(item.quantity) || 0;
+          if (currentStock < requestedQty) {
+            return alert(`❌ Stock insuficiente para "${product.name}" (${product.code}). \n\nDisponible: ${currentStock} \nSolicitado: ${requestedQty} \n\nDebe producir o comprar más antes de vender.`);
           }
+        } else {
+          // It's a custom code (maybe created in Pull quotation but not in master yet)
+          // We could allow it if it's explicitly Pull, but usually it should be in master to have stock.
+          return alert(`❌ El código de producto "${item.product_code}" no existe en el maestro o no tiene stock registrado.`);
+        }
       }
 
       let res;
@@ -5560,39 +5560,39 @@ function renderView(viewName) {
           projectGroup.style.padding = '0.5rem';
           projectGroup.style.borderRadius = '8px';
           projectGroup.style.background = 'rgba(234, 179, 8, 0.05)';
-          
+
           // Add listener to load quote items
           quoteSelect.onchange = async () => {
-             const quoteId = quoteSelect.value;
-             if (!quoteId) return;
-             
-             try {
-                const quote = await apiFetch(`/quotations/${quoteId}`);
-                if (quote) {
-                    const rows = document.querySelectorAll('#production-items-body .item-row');
-                    // Reset
-                    rows.forEach(r => {
-                         r.querySelector('.prod-item-code').value = '';
-                         r.querySelector('.prod-item-qty').value = '0';
-                         r.querySelector('.prod-item-mp').value = '0';
-                         r.querySelector('.prod-item-mo').value = '0';
-                    });
-                    
-                    // Fill Row 1 with Quotation Main Result
-                    if (rows[0]) {
-                        // Priority: name of the project + quantity of project
-                        rows[0].querySelector('.prod-item-code').value = quote.name || 'Proyecto Genérico';
-                        rows[0].querySelector('.prod-item-qty').value = quote.quantity || 1;
-                        rows[0].querySelector('.prod-item-mp').value = quote.total_net_cost || 0;
-                    }
+            const quoteId = quoteSelect.value;
+            if (!quoteId) return;
 
-                    // Store these items for the summary view
-                    window.currentProductionItems = quote.items || [];
-                    window.updateProdRecipeView();
+            try {
+              const quote = await apiFetch(`/quotations/${quoteId}`);
+              if (quote) {
+                const rows = document.querySelectorAll('#production-items-body .item-row');
+                // Reset
+                rows.forEach(r => {
+                  r.querySelector('.prod-item-code').value = '';
+                  r.querySelector('.prod-item-qty').value = '0';
+                  r.querySelector('.prod-item-mp').value = '0';
+                  r.querySelector('.prod-item-mo').value = '0';
+                });
+
+                // Fill Row 1 with Quotation Main Result
+                if (rows[0]) {
+                  // Priority: name of the project + quantity of project
+                  rows[0].querySelector('.prod-item-code').value = quote.name || 'Proyecto Genérico';
+                  rows[0].querySelector('.prod-item-qty').value = quote.quantity || 1;
+                  rows[0].querySelector('.prod-item-mp').value = quote.total_net_cost || 0;
                 }
-             } catch (e) {
-                console.error('Error loading quote items:', e);
-             }
+
+                // Store these items for the summary view
+                window.currentProductionItems = quote.items || [];
+                window.updateProdRecipeView();
+              }
+            } catch (e) {
+              console.error('Error loading quote items:', e);
+            }
           };
         } else {
           projectGroup.style.display = 'none';
@@ -6784,7 +6784,7 @@ function initSideBarTooltips() {
     // Try to find the specific text span
     const textElement = item.querySelector('.sidebar-text');
     let text = "";
-    
+
     if (textElement) {
       text = textElement.textContent.trim();
     } else {
