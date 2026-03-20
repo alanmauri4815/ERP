@@ -706,10 +706,8 @@ const views = {
           <input type="text" id="pur-description" placeholder="Ej: Compra de hilos, Almuerzo terreno, etc.">
         </div>
 
-        </div>
-
         <div style="background: var(--surface-light); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px solid var(--border)">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; align-items: start">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; align-items: center">
             <div class="form-group" style="margin:0">
               <label style="font-weight: 600">Método de Pago Sugerido</label>
               <select id="pur-payment-method">
@@ -726,12 +724,12 @@ const views = {
                 ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
               </select>
             </div>
-            <div class="form-group" style="margin:0">
-              <label style="font-weight: 600; color: var(--success)">
+            <div class="form-group" style="margin:0; display: flex; flex-direction: column; justify-content: center;">
+              <label style="font-weight: 600; color: var(--success); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                 <input type="checkbox" id="pur-auto-pay" checked>
-                Pagar ahora al contado
+                Pagar al contado
               </label>
-              <small style="display:block; opacity: 0.7; font-size: 0.7rem">Registra el egreso de dinero y marca como pagada de inmediato.</small>
+              <small style="opacity: 0.7; font-size: 0.65rem; line-height: 1.1">Registra egreso y liquida deuda.</small>
             </div>
           </div>
         </div>
@@ -896,12 +894,12 @@ const views = {
             </select>
           </div>
         </div>
-        <div style="display: flex; gap: 2rem; margin-bottom: 1rem; align-items: center; background: var(--surface-light); padding: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border)">
+        <div style="display: flex; gap: 2rem; margin-bottom: 1rem; align-items: center; background: var(--surface-light); padding: 0.75rem 1rem; border-radius: 0.5rem; border: 1px solid var(--border)">
           <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--success); font-weight: 600;">
             <input type="checkbox" id="sale-auto-collect" checked>
             <span>Cobrar ahora al contado</span>
           </label>
-          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <label style="display: flex; align-items: center; gap: 0.7rem; cursor: pointer; font-weight: 500">
             <input type="checkbox" id="sale-iva-exempt" onchange="window.recalculateSaleTotals()">
             <span>Exento de IVA</span>
           </label>
