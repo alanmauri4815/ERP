@@ -2706,10 +2706,11 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
         .single();
     if (qError) return res.status(500).json({ error: qError.message });
 
-    const [itemsRes, salesRes, purchasesRes] = await Promise.all([
+    const [itemsRes, salesRes, purchasesRes, productionRes] = await Promise.all([
         supabase.from(T.QUOTE_ITEMS).select('*').eq('quotation_id', id),
         supabase.from(T.SALES).select('*').eq('quotation_id', id),
-        supabase.from(T.PURCHASES).select('*').eq('quotation_id', id)
+        supabase.from(T.PURCHASES).select('*').eq('quotation_id', id),
+        supabase.from(T.PRODUCTION).select(`*, items:${T.PRODUCTION_ITEMS}(*)`).eq('quotation_id', id)
     ]);
 
     if (itemsRes.error) return res.status(500).json({ error: itemsRes.error.message });
@@ -2720,7 +2721,8 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
         clients: clientData,
         items: itemsRes.data,
         related_sales: salesRes.data || [],
-        related_purchases: purchasesRes.data || []
+        related_purchases: purchasesRes.data || [],
+        related_productions: productionRes.data || []
     });
 });
 

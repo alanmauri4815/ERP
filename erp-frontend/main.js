@@ -525,11 +525,7 @@ const views = {
     </div>
 
     <!-- Production Modal -->
-    <datalist id="production-products-list">
-      ${state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
-        <option value="${p.code}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>
-      `).join('')}
-    </datalist>
+    <datalist id="production-products-list"></datalist>
     <div id="production-modal" class="modal" style="display:none">
       <div class="card modal-content modal-wide">
         <header>
@@ -852,7 +848,7 @@ const views = {
           </div>
           <div class="form-group">
             <label>Categoría (PUSH/PULL)</label>
-            <select id="sale-category">
+            <select id="sale-category" onchange="window.toggleSaleCategory()">
               <option value="push">PUSH (Venta Directa/Stock)</option>
               <option value="pull">PULL (Cotización/Encargo)</option>
             </select>
@@ -4172,6 +4168,17 @@ window.viewQuotation = async (id) => {
       const totalRealPurchase = (q.related_purchases || []).reduce((sum, p) => sum + (p.total || 0), 0);
       const totalRealSales = (q.related_sales || []).reduce((sum, s) => sum + (s.total || 0), 0);
 
+      const totalProductionCosts = (q.related_productions || []).reduce((sum, pr) => sum + (pr.material_cost || 0) + (pr.general_expenses || 0), 0);
+
+      // Map production quantities by product code
+      const producedQtyMap = {};
+      (q.related_productions || []).forEach(pr => {
+        (pr.items || []).forEach(it => {
+          const code = it.product_code?.toLowerCase() || '';
+          producedQtyMap[code] = (producedQtyMap[code] || 0) + (it.quantity || 0);
+        });
+      });
+
       // Indicadores de IVA y Utilidad Neta solicitados por el usuario
       const totalIvaSales = (q.related_sales || []).reduce((sum, s) => sum + (s.iva || 0), 0);
       const totalIvaPurchases = (q.related_purchases || []).reduce((sum, p) => {
@@ -4186,9 +4193,9 @@ window.viewQuotation = async (id) => {
         // Si es factura, el costo real es el NETO (el IVA es crédito fiscal)
         return (p.document_type === 'boleta') ? sum + (p.total || 0) : sum + (p.net || 0);
       }, 0);
-      const netProfit = totalNetSales - totalNetCostPurchases;
-
-      const balance = totalRealSales - totalRealPurchase;
+      
+      const netProfit = totalNetSales - totalNetCostPurchases - totalProductionCosts;
+      const balance = totalRealSales - totalRealPurchase - totalProductionCosts;
 
       tableHtml = `
         <div class="circuit-monitoring animate-fade">
@@ -4207,7 +4214,7 @@ window.viewQuotation = async (id) => {
             </div>
           </div>
 
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1.5rem">
+          <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem">
             <div>
               <h4 style="margin-bottom:0.8rem">📦 Compras Asociadas</h4>
               ${(q.related_purchases || []).length === 0 ? '<p style="opacity:0.5; font-size:0.9rem">No hay compras vinculadas.</p>' : `
@@ -4231,6 +4238,34 @@ window.viewQuotation = async (id) => {
                   </tfoot>
                 </table>
               `}
+            </div>
+            <div>
+              <h4 style="margin-bottom:0.8rem">🏭 Control de Producción</h4>
+              <table style="font-size:0.85rem">
+                <thead><tr><th>Producto</th><th style="text-align:center">Pedido</th><th style="text-align:center">Fabricado</th><th style="text-align:center">Estado</th></tr></thead>
+                <tbody>
+                  ${(q.products_list || []).map(p => {
+                    const quoted = p.quantity || 0;
+                    const code = p.id?.toLowerCase() || '';
+                    const produced = producedQtyMap[code] || 0;
+                    const diff = quoted - produced;
+                    let status = '<span style="color:var(--success)">✅</span>';
+                    if (diff > 0) status = `<span style="color:var(--warning); font-weight:700">${diff} pend.</span>`;
+                    
+                    return `
+                      <tr>
+                        <td>${p.name || p.id}</td>
+                        <td style="text-align:center">${quoted}</td>
+                        <td style="text-align:center">${produced}</td>
+                        <td style="text-align:center">${status}</td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+              ${(q.related_productions || []).length > 0 ? `
+                <p style="font-size:0.75rem; margin-top:0.5rem; opacity:0.7">Órdenes: ${q.related_productions.map(pr => '#' + pr.id).join(', ')}</p>
+              ` : ''}
             </div>
             <div>
               <h4 style="margin-bottom:0.8rem">💰 Ventas Realizadas</h4>
@@ -5265,6 +5300,54 @@ function renderView(viewName) {
     // window.toggleSaleType is now defined globally for better availability.
     // Logic removed here to avoid duplication.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.p
 
+    // --- SALE PULL LOGIC ---
+    window.toggleSaleCategory = function () {
+      const cat = document.getElementById('sale-category')?.value;
+      const group = document.getElementById('sale-quotation-group');
+      if (group) group.style.display = (cat === 'pull' ? 'block' : 'none');
+    };
+
+    document.getElementById('sale-quotation').onchange = async (e) => {
+      const qId = e.target.value;
+      if (!qId) return;
+      try {
+        const q = await apiFetch(`/quotations/${qId}`);
+        if (q && q.items) {
+          // Clear current rows
+          const tableBody = document.querySelector('#sale-items-body');
+          if (tableBody) tableBody.innerHTML = '';
+          
+          // Re-initialize table with empty rows
+          setupItemTable('sale');
+          
+          const rows = document.querySelectorAll('#sale-items-body .item-row');
+          const sellableItems = q.items.filter(it => it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type);
+          
+          sellableItems.forEach((item, idx) => {
+            if (rows[idx]) {
+              const codeInput = rows[idx].querySelector('.sale-item-code');
+              const qtyInput = rows[idx].querySelector('.sale-item-qty');
+              const priceInput = rows[idx].querySelector('.sale-item-price');
+              
+              if (codeInput) codeInput.value = item.item_code || item.description || '';
+              if (qtyInput) qtyInput.value = item.quantity || 1;
+              if (priceInput) priceInput.value = item.unit_price || 0;
+            }
+          });
+          
+          // Set client if possible
+          if (q.client_id) {
+            const clientSelect = document.getElementById('sale-client');
+            if (clientSelect) clientSelect.value = q.client_id;
+          }
+          
+          calculateTotals('sale');
+        }
+      } catch (err) {
+        console.error('Error pulling quotation into sale:', err);
+      }
+    };
+
     // Recalculate totals when IVA exempt changes
     window.recalculateSaleTotals = function () {
       calculateTotals('sale');
@@ -5548,6 +5631,44 @@ function renderView(viewName) {
   }
 
   if (viewName === 'production') {
+    window.updateProductionDatalist = function (quote = null) {
+      const dl = document.getElementById('production-products-list');
+      if (!dl) return;
+
+      const quoteOptions = [];
+      if (quote) {
+        // 1. Items listed as "products" for the client (from your image)
+        const productsList = quote.products_list || [];
+        productsList.forEach(p => {
+          if (p.name) {
+            quoteOptions.push(`<option value="${p.name}">✅ CLIENTE VE: ${p.name} | Cant: ${p.quantity || 1}</option>`);
+          }
+        });
+
+        // 2. Specific sellable items from internal analysis
+        const quoteItems = quote.items || [];
+        quoteItems
+          .filter(it => it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type)
+          .forEach(it => {
+            const val = it.item_code || it.description;
+            if (val) {
+              quoteOptions.push(`<option value="${val}">📋 ANÁLISIS: ${val} | ${it.description || ''}</option>`);
+            }
+          });
+      }
+
+      // Standard products from master
+      const standardOptions = state.products
+        .slice()
+        .sort((a, b) => (a.code || '').localeCompare(b.code || ''))
+        .map(p => `<option value="${p.code}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>`);
+
+      dl.innerHTML = [...new Set(quoteOptions), ...standardOptions].join('');
+    };
+
+    // Initial fill
+    window.updateProductionDatalist();
+
     window.toggleProdCategory = async function () {
       const cat = document.getElementById('prod-category')?.value;
       const projectGroup = document.getElementById('prod-project-group');
@@ -5568,27 +5689,49 @@ function renderView(viewName) {
 
             try {
               const quote = await apiFetch(`/quotations/${quoteId}`);
-              if (quote) {
+              if (quote && quote.items) {
                 const rows = document.querySelectorAll('#production-items-body .item-row');
-                // Reset
+                // Reset all rows
                 rows.forEach(r => {
                   r.querySelector('.prod-item-code').value = '';
                   r.querySelector('.prod-item-qty').value = '0';
                   r.querySelector('.prod-item-mp').value = '0';
                   r.querySelector('.prod-item-mo').value = '0';
+                  r.querySelector('.prod-item-register').checked = false;
                 });
 
-                // Fill Row 1 with Quotation Main Result
-                if (rows[0]) {
-                  // Priority: name of the project + quantity of project
-                  rows[0].querySelector('.prod-item-code').value = quote.name || 'Proyecto Genérico';
-                  rows[0].querySelector('.prod-item-qty').value = quote.quantity || 1;
-                  rows[0].querySelector('.prod-item-mp').value = quote.total_net_cost || 0;
-                }
+                // Filter items that are "producto" or "venta" (not material/labor)
+                // In Ross ERP, we usually want to produce what we are selling.
+                const itemsToProduce = quote.items.filter(it => it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type);
 
-                // Store these items for the summary view
-                window.currentProductionItems = quote.items || [];
+                itemsToProduce.forEach((item, idx) => {
+                  if (rows[idx]) {
+                    const codeInput = rows[idx].querySelector('.prod-item-code');
+                    const qtyInput = rows[idx].querySelector('.prod-item-qty');
+                    const mpInput = rows[idx].querySelector('.prod-item-mp');
+                    const moInput = rows[idx].querySelector('.prod-item-mo');
+                    const regCheck = rows[idx].querySelector('.prod-item-register');
+
+                    codeInput.value = item.item_code || item.description || '';
+                    qtyInput.value = item.quantity || 1;
+                    
+                    // Pre-fill costs if they exist in the quote analysis
+                    mpInput.value = item.unit_cost || 0;
+                    moInput.value = item.labor_cost || 0;
+
+                    // If it's a new code not in master, suggest registering it
+                    const exists = state.products.find(p => p.code?.toLowerCase() === (item.item_code || '').toLowerCase());
+                    if (!exists && item.item_code) {
+                      regCheck.checked = true;
+                    }
+                  }
+                });
+
+                // Store full list for summary
+                window.currentProductionItems = quote.items;
+                window.updateProductionDatalist(quote); // Pass full quote object
                 window.updateProdRecipeView();
+                window.updateProdTotals();
               }
             } catch (e) {
               console.error('Error loading quote items:', e);
@@ -5597,6 +5740,7 @@ function renderView(viewName) {
         } else {
           projectGroup.style.display = 'none';
           quoteSelect.onchange = null;
+          window.updateProductionDatalist(); // Reset to standard products
         }
       }
     };
