@@ -579,7 +579,6 @@ const views = {
               <th style="width: 80px; text-align: center">Cantidad</th>
               <th style="width: 110px; text-align: center">Costo M.P. ($)</th>
               <th style="width: 110px; text-align: center">Costo M.O. ($)</th>
-              <th style="width: 40px" title="Registrar en lista maestra si el código no existe">💎</th>
             </tr>
           </thead>
           <tbody id="production-items-body">
@@ -592,7 +591,6 @@ const views = {
                 <td><input type="number" class="prod-item-qty" step="1" value="0" placeholder="0" oninput="window.updateProdRecipeView()"></td>
                 <td><input type="number" class="prod-item-mp" step="0.01" value="0" oninput="window.updateProdTotals()"></td>
                 <td><input type="number" class="prod-item-mo" step="0.01" value="0" oninput="window.updateProdTotals()"></td>
-                <td style="text-align: center"><input type="checkbox" class="prod-item-register" title="Registrar nuevo producto"></td>
               </tr>
             `).join('')}
           </tbody>
@@ -5384,18 +5382,20 @@ function renderView(viewName) {
       if (body.items.length === 0) return alert('Debe agregar al menos un ítem');
 
       // --- STOCK VALIDATION BLOCK ---
-      for (const item of body.items) {
-        const product = state.products.find(p => p.code?.toLowerCase() === item.product_code?.toLowerCase());
-        if (product) {
-          const currentStock = parseFloat(product.stock) || 0;
-          const requestedQty = parseFloat(item.quantity) || 0;
-          if (currentStock < requestedQty) {
-            return alert(`❌ Stock insuficiente para "${product.name}" (${product.code}). \n\nDisponible: ${currentStock} \nSolicitado: ${requestedQty} \n\nDebe producir o comprar más antes de vender.`);
+      const isSuperAdmin = currentUser?.role === 'superadmin';
+      if (!isSuperAdmin) {
+        for (const item of body.items) {
+          const productCode = item.product_code || item.description;
+          const product = state.products.find(p => p.code?.toLowerCase() === productCode?.toLowerCase());
+          if (product) {
+            const currentStock = parseFloat(product.stock) || 0;
+            const requestedQty = parseFloat(item.quantity) || 0;
+            if (currentStock < requestedQty) {
+              return alert(`❌ Stock insuficiente para "${product.name}" (${product.code}). \n\nDisponible: ${currentStock} \nSolicitado: ${requestedQty} \n\nDebe producir o comprar más antes de vender.`);
+            }
+          } else {
+            return alert(`❌ El código de producto "${productCode}" no existe en el maestro o no tiene stock registrado.`);
           }
-        } else {
-          // It's a custom code (maybe created in Pull quotation but not in master yet)
-          // We could allow it if it's explicitly Pull, but usually it should be in master to have stock.
-          return alert(`❌ El código de producto "${item.product_code}" no existe en el maestro o no tiene stock registrado.`);
         }
       }
 
@@ -5710,7 +5710,6 @@ function renderView(viewName) {
                     const qtyInput = rows[idx].querySelector('.prod-item-qty');
                     const mpInput = rows[idx].querySelector('.prod-item-mp');
                     const moInput = rows[idx].querySelector('.prod-item-mo');
-                    const regCheck = rows[idx].querySelector('.prod-item-register');
 
                     codeInput.value = item.item_code || item.description || '';
                     qtyInput.value = item.quantity || 1;
@@ -5718,12 +5717,6 @@ function renderView(viewName) {
                     // Pre-fill costs if they exist in the quote analysis
                     mpInput.value = item.unit_cost || 0;
                     moInput.value = item.labor_cost || 0;
-
-                    // If it's a new code not in master, suggest registering it
-                    const exists = state.products.find(p => p.code?.toLowerCase() === (item.item_code || '').toLowerCase());
-                    if (!exists && item.item_code) {
-                      regCheck.checked = true;
-                    }
                   }
                 });
 
@@ -5763,34 +5756,29 @@ function renderView(viewName) {
           const quantity = parseFloat(row.querySelector('.prod-item-qty').value);
           const material_cost = parseFloat(row.querySelector('.prod-item-mp').value) || 0;
           const mo_cost = parseFloat(row.querySelector('.prod-item-mo').value) || 0;
-          const shouldRegister = row.querySelector('.prod-item-register').checked;
 
           if (productCode && quantity > 0) {
             // Check if product exists in master
             const exists = state.products.find(p => p.code && p.code.toLowerCase().trim() === productCode.toLowerCase());
+            const isFromQuote = window.currentProductionItems && window.currentProductionItems.some(it => (it.item_code === productCode || it.description === productCode));
 
-            if (!exists && !shouldRegister) {
+            if (!exists && !isFromQuote) {
               btn.disabled = false;
               btn.innerHTML = originalText;
-              return alert(`El producto "${productCode}" no existe en el maestro. \n\nMarque la casilla 💎 para registrarlo automáticamente o use un código existente.`);
+              return alert(`El producto "${productCode}" no existe en el maestro. \n\nPor favor elija un producto existente o use uno de la cotización asociada.`);
             }
 
-            if (shouldRegister && !exists) {
-              const name = prompt(`Nuevo producto detectado: "${productCode}"\nIngrese el nombre para registrarlo en el maestro:`, productCode);
-              if (name) {
-                const res = await postData('/products', {
-                  code: productCode,
-                  name,
-                  type: 'terminado',
-                  price_sale: 0,
-                  cost_unit: 0
-                });
-                if (res) {
-                  // Actualizar estado local para evitar re-prompts
-                  state.products.push({ code: productCode, name, type: 'terminado', stock: 0 });
-                  window.populateProductDropdowns('.prod-item-code');
-                }
-              }
+            // Automatic registration if not in master but in quote
+            if (!exists && isFromQuote) {
+              console.log('Auto-registering product from quote:', productCode);
+              await postData('/products', {
+                code: productCode,
+                name: productCode, // Fallback to code as name
+                type: 'terminado',
+                price_sale: 0,
+                cost_unit: 0
+              });
+              state.products.push({ code: productCode, name: productCode, type: 'terminado', stock: 0 });
             }
             items.push({ productCode, quantity, mo_cost, material_cost });
           }
