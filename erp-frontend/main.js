@@ -141,7 +141,14 @@ let state = {
   },
   logistics: [],
   pendingLogistics: [],
-  costCenters: []
+  costCenters: [],
+  hideProjectProducts: localStorage.getItem('erp_hide_projects') === 'true'
+};
+
+window.toggleHideProjects = (val) => {
+  state.hideProjectProducts = val;
+  localStorage.setItem('erp_hide_projects', val);
+  renderView('inventory_products');
 };
 
 window.openSaleModal = function () {
@@ -268,10 +275,14 @@ const views = {
   inventory_products: () => `
     <header class="animate-fade">
       <h1>Inventario de Productos</h1>
-      <div style="display: flex; gap: 0.5rem">
-        <button onclick="window.exportProducts()" style="background: var(--secondary)">📊 Exportar a Excel</button>
-        <button onclick="window.recalculateAllCosts()" style="background: var(--accent)">🔄 Recalcular Costos</button>
-        <button onclick="document.getElementById('new-prod-modal').style.display='flex'">+ Nuevo Producto</button>
+      <div style="display: flex; gap: 0.5rem; align-items: center">
+        <label style="display: flex; align-items: center; gap: 0.5rem; background: var(--surface-light); padding: 0.5rem 0.8rem; border-radius: 8px; cursor: pointer; border: 1px solid var(--border); font-size: 0.9rem">
+          <input type="checkbox" ${state.hideProjectProducts ? 'checked' : ''} onchange="window.toggleHideProjects(this.checked)">
+          <span>Ocultar Proyectos [P-]</span>
+        </label>
+        <button onclick="window.exportProducts()" style="background: var(--secondary)">📊 Exportar</button>
+        <button onclick="window.recalculateAllCosts()" style="background: var(--accent)">🔄 Costos</button>
+        <button onclick="document.getElementById('new-prod-modal').style.display='flex'">+ Nuevo</button>
       </div>
     </header>
 
@@ -293,13 +304,15 @@ const views = {
             </tr>
           </thead>
           <tbody>
-            ${state.products.map(p => `
+            ${state.products
+              .filter(p => !state.hideProjectProducts || !p.code?.startsWith('[P-'))
+              .map(p => `
               <tr>
                 <td><strong>${p.code}</strong></td>
                 <td>${p.name}</td>
                 <td>${p.color || '-'}</td>
                 <td>${p.size || '-'}</td>
-                <td><span class="badge ${p.stock < 5 ? 'badge-warning' : 'badge-success'}">${p.stock}</span></td>
+                <td><span class="badge ${p.stock < 1 ? 'badge-danger' : (p.stock < 5 ? 'badge-warning' : 'badge-success')}">${p.stock}</span></td>
                 <td style="font-weight: 600; color: var(--accent)">$${(p.cost_unit || 0).toLocaleString('es-CL')}</td>
                 <td>$${(p.price_net || 0).toLocaleString('es-CL')}</td>
                 <td style="color: var(--accent)">$${(p.iva || 0).toLocaleString('es-CL')}</td>
@@ -5327,7 +5340,12 @@ function renderView(viewName) {
               const qtyInput = rows[idx].querySelector('.sale-item-qty');
               const priceInput = rows[idx].querySelector('.sale-item-price');
               
-              if (codeInput) codeInput.value = item.item_code || item.description || '';
+              if (codeInput) {
+                const originalCode = item.item_code || item.description || '';
+                const projectCode = `[P-${qId}] ${originalCode}`;
+                const existsAsProject = state.products.find(p => p.code === projectCode);
+                codeInput.value = existsAsProject ? projectCode : originalCode;
+              }
               if (qtyInput) qtyInput.value = item.quantity || 1;
               if (priceInput) priceInput.value = item.unit_price || 0;
             }
@@ -5386,7 +5404,14 @@ function renderView(viewName) {
       if (!isSuperAdmin) {
         for (const item of body.items) {
           const productCode = item.product_code || item.description;
-          const product = state.products.find(p => p.code?.toLowerCase() === productCode?.toLowerCase());
+          let product = state.products.find(p => p.code?.toLowerCase() === productCode?.toLowerCase());
+          
+          // If not found, check if it's a project product [P-XXX]
+          if (!product && body.quotation_id) {
+            const projectCode = `[P-${body.quotation_id}] ${productCode}`;
+            product = state.products.find(p => p.code === projectCode);
+          }
+
           if (product) {
             const currentStock = parseFloat(product.stock) || 0;
             const requestedQty = parseFloat(item.quantity) || 0;
@@ -5770,17 +5795,28 @@ function renderView(viewName) {
 
             // Automatic registration if not in master but in quote
             if (!exists && isFromQuote) {
-              console.log('Auto-registering product from quote:', productCode);
-              await postData('/products', {
-                code: productCode,
-                name: productCode, // Fallback to code as name
-                type: 'terminado',
-                price_sale: 0,
-                cost_unit: 0
-              });
-              state.products.push({ code: productCode, name: productCode, type: 'terminado', stock: 0 });
+              const quoteId = document.getElementById('prod-quotation')?.value;
+              const projectCode = `[P-${quoteId}] ${productCode}`;
+              
+              // Check if it was already registered with the prefix in this session or previous
+              const existsWithPrefix = state.products.find(p => p.code === projectCode);
+              
+              if (!existsWithPrefix) {
+                console.log('Auto-registering project product:', projectCode);
+                await postData('/products', {
+                  code: projectCode,
+                  name: productCode, 
+                  type: 'terminado',
+                  price_sale: 0,
+                  cost_unit: 0
+                });
+                state.products.push({ code: projectCode, name: productCode, type: 'terminado', stock: 0 });
+              }
+              // Update the item to use the project code for production record
+              items.push({ productCode: projectCode, quantity, mo_cost, material_cost });
+            } else {
+              items.push({ productCode, quantity, mo_cost, material_cost });
             }
-            items.push({ productCode, quantity, mo_cost, material_cost });
           }
         }
 
