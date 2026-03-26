@@ -2863,12 +2863,10 @@ window.openProductionModal = (code) => {
   const mps = modal.querySelectorAll('.prod-item-mp');
   const mtos = modal.querySelectorAll('.prod-item-mo');
   const qtys = modal.querySelectorAll('.prod-item-qty');
-  const regs = modal.querySelectorAll('.prod-item-register');
   selects.forEach(s => s.value = '');
   qtys.forEach(q => q.value = '0');
   mps.forEach(m => m.value = '0');
   mtos.forEach(m => m.value = '0');
-  regs.forEach(r => r.checked = false);
 
   if (document.getElementById('prod-material-cost')) document.getElementById('prod-material-cost').value = '0';
   if (document.getElementById('prod-general-expenses')) document.getElementById('prod-general-expenses').value = '0';
@@ -2903,7 +2901,6 @@ window.editProduction = (id) => {
     row.querySelector('.prod-item-qty').value = '0';
     row.querySelector('.prod-item-mp').value = '0';
     row.querySelector('.prod-item-mo').value = '0';
-    if (row.querySelector('.prod-item-register')) row.querySelector('.prod-item-register').checked = false;
   });
 
   // Fill data
@@ -5324,21 +5321,27 @@ function renderView(viewName) {
       try {
         const q = await apiFetch(`/quotations/${qId}`);
         if (q && q.items) {
-          // Clear current rows
-          const tableBody = document.querySelector('#sale-items-body');
-          if (tableBody) tableBody.innerHTML = '';
-          
-          // Re-initialize table with empty rows
-          setupItemTable('sale');
-          
           const rows = document.querySelectorAll('#sale-items-body .item-row');
+          
+          // Clear current rows values first
+          rows.forEach(row => {
+            const codeInput = row.querySelector('.item-code');
+            const qtyInput = row.querySelector('.item-qty');
+            const priceInput = row.querySelector('.item-price');
+            const subInput = row.querySelector('.item-subtotal');
+            if (codeInput) codeInput.value = '';
+            if (qtyInput) qtyInput.value = 0;
+            if (priceInput) priceInput.value = 0;
+            if (subInput) subInput.value = 0;
+          });
+
           const sellableItems = q.items.filter(it => it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type);
           
           sellableItems.forEach((item, idx) => {
             if (rows[idx]) {
-              const codeInput = rows[idx].querySelector('.sale-item-code');
-              const qtyInput = rows[idx].querySelector('.sale-item-qty');
-              const priceInput = rows[idx].querySelector('.sale-item-price');
+              const codeInput = rows[idx].querySelector('.item-code');
+              const qtyInput = rows[idx].querySelector('.item-qty');
+              const priceInput = rows[idx].querySelector('.item-price');
               
               if (codeInput) {
                 const originalCode = item.item_code || item.description || '';
@@ -5722,7 +5725,6 @@ function renderView(viewName) {
                   r.querySelector('.prod-item-qty').value = '0';
                   r.querySelector('.prod-item-mp').value = '0';
                   r.querySelector('.prod-item-mo').value = '0';
-                  r.querySelector('.prod-item-register').checked = false;
                 });
 
                 // Filter items that are "producto" or "venta" (not material/labor)
