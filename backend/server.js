@@ -1684,9 +1684,22 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
 
         if (updateError) throw updateError;
 
-        // 3. Delete existing sale items and insert new ones
+        // 3. REVERSE OLD STOCK IMPACT + Delete existing sale items
+        const { data: oldItems } = await supabase.from(T.SALE_ITEMS).select('*').eq('sale_id', saleId);
+        if (oldItems) {
+            for (const it of oldItems) {
+                if (it.product_code) {
+                    const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', it.product_code).single();
+                    if (p) {
+                        const oldQty = Number(it.quantity) || 0;
+                        await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) + oldQty }).eq('code', it.product_code);
+                    }
+                }
+            }
+        }
         await supabase.from(T.SALE_ITEMS).delete().eq('sale_id', saleId);
 
+        // 4. Insert NEW items and apply NEW stock impact
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.productCode && item.quantity > 0) {
@@ -1698,6 +1711,12 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
                     unit_price: item.unitPrice,
                     subtotal: item.subtotal
                 });
+
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.productCode).single();
+                if (p) {
+                    const newQty = Number(item.quantity) || 0;
+                    await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) - newQty }).eq('code', item.productCode);
+                }
             }
         }
 
@@ -1718,6 +1737,8 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
         debugLog(`Processing accounting for updated SALE ${saleId}...`, { total, net, iva, payment_method });
         // SIEMPRE usar 1.1.03 (Cuentas por Cobrar) para el Devengo de Venta
         const mainDebitAccount = '1.1.03';
+        const commissionAmount = commission || 0;
+        const discountAmount = discount || 0;
         
         const docRef = document_number || saleId;
         const journalLines = [
