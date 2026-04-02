@@ -620,7 +620,8 @@ app.get('/api/recipes/:productCode', authenticateToken, async (req, res) => {
                 cost_net,
                 batch_size,
                 color,
-                size
+                size,
+                type
             )
         `)
         .eq('product_code', req.params.productCode)
@@ -1975,10 +1976,11 @@ app.post('/api/production', authenticateToken, async (req, res) => {
 
                     // If NOT in Pull mode, or if project items didn't cover it, use standard recipe
                     if (!quotation_id) {
-                        const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', code).eq('empresa_id', req.empresa_id);
+                        const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost, batch_size').eq('product_code', code).eq('empresa_id', req.empresa_id);
                         if (recipes && recipes.length > 0) {
                             for (const r of recipes) {
-                                const cQty = (parseFloat(r.quantity) || 0) * qty;
+                                const bSize = parseFloat(r.batch_size) || 1;
+                                const cQty = (parseFloat(r.quantity) || 0) / bSize * qty;
                                 const cCost = (parseFloat(r.unit_cost) || 0) * qty;
                                 totalProductionCost += cCost;
                                 const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
@@ -2069,10 +2071,11 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
                     
                     // IF NOT PULL: Reverse Recipe components
                     if (!prodHeader || prodHeader.production_category !== 'pull') {
-                        const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity').eq('product_code', code).eq('empresa_id', req.empresa_id);
+                        const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, batch_size').eq('product_code', code).eq('empresa_id', req.empresa_id);
                         if (recipes && recipes.length > 0) {
                             for (const r of recipes) {
-                                const cQty = (parseFloat(r.quantity) || 0) * qty;
+                                const bSize = parseFloat(r.batch_size) || 1;
+                                const cQty = (parseFloat(r.quantity) || 0) / bSize * qty;
                                 const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
                                 if (rmComp) {
                                     await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) + cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
@@ -2161,10 +2164,11 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
 
                     // If NOT in Pull mode, or if project items didn't cover it, use standard recipe
                     if (updateData.production_category !== 'pull' && production_category !== 'pull') {
-                        const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost').eq('product_code', code).eq('empresa_id', req.empresa_id);
+                        const { data: recipes } = await supabase.from(T.RECIPES).select('mp_code, quantity, unit_cost, batch_size').eq('product_code', code).eq('empresa_id', req.empresa_id);
                         if (recipes && recipes.length > 0) {
                             for (const r of recipes) {
-                                const cQty = (parseFloat(r.quantity) || 0) * qty;
+                                const bSize = parseFloat(r.batch_size) || 1;
+                                const cQty = (parseFloat(r.quantity) || 0) / bSize * qty;
                                 const cCost = (parseFloat(r.unit_cost) || 0) * qty;
                                 totalProductionCost += cCost;
                                 const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();

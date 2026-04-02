@@ -2171,8 +2171,28 @@ function renderHistoryTable(type) {
         <tbody>
           ${data.map(p => {
       const pcat = p.production_category || 'push';
-      const totalMO = (p.items || []).reduce((sum, it) => sum + ((it.mo_cost || 0) * (it.quantity || 0)), 0);
-      const totalCost = totalMO + (p.material_cost || 0) + (p.general_expenses || 0);
+      const itList = p.items || [];
+      const totalMO = itList.reduce((sum, it) => {
+          const pm = state.products.find(prod => prod.code === it.product_code);
+          const rm = state.rawMaterials.find(m => m.code === it.product_code);
+          let cost = it.mo_cost || 0;
+          if (cost === 0) {
+            if (pm) cost = pm.labor_cost || 0;
+            else if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
+          }
+          return sum + (cost * (it.quantity || 0));
+      }, 0);
+      const totalMP = itList.reduce((sum, it) => {
+          const pm = state.products.find(prod => prod.code === it.product_code);
+          const rm = state.rawMaterials.find(m => m.code === it.product_code);
+          let cost = it.material_cost || 0;
+          if (cost === 0) {
+            if (pm) cost = pm.cost_unit || 0;
+            else if (rm && rm.type !== 'MO' && rm.type !== 'Mano de Obra' && rm.type !== 'Servicio') cost = rm.cost_net || 0;
+          }
+          return sum + (cost * (it.quantity || 0));
+      }, 0) + (p.material_cost || 0);
+      const totalCost = totalMO + totalMP + (p.general_expenses || 0);
       const income = p.quotation_total || 0;
       const profit = income > 0 ? income - totalCost : 0;
       const profitPercent = income > 0 ? (profit / income * 100).toFixed(1) : null;
@@ -2189,7 +2209,7 @@ function renderHistoryTable(type) {
                 </td>
                 <td style="text-align: center">${(p.items || []).reduce((sum, it) => sum + (it.quantity || 0), 0)}</td>
                 <td style="text-align: right">$${totalMO.toLocaleString()}</td>
-                <td style="text-align: right">$${(p.material_cost || 0).toLocaleString()}</td>
+                <td style="text-align: right">$${totalMP.toLocaleString()}</td>
                 <td style="text-align: right">$${(p.general_expenses || 0).toLocaleString()}</td>
                 <td style="text-align: right; background: rgba(var(--success-rgb), 0.05); font-weight:700; color:var(--success)">$${totalCost.toLocaleString()}</td>
                 <td style="text-align: center">
@@ -2342,7 +2362,25 @@ window.showTransactionDetails = (type, id) => {
       }
     }
 
-    const itemTotalProd = (item.material_cost || 0) + ((item.mo_cost || 0) * (item.quantity || 1)); // We'll follow the sum logic
+    const pMaster = isProduction ? state.products.find(p => p.code === item.product_code) : null;
+    const rMaster = isProduction && !pMaster ? state.rawMaterials.find(m => m.code === item.product_code) : null;
+
+    let itemMP = item.material_cost || 0;
+    let itemMO = item.mo_cost || 0;
+
+    if (itemMP === 0 && itemMO === 0) {
+      if (pMaster) {
+        itemMP = pMaster.cost_unit || 0;
+        itemMO = pMaster.labor_cost || 0;
+      } else if (rMaster) {
+        const isLabor = (rMaster.type === 'MO' || rMaster.type === 'Mano de Obra' || rMaster.type === 'Servicio');
+        if (isLabor) itemMO = rMaster.cost_net || 0;
+        else itemMP = rMaster.cost_net || 0;
+      }
+    }
+
+    const itemQty = (item.quantity || 0);
+    const itemTotal = (itemMP + itemMO) * itemQty;
 
     return `
             <tr>
@@ -2351,10 +2389,10 @@ window.showTransactionDetails = (type, id) => {
               <td>
                 ${(item.product_name || item.mp_name || '?')}${item.color ? ' (' + item.color + ')' : ''}${item.size ? ' [' + item.size + ']' : ''}
               </td>
-              <td style="text-align: center">${item.quantity}</td>
-              <td style="text-align: right">$${isProduction ? (item.material_cost || 0).toLocaleString() : (displayUnitPrice).toLocaleString()}</td>
-              <td style="text-align: right">$${isProduction ? (item.mo_cost || 0).toLocaleString() : (displaySubtotal).toLocaleString()}</td>
-              ${isProduction ? `<td style="text-align: right; font-weight:700">$${((item.material_cost || 0) + (item.mo_cost || 0)).toLocaleString()}</td>` : ''}
+              <td style="text-align: center">${itemQty}</td>
+              <td style="text-align: right">$${isProduction ? (itemMP * itemQty).toLocaleString() : (displayUnitPrice).toLocaleString()}</td>
+              <td style="text-align: right">$${isProduction ? (itemMO * itemQty).toLocaleString() : (displaySubtotal).toLocaleString()}</td>
+              ${isProduction ? `<td style="text-align: right; font-weight:700">$${(itemTotal).toLocaleString()}</td>` : ''}
             </tr >
     `;
   }).join('')}
@@ -2364,12 +2402,44 @@ window.showTransactionDetails = (type, id) => {
       ${isProduction ? `
       <div class="summary-section">
         <table class="summary-table">
-          <tr><td>Costo Mano de Obra (M.O.)</td><td style="text-align: right">$${(transaction.items.reduce((sum, it) => sum + ((it.mo_cost || 0) * it.quantity), 0)).toLocaleString()}</td></tr>
-          <tr><td>Costo Materiales / Insumos</td><td style="text-align: right">$${(transaction.material_cost || 0).toLocaleString()}</td></tr>
+          <tr><td>Costo Mano de Obra (M.O.)</td><td style="text-align: right">$${(transaction.items.reduce((sum, it) => { 
+                const pm = state.products.find(p => p.code === it.product_code);
+                const rm = state.rawMaterials.find(m => m.code === it.product_code);
+                let cost = it.mo_cost || 0;
+                if (cost === 0) {
+                   if (pm) cost = pm.labor_cost || 0;
+                   else if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
+                }
+                return sum + (cost * (it.quantity || 0));
+              }, 0)).toLocaleString()}</td></tr>
+          <tr><td>Costo Materiales / Insumos</td><td style="text-align: right">$${(transaction.items.reduce((sum, it) => {
+                const pm = state.products.find(p => p.code === it.product_code);
+                const rm = state.rawMaterials.find(m => m.code === it.product_code);
+                let cost = it.material_cost || 0;
+                if (cost === 0) {
+                   if (pm) cost = pm.cost_unit || 0;
+                   else if (rm && rm.type !== 'MO' && rm.type !== 'Mano de Obra' && rm.type !== 'Servicio') cost = rm.cost_net || 0;
+                }
+                return sum + (cost * (it.quantity || 0));
+              }, 0) + (transaction.material_cost || 0)).toLocaleString()}</td></tr>
           <tr><td>Gastos Generales / Varios</td><td style="text-align: right">$${(transaction.general_expenses || 0).toLocaleString()}</td></tr>
           <tr style="font-size: 1.1rem; border-top: 2px solid var(--border); color: var(--danger)">
-             <td>COSTO TOTAL REAL</td>
-             <td style="text-align: right"><strong>$${((transaction.items.reduce((sum, it) => sum + ((it.mo_cost || 0) * it.quantity), 0)) + (transaction.material_cost || 0) + (transaction.general_expenses || 0)).toLocaleString()}</strong></td>
+             <td>COSTO TOTAL ESTIMADO</td>
+              <td style="text-align: right"><strong>$${((transaction.items.reduce((sum, it) => {
+                 const pm = state.products.find(p => p.code === it.product_code);
+                 const rm = state.rawMaterials.find(m => m.code === it.product_code);
+                 
+                 let costMP = it.material_cost || 0;
+                 let costMO = it.mo_cost || 0;
+                 if (costMP === 0 && costMO === 0) {
+                    if (pm) { costMP = pm.cost_unit || 0; costMO = pm.labor_cost || 0; }
+                    else if (rm) {
+                      if (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio') costMO = rm.cost_net || 0;
+                      else costMP = rm.cost_net || 0;
+                    }
+                 }
+                 return sum + ((costMP + costMO) * (it.quantity || 0));
+              }, 0)) + (transaction.material_cost || 0) + (transaction.general_expenses || 0)).toLocaleString()}</strong></td>
           </tr>
           ${transaction.quotation_total > 0 ? `
             <tr style="font-size: 1rem; border-top: 1px dashed var(--border); color: var(--success); margin-top: 10px">
@@ -2913,7 +2983,8 @@ window.editProduction = (id) => {
     }
   });
 
-  window.updateProdTotals();
+  // Re-calculate based on recipes (Fills 0s automatically)
+  window.updateProdRecipeView();
 };
 
 window.updateProdRecipeView = async () => {
@@ -2954,64 +3025,89 @@ window.updateProdRecipeView = async () => {
   // --- Logic for PUSH (Standard) ---
   else {
     for (const row of rows) {
-      const code = row.querySelector('.prod-item-code').value.trim();
-      const qty = parseFloat(row.querySelector('.prod-item-qty').value) || 0;
-      if (!code || qty <= 0) continue;
+      const rowItemCode = row.querySelector('.prod-item-code')?.value.trim();
+      const qtyInput = row.querySelector('.prod-item-qty');
+      const mpInput = row.querySelector('.prod-item-mp');
+      const moInput = row.querySelector('.prod-item-mo');
+      
+      const qtyProduced = parseFloat(qtyInput?.value) || 0;
+      if (!rowItemCode || qtyProduced <= 0) continue;
 
-      const prod = state.products.find(p => p.code === code);
-      if (prod) {
+      const prodData = state.products.find(p => p.code === rowItemCode);
+      if (prodData) {
         try {
-          const recipes = await apiFetch(`/recipes/${code}`);
-          if (recipes && recipes.length > 0) {
-            recipes.forEach(r => {
-              const consumption = (parseFloat(r.quantity) || 0) * qty;
-              const cost = (parseFloat(r.unit_cost) || 0) * qty;
-              totalMP += cost;
-              if (!materialAggregation[r.mp_code]) {
-                materialAggregation[r.mp_code] = { qty: 0, cost: 0, name: r.mp_name || r.mp_code };
+          const recipeItems = await apiFetch(`/recipes/${rowItemCode}`);
+          if (recipeItems && recipeItems.length > 0) {
+            let rowUnitMP = 0;
+            let rowUnitMO = 0;
+
+            recipeItems.forEach(r => {
+              const batchSize = parseFloat(r.batch_size) || 1;
+              const unitContrib = parseFloat(r.unit_cost) || 0;
+              
+              const totalCostForThisRow = unitContrib * qtyProduced;
+              const totalQtyForThisRow = (parseFloat(r.quantity) || 0) / batchSize * qtyProduced;
+
+              const typeText = (r.type || r.raw_materials?.type || '').toLowerCase();
+              const isMO = (typeText.includes('mo') || typeText.includes('mano') || typeText.includes('labor') || typeText.includes('servicio'));
+              
+              if (isMO) {
+                rowUnitMO += unitContrib;
+                totalMO += totalCostForThisRow;
+              } else {
+                rowUnitMP += unitContrib;
+                totalMP += totalCostForThisRow;
               }
-              materialAggregation[r.mp_code].qty += consumption;
-              materialAggregation[r.mp_code].cost += cost;
+
+              const matName = r.mp_name || r.mp_code || 'Insumo';
+              if (!materialAggregation[r.mp_code]) {
+                materialAggregation[r.mp_code] = { qty: 0, cost: 0, name: matName };
+              }
+              materialAggregation[r.mp_code].qty += totalQtyForThisRow;
+              materialAggregation[r.mp_code].cost += totalCostForThisRow;
             });
+
+            // FILL ROW INPUTS WITH UNIT COSTS FROM RECIPE IF EMPTY
+            if (mpInput && (parseFloat(mpInput.value) === 0 || mpInput.dataset.auto === 'true')) {
+              mpInput.value = Math.round(rowUnitMP);
+              mpInput.dataset.auto = 'true'; // Mark as auto-filled
+            }
+            if (moInput && (parseFloat(moInput.value) === 0 || moInput.dataset.auto === 'true')) {
+              moInput.value = Math.round(rowUnitMO);
+              moInput.dataset.auto = 'true';
+            }
           }
-        } catch (e) { console.error('Error fetching recipe:', e); }
-      } else {
-        const rm = state.rawMaterials.find(m => m.code === code);
-        if (rm) {
-          const cost = (parseFloat(rm.cost_net) || 0) * qty;
-          if (rm.type === 'MP') {
-            totalMP += cost;
-            if (!materialAggregation[code]) materialAggregation[code] = { qty: 0, cost: 0, name: rm.name };
-            materialAggregation[code].qty += qty;
-            materialAggregation[code].cost += cost;
-          } else { totalMO += cost; }
+        } catch (e) {
+          console.error('Error fetching recipe for', rowItemCode, e);
         }
       }
     }
   }
 
-  // Update Header Totals
-  const mpField = document.getElementById('prod-material-cost');
-  const moField = document.getElementById('prod-general-expenses');
-  if (mpField) mpField.value = Math.round(totalMP);
-  if (moField) moField.value = Math.round(totalMO + totalSvc);
-
-  // Render Visualizer
-  if (Object.keys(materialAggregation).length > 0) {
-    container.style.display = 'block';
-    content.innerHTML = Object.entries(materialAggregation).map(([key, m]) => `
-      <div style="background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-light)">
-        <div style="font-weight:600; color: var(--secondary); font-size:0.75rem">${m.name}</div>
-        <div style="font-size: 0.7rem; opacity: 0.8">
-          📦 Consumo: <b style="color: var(--text)">${m.qty.toLocaleString()}</b> <br>
-          💰 Costo: <b style="color: var(--success)">$${Math.round(m.cost).toLocaleString()}</b>
-        </div>
-      </div>
-    `).join('');
-  } else {
-    container.style.display = 'none';
+  // Update Summary Display (Visual Assistance)
+  if (container && content) {
+    const matKeys = Object.keys(materialAggregation);
+    if (matKeys.length === 0) {
+      container.style.display = 'none';
+    } else {
+      container.style.display = 'block';
+      let html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px;">';
+      matKeys.forEach(key => {
+        const m = materialAggregation[key];
+        html += `
+          <div style="background: var(--bg-secondary); padding: 8px; border-radius: 6px; border: 1px solid var(--border)">
+            <div style="font-weight:700; font-size: 0.75rem; color: var(--secondary); margin-bottom: 4px; border-bottom: 1px solid var(--border)">${m.name}</div>
+            <div style="font-size: 0.7rem; opacity: 0.9">📦 Necesario: <b>${m.qty.toFixed(2)}</b></div>
+            <div style="font-size: 0.7rem; color: var(--success)">💰 Costo: <b>$${Math.round(m.cost).toLocaleString()}</b></div>
+          </div>
+        `;
+      });
+      html += '</div>';
+      content.innerHTML = html;
+    }
   }
 
+  // Refresh totals to reflect the changes (even if they were auto-filled)
   window.updateProdTotals();
 };
 
@@ -3019,27 +3115,34 @@ window.updateProdTotals = () => {
   const modal = document.getElementById('production-modal');
   if (!modal) return;
   const rows = modal.querySelectorAll('.item-row');
-  let totalRowsMP = 0;
-  let totalRowsMO = 0;
+  let totalItemsMP = 0;
+  let totalItemsMO = 0;
 
   rows.forEach(row => {
-    const qty = parseFloat(row.querySelector('.prod-item-qty').value) || 0;
-    const mp = parseFloat(row.querySelector('.prod-item-mp').value) || 0;
-    const mo = parseFloat(row.querySelector('.prod-item-mo').value) || 0;
-    if (qty > 0) {
-      totalMP += mp; // Si el usuario ingresa el costo total del lote, lo sumamos directo
-      // O si el usuario ingresa costo unitario, deberíamos multiplicar por qty.
-      // Dada la interfaz y que el total arriba es la suma, asumiremos que ingresan el costo total del ítem.
-      totalMO += mo;
+    const qtyInput = row.querySelector('.prod-item-qty');
+    const mpInput = row.querySelector('.prod-item-mp');
+    const moInput = row.querySelector('.prod-item-mo');
+    
+    if (qtyInput && mpInput && moInput) {
+      const qty = parseFloat(qtyInput.value) || 0;
+      const mp = parseFloat(mpInput.value) || 0;
+      const mo = parseFloat(moInput.value) || 0;
+      
+      if (qty > 0) {
+        // En Ross ERP, el costo por ítem se ingresa como Unitario. Multiplicamos por cantidad.
+        totalItemsMP += (mp * qty);
+        totalItemsMO += (mo * qty);
+      }
     }
   });
-  const mpInput = document.getElementById('prod-material-cost');
-  const moLabel = document.querySelector('label[style*="var(--warning)"]'); // We don't have a direct ID for total MO input yet, but we have general expenses.
 
-  if (mpInput) mpInput.value = totalMP;
-  // For MO total, we don't have a specific header input, but we can display it or just let the history handle it.
-  // The user's drawing showed "COSTO MATERIALES / INSUMOS" and "GASTOS GENERALES" at the top.
-  // I'll add a read-only or info display for the sum.
+  const costHeaderMP = document.getElementById('prod-material-cost');
+  const costHeaderExpenses = document.getElementById('prod-general-expenses');
+  
+  // El input 'prod-material-cost' representa el costo TOTAL de materiales de la producción.
+  if (costHeaderMP) costHeaderMP.value = Math.round(totalItemsMP);
+  
+  // Actualizamos el resumen visual en el modal si existe (puedes añadir un label para MO)
 };
 
 window.deleteProduction = async (id) => {
@@ -5741,9 +5844,13 @@ function renderView(viewName) {
                     codeInput.value = item.item_code || item.description || '';
                     qtyInput.value = item.quantity || 1;
                     
-                    // Pre-fill costs if they exist in the quote analysis
-                    mpInput.value = item.unit_cost || 0;
-                    moInput.value = item.labor_cost || 0;
+                    // Búsqueda inteligente de costos (Cotización o Maestro)
+                    const masterProd = state.products.find(p => p.code === (item.item_code || item.description));
+                    const unit_cost = item.unit_cost || item.cost_unit || masterProd?.cost_unit || 0;
+                    const labor_cost = item.labor_cost || item.mo_cost || masterProd?.labor_cost || 0;
+
+                    mpInput.value = unit_cost;
+                    moInput.value = labor_cost;
                   }
                 });
 
