@@ -1024,9 +1024,29 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
                     } else {
                         await supabase.from(T.PURCHASE_ITEMS).insert(insertItem);
 
-                        // Update stock only for real raw materials
-                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
-                        await supabase.from(T.MP).update({ stock: (rm?.stock || 0) + item.quantity }).eq('code', item.mpCode);
+                        // PMP UPDATE Logic
+                        const { data: rm } = await supabase.from(T.MP).select('stock, cost_net, batch_size').eq('code', item.mpCode).eq('empresa_id', req.empresa_id).maybeSingle();
+                        if (rm) {
+                            const currentStock = parseFloat(rm.stock) || 0;
+                            const currentBatchCost = parseFloat(rm.cost_net) || 0;
+                            const bSize = parseFloat(rm.batch_size) || 1;
+                            
+                            const newQty = parseFloat(item.quantity) || 0;
+                            const newUnitPrice = parseFloat(item.unit_price) || 0;
+
+                            // Total current value + new purchase value
+                            const totalValue = ((currentStock / bSize) * currentBatchCost) + (newQty * newUnitPrice);
+                            const newStock = currentStock + (newQty * bSize); // Note: Assuming quantity correlates to "units of batch size" or direct units. 
+                            // Actually, in the ERP, purchase quantity usually matches the units. 
+                            // If user buys 1000 grams (1 bag), quantity=1, unitPrice=1050. Stock increases by 1000.
+                            const finalStock = currentStock + (newQty * bSize); 
+                            const newBatchCost = finalStock > 0 ? (totalValue / (finalStock / bSize)) : newUnitPrice;
+
+                            await supabase.from(T.MP).update({ 
+                                stock: finalStock,
+                                cost_net: Math.round(newBatchCost)
+                            }).eq('code', item.mpCode).eq('empresa_id', req.empresa_id);
+                        }
                     }
                 }
             }
@@ -1562,6 +1582,7 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 
         if (sError) throw sError;
 
+        let totalCogs = 0;
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.productCode && item.quantity > 0) {
@@ -1574,8 +1595,12 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
                     subtotal: item.subtotal
                 });
 
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.productCode).single();
-                await supabase.from(T.PRODUCTS).update({ stock: (p?.stock || 0) - item.quantity }).eq('code', item.productCode);
+                // Fetch current stock AND cost_unit for COGS
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock, cost_unit').eq('code', item.productCode).eq('empresa_id', req.empresa_id).maybeSingle();
+                if (p) {
+                    await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) - item.quantity }).eq('code', item.productCode).eq('empresa_id', req.empresa_id);
+                    totalCogs += (parseFloat(p.cost_unit) || 0) * item.quantity;
+                }
             }
         }
 
@@ -1611,6 +1636,22 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             empresaId: req.empresa_id,
             lines: journalLines
         });
+
+        // 1.2 NEW: COGS Accounting Entry (Costo de Ventas)
+        if (totalCogs > 0) {
+            await createAccountingEntry({
+                date,
+                description: `Costo de Ventas Doc #${docRef}`,
+                type: 'costo_venta',
+                document_number: sale.id.toString(),
+                userId: req.user.id,
+                empresaId: req.empresa_id,
+                lines: [
+                    { account_code: '5.1', debit: Math.round(totalCogs), glosa: 'Reconocimiento Costo de Venta' }, // Gasto (Costo de Venta)
+                    { account_code: '1.1.08', credit: Math.round(totalCogs), glosa: 'Salida de Inventario PT' } // Inventario PT (Activo -)
+                ]
+            });
+        }
 
         // 2. Si se marcó AUTO_COLLECT, crear el asiento de COBRO inmediatamente
         if (auto_collect) {
@@ -1700,7 +1741,8 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
         }
         await supabase.from(T.SALE_ITEMS).delete().eq('sale_id', saleId);
 
-        // 4. Insert NEW items and apply NEW stock impact
+        // 4. Insert NEW items and apply NEW stock impact AND calculate COGS
+        let totalCogsUpdate = 0;
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.productCode && item.quantity > 0) {
@@ -1713,10 +1755,11 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
                     subtotal: item.subtotal
                 });
 
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.productCode).single();
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock, cost_unit').eq('code', item.productCode).eq('empresa_id', req.empresa_id).maybeSingle();
                 if (p) {
                     const newQty = Number(item.quantity) || 0;
-                    await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) - newQty }).eq('code', item.productCode);
+                    await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) - newQty }).eq('code', item.productCode).eq('empresa_id', req.empresa_id);
+                    totalCogsUpdate += (parseFloat(p.cost_unit) || 0) * newQty;
                 }
             }
         }
@@ -1726,7 +1769,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             .from(T.PC_ASIENTOS)
             .select('id')
             .eq('referencia_id', saleId.toString())
-            .in('tipo_origen', ['venta', 'venta_push', 'venta_pull', 'erp_venta', 'pago_venta_auto']);
+            .in('tipo_origen', ['venta', 'venta_push', 'venta_pull', 'erp_venta', 'pago_venta_auto', 'costo_venta']);
 
         if (oldEntriesPro && oldEntriesPro.length > 0) {
             const proIds = oldEntriesPro.map(e => e.id);
@@ -1766,6 +1809,23 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             empresaId: req.empresa_id,
             lines: journalLines
         });
+
+        // 5.2 NEW: COGS for updated sale
+        if (totalCogsUpdate > 0) {
+            const docRef = document_number || saleId;
+            await createAccountingEntry({
+                date: targetDate,
+                description: `Costo de Ventas Doc #${docRef}`,
+                type: 'costo_venta',
+                document_number: saleId.toString(),
+                userId: req.user.id,
+                empresaId: req.empresa_id,
+                lines: [
+                    { account_code: '5.1', debit: Math.round(totalCogsUpdate) }, 
+                    { account_code: '1.1.08', credit: Math.round(totalCogsUpdate) } 
+                ]
+            });
+        }
 
         if (!acResult.success) {
             debugLog('Accounting Entry Fail in Update SALE Endpoint:', acResult.error);
@@ -1980,12 +2040,15 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                         if (recipes && recipes.length > 0) {
                             for (const r of recipes) {
                                 const bSize = parseFloat(r.batch_size) || 1;
+                                // Correct consumption: (recipe_qty / batch_size) * produced_qty
                                 const cQty = (parseFloat(r.quantity) || 0) / bSize * qty;
                                 const cCost = (parseFloat(r.unit_cost) || 0) * qty;
                                 totalProductionCost += cCost;
+                                
                                 const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
                                 if (rmComp) {
-                                    await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                                    const currentStock = parseFloat(rmComp.stock) || 0;
+                                    await supabase.from(T.MP).update({ stock: currentStock - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
                                     await checkLowStockAlerts(r.mp_code);
                                 }
                             }
@@ -3300,6 +3363,129 @@ app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
 
         res.json({ success: true, message: `Estado actualizado a: ${newStatus}`, newStatus });
     } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// --- ADMIN: Recalculate All Stock ---
+app.post('/api/admin/recalculate-all-stock', authenticateToken, checkAdmin, async (req, res) => {
+    try {
+        const empresaId = req.empresa_id;
+        debugLog(`[RECALC] Starting full stock recalculation for Empresa ID: ${empresaId}`);
+
+        // 1. Fetch current recipes
+        const { data: recipes } = await supabase.from(T.RECIPES).select('*').eq('empresa_id', empresaId);
+        
+        // 2. Fetch all products and raw materials
+        const { data: products } = await supabase.from(T.PRODUCTS).select('code').eq('empresa_id', empresaId);
+        const { data: rmList } = await supabase.from(T.MP).select('code').eq('empresa_id', empresaId);
+
+        if (!products || !rmList) throw new Error("No se pudieron cargar productos o insumos.");
+
+        const productStock = {};
+        products.forEach(p => productStock[p.code] = 0);
+
+        const rmStock = {};
+        rmList.forEach(rm => rmStock[rm.code] = 0);
+
+        // 3. Purchases (Add RM Stock)
+        const { data: purchases } = await supabase.from(T.PURCHASES).select('id').eq('empresa_id', empresaId);
+        if (purchases && purchases.length > 0) {
+            const purchaseIds = purchases.map(p => p.id);
+            const { data: pItems } = await supabase.from(T.PURCHASE_ITEMS).select('mp_code, quantity').in('purchase_id', purchaseIds);
+            if (pItems) {
+                pItems.forEach(item => {
+                    if (rmStock[item.mp_code] !== undefined) {
+                        rmStock[item.mp_code] += (parseFloat(item.quantity) || 0);
+                    }
+                });
+            }
+        }
+
+        // 4. Sales (Subtract Product Stock)
+        const { data: sales } = await supabase.from(T.SALES).select('id').eq('empresa_id', empresaId);
+        if (sales && sales.length > 0) {
+            const saleIds = sales.map(s => s.id);
+            const { data: sItems } = await supabase.from(T.SALE_ITEMS).select('product_code, quantity').in('sale_id', saleIds);
+            if (sItems) {
+                sItems.forEach(item => {
+                    if (productStock[item.product_code] !== undefined) {
+                        productStock[item.product_code] -= (parseFloat(item.quantity) || 0);
+                    }
+                });
+            }
+        }
+
+        // 5. Production (Add Product Stock, Subtract RM Stock)
+        const { data: productions } = await supabase.from(T.PRODUCTION).select('id, production_category, quotation_id').eq('empresa_id', empresaId);
+        if (productions && productions.length > 0) {
+            const prodIds = productions.map(p => p.id);
+            const { data: prodItems } = await supabase.from(T.PRODUCTION_ITEMS).select('*').in('production_id', prodIds);
+            
+            // Collect quote materials for PULL productions
+            const pullQuoteIds = productions.filter(p => p.production_category === 'pull' && p.quotation_id).map(p => p.quotation_id);
+            let quoteMaterials = [];
+            if (pullQuoteIds.length > 0) {
+                const { data: qm } = await supabase.from(T.QUOTE_ITEMS).select('*').in('quotation_id', pullQuoteIds).eq('item_type', 'material');
+                if (qm) quoteMaterials = qm;
+            }
+
+            if (prodItems) {
+                for (const pItem of prodItems) {
+                    const pCode = pItem.product_code;
+                    const pQty = parseFloat(pItem.quantity) || 0;
+                    const header = productions.find(h => h.id === pItem.production_id);
+
+                    // Add PT
+                    if (productStock[pCode] !== undefined) {
+                        productStock[pCode] += pQty;
+                    }
+
+                    // A. PULL MODE: Subtract custom items from quote
+                    if (header?.production_category === 'pull' && header.quotation_id) {
+                        const materialsForThisQuote = quoteMaterials.filter(m => m.quotation_id === header.quotation_id);
+                        for (const m of materialsForThisQuote) {
+                            const mCode = m.item_code || m.description;
+                            const mQty = parseFloat(m.quantity) || 0;
+                            if (rmStock[mCode] !== undefined) {
+                                rmStock[mCode] -= mQty;
+                            }
+                        }
+                    } 
+                    // B. PUSH/NORMAL MODE: Subtract MP based on recipes
+                    else if (!header?.quotation_id || header.production_category !== 'pull') {
+                        const pRecipes = recipes.filter(r => r.product_code === pCode);
+                        pRecipes.forEach(r => {
+                            if (rmStock[r.mp_code] !== undefined) {
+                                const bSize = parseFloat(r.batch_size) || 1;
+                                const consumptionValue = (parseFloat(r.quantity) || 0) / bSize * pQty;
+                                rmStock[r.mp_code] -= consumptionValue;
+                            }
+                        });
+                        
+                        // Handle PT being its own MP (edge case)
+                        if (rmStock[pCode] !== undefined) {
+                             rmStock[pCode] -= pQty;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 6. Update Database
+        const updatePromises = [];
+        for (const code in productStock) {
+            updatePromises.push(supabase.from(T.PRODUCTS).update({ stock: productStock[code] }).eq('code', code).eq('empresa_id', empresaId));
+        }
+        for (const code in rmStock) {
+            updatePromises.push(supabase.from(T.MP).update({ stock: rmStock[code] }).eq('code', code).eq('empresa_id', empresaId));
+        }
+        
+        await Promise.all(updatePromises);
+
+        res.json({ success: true, message: 'Stock recalculado exitosamente desde el historial total.' });
+    } catch (e) {
+        console.error('Recalculate error:', e.message);
         res.status(500).json({ error: e.message });
     }
 });

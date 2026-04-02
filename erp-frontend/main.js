@@ -281,7 +281,8 @@ const views = {
           <span>Ocultar Proyectos [P-]</span>
         </label>
         <button onclick="window.exportProducts()" style="background: var(--secondary)">📊 Exportar</button>
-        <button onclick="window.recalculateAllCosts()" style="background: var(--accent)">🔄 Costos</button>
+        <button onclick="window.recalculateAllCosts()" style="background: var(--accent)" title="Recalcular costos unitarios basados en recetas">🚀 Costos</button>
+        <button onclick="window.recalculateAllStock()" style="background: var(--warning); color: var(--bg-dark)" title="Auditoría total: Fix stock según historial de compras/ventas/prods">🔄 Recalcular Stock</button>
         <button onclick="document.getElementById('new-prod-modal').style.display='flex'">+ Nuevo</button>
       </div>
     </header>
@@ -387,6 +388,7 @@ const views = {
       <h1>Inventario de Insumos</h1>
       <div style="display: flex; gap: 0.5rem">
         <button onclick="window.exportRawMaterials()" style="background: var(--secondary)">📊 Exportar a Excel</button>
+        <button onclick="window.recalculateAllStock()" style="background: var(--warning); color: var(--bg-dark)" title="Auditoría total del historial">🔄 Recalcular Stock</button>
         <button onclick="document.getElementById('new-rm-modal').style.display='flex'">+ Nuevo Insumo</button>
       </div>
     </header>
@@ -2744,6 +2746,34 @@ window.editItem = (type, code) => {
     document.getElementById('nrm-parent').value = m.parent_code || '';
 
     document.getElementById('new-rm-modal').style.display = 'flex';
+  }
+};
+
+window.recalculateAllStock = async () => {
+  if (!confirm('Esta operación auditará todo el historial para recalcular los niveles de stock (PT y MP) desde cero. ¿Desea continuar?')) return;
+  
+  const finishBtn = (btn, originalText) => {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  };
+
+  const btn = event.target;
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Recalculando...';
+  btn.disabled = true;
+
+  try {
+    const res = await apiFetch('/admin/recalculate-all-stock', { method: 'POST' });
+    if (res && res.success) {
+      alert(res.message);
+      fetchData(); // Refrescar stock en UI
+    } else {
+      alert('Error: ' + (res?.error || 'No se pudo completar la operación. Verifique permisos de Admin.'));
+    }
+  } catch (e) {
+    alert('Error de conexión o permisos insuficiente.');
+  } finally {
+    finishBtn(btn, originalText);
   }
 };
 
