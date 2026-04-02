@@ -2214,6 +2214,57 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
     }
 });
 
+app.post('/api/admin/recalculate-production', authenticateToken, checkSuperAdmin, async (req, res) => {
+    try {
+        debugLog(`[RECALC] Starting full production recalculation for company ${req.empresa_id}`);
+        // 1. Get all productions
+        const { data: productions, error: pError } = await supabase.from(T.PRODUCTION).select('id, production_category, quotation_id').eq('empresa_id', req.empresa_id);
+        if (pError) throw pError;
+
+        let totalFixed = 0;
+        let totalAdjustedStockItems = 0;
+
+        for (const prod of productions) {
+            const { data: items } = await supabase.from(T.PRODUCTION_ITEMS).select('*').eq('production_id', prod.id);
+            if (!items) continue;
+
+            for (const item of items) {
+                if (prod.production_category === 'pull' && prod.quotation_id) continue;
+                
+                const { data: recipes } = await supabase.from(T.RECIPES).select('*, raw_materials:"${T.MP}"(type)').eq('product_code', item.product_code).eq('empresa_id', req.empresa_id);
+                if (recipes && recipes.length > 0) {
+                    let rowUnitMP = 0;
+                    let rowUnitMO = 0;
+
+                    for (const r of recipes) {
+                        const bSize = parseFloat(r.batch_size) || 1;
+                        const qtyProduced = parseFloat(item.quantity) || 0;
+                        const correctConsumption = (parseFloat(r.quantity) || 0) / bSize * qtyProduced;
+                        const wrongConsumption = (parseFloat(r.quantity) || 0) * qtyProduced;
+                        const adjustment = wrongConsumption - correctConsumption; // Amount over-subtracted
+
+                        if (Math.abs(adjustment) > 0.0001) {
+                            const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                            if (rm) {
+                                await supabase.from(T.MP).update({ stock: (parseFloat(rm.stock) || 0) + adjustment }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
+                                totalAdjustedStockItems++;
+                            }
+                        }
+
+                        const unitCost = parseFloat(r.unit_cost) || 0;
+                        const t = (r.raw_materials?.type || '').toLowerCase();
+                        if (t.includes('mo') || t.includes('mano') || t.includes('labor') || t.includes('servicio')) rowUnitMO += unitCost;
+                        else rowUnitMP += unitCost;
+                    }
+                    await supabase.from(T.PRODUCTION_ITEMS).update({ material_cost: Math.round(rowUnitMP), mo_cost: Math.round(rowUnitMO) }).eq('id', item.id);
+                }
+            }
+            totalFixed++;
+        }
+        res.json({ success: true, message: `Historial reparado: ${totalFixed} órdenes y ${totalAdjustedStockItems} ajustes de inventario aplicados.` });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.delete('/api/production/:id', authenticateToken, async (req, res) => {
     const prodId = req.params.id;
 

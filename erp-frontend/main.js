@@ -3111,6 +3111,19 @@ window.updateProdRecipeView = async () => {
   window.updateProdTotals();
 };
 
+window.recalculateProductionHistory = async () => {
+    if (!confirm('Esta acción recalculará los costos y devolverá el stock de insumos mal descontado de TODA la historia de producción. ¿Estás seguro?')) return;
+    
+    try {
+        const res = await apiFetch('/admin/recalculate-production', { method: 'POST' });
+        if (res.error) throw new Error(res.error);
+        alert('✅ Éxito: ' + res.message);
+        window.loadHistory(); // Refresh history table
+    } catch (e) {
+        alert('❌ Error al recalcular: ' + e.message);
+    }
+};
+
 window.updateProdTotals = () => {
   const modal = document.getElementById('production-modal');
   if (!modal) return;
