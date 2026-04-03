@@ -2494,7 +2494,16 @@ app.put('/api/logistics/:id', authenticateToken, async (req, res) => {
             await supabase.from(T.LOGISTICS_ITEMS).insert(logisticsItems);
         }
 
-        res.json({ success: true });
+        // 3. TRIGGER: Promote to Master if status is 'production' (and it wasn't already promoted)
+        const { data: oldQuote } = await supabase.from(T.QUOTATIONS).select('status').eq('id', id).single();
+        // Check incoming status or existing status
+        const currentStatus = req.body.status || oldQuote?.status;
+
+        if (currentStatus === 'production' && oldQuote?.status !== 'production') {
+            await promoteQuoteToMaster(id, req.empresa_id, req.user.id);
+        }
+
+        res.json({ success: true, message: 'Cotización actualizada' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -2821,6 +2830,127 @@ app.put('/api/accounts/:id', authenticateToken, checkAdmin, async (req, res) => 
 });
 
 // --- Quotations Routes ---
+// --- HELPER: Promote PULL Quote to Master Catalog ---
+async function getNextCode(prefix, empresaId) {
+    const { data: products } = await supabase.from(T.PRODUCTS).select('code').eq('empresa_id', empresaId).ilike('code', `${prefix}%`);
+    let maxNum = 0;
+    if (products && products.length > 0) {
+        products.forEach(p => {
+            const numPart = p.code.substring(prefix.length);
+            const num = parseInt(numPart);
+            if (!isNaN(num) && num > maxNum) maxNum = num;
+        });
+    }
+    return `${prefix}${String(maxNum + 1).padStart(3, '0')}`;
+}
+
+async function promoteQuoteToMaster(quoteId, empresaId, userId) {
+    debugLog(`[PROMOTE] Starting promotion for Quote #${quoteId}`);
+    try {
+        // 1. Fetch Quote parent and items
+        const { data: quote, error: qError } = await supabase.from(T.QUOTATIONS).select('products_list, total_price_net, total_price_gross').eq('id', quoteId).eq('empresa_id', empresaId).single();
+        if (qError || !quote) throw qError || new Error("Cotización no encontrada");
+
+        const { data: items, error: iError } = await supabase.from(T.QUOTE_ITEMS).select('*').eq('quotation_id', quoteId).eq('empresa_id', empresaId);
+        if (iError) throw iError;
+
+        let productsList = typeof quote.products_list === 'string' ? JSON.parse(quote.products_list || '[]') : (quote.products_list || []);
+        if (!Array.isArray(productsList)) productsList = [];
+
+        let modifiedList = false;
+
+        // 2. Iterate through "Root" products in the list
+        for (let j = 0; j < productsList.length; j++) {
+            const pEntry = productsList[j];
+            
+            // Check if already promoted
+            if (pEntry.master_code) {
+                debugLog(`[PROMOTE] Skipping ${pEntry.name}, already promoted as ${pEntry.master_code}`);
+                continue;
+            }
+
+            const newCode = await getNextCode('CO', empresaId);
+            debugLog(`[PROMOTE] Promoting Product: ${pEntry.name} (Linked: ${pEntry.id}) -> ${newCode}`);
+
+            // Find all quote items for this product
+            const components = items.filter(it => it.linked_to === pEntry.id);
+            const totalCostUnit = components.reduce((acc, c) => acc + (parseFloat(c.unit_cost) || 0) * (parseFloat(c.quantity) || 0), 0);
+            
+            // Calculate a temporary price if not in entry
+            const unitPriceNet = pEntry.price_net || (parseFloat(quote.total_price_net) / (productsList.length || 1));
+
+            // 3. Create Product in Master Catalog
+            const productData = {
+                code: newCode,
+                name: pEntry.name,
+                type: 'PULL_PROJECT',
+                price_net: unitPriceNet,
+                price_sale: pEntry.price_gross || (unitPriceNet * 1.19),
+                cost_unit: totalCostUnit, 
+                stock: 0,
+                color: '-',
+                size: '-',
+                iva: Math.round(unitPriceNet * 0.19),
+                total: Math.round(unitPriceNet * 1.19),
+                empresa_id: empresaId
+            };
+            await supabase.from(T.PRODUCTS).insert(productData);
+
+            // 4. Map Components (Materials/Labor) to Recipes
+            for (const comp of components) {
+                let mpCode = comp.item_code;
+
+                if (comp.item_type === 'material') {
+                    // Try to find existing MP by name
+                    const { data: existingMP } = await supabase.from(T.MP).select('code').eq('name', comp.description).eq('empresa_id', empresaId).maybeSingle();
+                    if (existingMP) {
+                        mpCode = existingMP.code;
+                    } else {
+                        // Create new MP
+                        mpCode = await getNextCode('MP-CO', empresaId);
+                        await supabase.from(T.MP).insert({
+                            code: mpCode,
+                            name: comp.description,
+                            type: 'MP',
+                            unit: 'Uni',
+                            stock: 0,
+                            cost_net: comp.unit_cost || 0,
+                            empresa_id: empresaId
+                        });
+                    }
+                }
+
+                if (mpCode) {
+                    await supabase.from(T.RECIPES).insert({
+                        product_code: newCode,
+                        mp_code: mpCode,
+                        quantity: comp.quantity || 1,
+                        batch_size: 1, 
+                        unit_cost: comp.unit_cost || 0,
+                        empresa_id: empresaId
+                    });
+                }
+
+                // Update the quotation item with the master code for later linkage
+                await supabase.from(T.QUOTE_ITEMS).update({ item_code: newCode }).eq('id', comp.id);
+            }
+
+            // 5. Update Entry with Master Code
+            pEntry.master_code = newCode;
+            modifiedList = true;
+        }
+
+        if (modifiedList) {
+            await supabase.from(T.QUOTATIONS).update({ products_list: JSON.stringify(productsList) }).eq('id', quoteId);
+        }
+
+        debugLog(`[PROMOTE] Promotion COMPLETED for Quote #${quoteId}`);
+    } catch (e) {
+        debugLog(`[PROMOTE] ERROR in promotion for Quote #${quoteId}:`, e.message);
+        throw e;
+    }
+}
+
 app.get('/api/quotations', authenticateToken, async (req, res) => {
     const { data, error } = await supabase
         .from(T.QUOTATIONS)
@@ -3360,6 +3490,11 @@ app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
             .eq('empresa_id', req.empresa_id);
 
         if (updateErr) throw updateErr;
+
+        // TRIGGER: Promote to Master if status changed to 'production'
+        if (newStatus === 'production' && currentStatus !== 'production') {
+            await promoteQuoteToMaster(id, req.empresa_id, req.user.id);
+        }
 
         res.json({ success: true, message: `Estado actualizado a: ${newStatus}`, newStatus });
     } catch (e) {
