@@ -3522,7 +3522,12 @@ views.quotations = () => {
       </svg>
       <h1>Cotizaciones</h1>
     </div>
-    <button onclick="window.openQuotationModal()">+ Nueva Cotización</button>
+    <div style="display: flex; gap: 0.5rem">
+      ${currentUser.role === 'superadmin' ? `
+        <button onclick="window.bulkPromoteQuotes()" style="background: var(--accent); color: white;" title="Sincronizar cotizaciones antiguas a productos">🚀 Sincronización Histórica</button>
+      ` : ''}
+      <button onclick="window.openQuotationModal()">+ Nueva Cotización</button>
+    </div>
   </header>
 
   <!-- Status Filter Tabs -->
@@ -7347,3 +7352,32 @@ document.addEventListener('submit', async (e) => {
     }
   }
 });
+// Borrar si existía (limpieza de turnos previos si falló)
+window.bulkPromoteQuotes = async () => {
+    if (!confirm('¿Estás seguro de sincronizar todas las cotizaciones históricas? \n\nEsta acción buscará todas las cotizaciones en "Producción" que no han sido promocionadas y creará automáticamente sus productos, insumos y recetas en el catálogo.')) return;
+
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Procesando...';
+
+    try {
+        const res = await fetch(`${API_URL}/admin/bulk-promote-quotes`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+            alert(data.message);
+            window.filterQuoteStatus('production'); // Refrescar vista
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (e) {
+        console.error('Bulk Promote Error:', e);
+        alert('Error de conexión');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+};

@@ -3503,6 +3503,37 @@ app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
 });
 
 // --- ADMIN: Recalculate All Stock ---
+// --- ADMIN: Bulk Promote Historical Quotes (PULL -> MASTER) ---
+app.post('/api/admin/bulk-promote-quotes', authenticateToken, checkSuperAdmin, async (req, res) => {
+    debugLog(`[ADMIN] Bulk promotion requested by Super Admin: ${req.user.id}`);
+    try {
+        const { data: quotes, error: qErr } = await supabase
+            .from(T.QUOTATIONS)
+            .select('id')
+            .eq('status', 'production')
+            .eq('empresa_id', req.empresa_id);
+
+        if (qErr) throw qErr;
+        if (!quotes || quotes.length === 0) {
+            return res.json({ success: true, message: 'No hay cotizaciones en estado de producción para procesar.' });
+        }
+
+        let processedCount = 0;
+        for (const q of quotes) {
+            try {
+                await promoteQuoteToMaster(q.id, req.empresa_id, req.user.id);
+                processedCount++;
+            } catch (innerE) {
+                console.error(`Failed to promote Quote #${q.id}:`, innerE.message);
+            }
+        }
+
+        res.json({ success: true, message: `Sincronización masiva completada. Se procesaron ${processedCount} cotizaciones históricas.` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/admin/recalculate-all-stock', authenticateToken, checkSuperAdmin, async (req, res) => {
     try {
         const empresaId = req.empresa_id;
