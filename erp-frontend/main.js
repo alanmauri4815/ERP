@@ -7362,16 +7362,14 @@ window.bulkPromoteQuotes = async () => {
     btn.textContent = '⏳ Procesando...';
 
     try {
-        const res = await fetch(`${API_BASE}/admin/bulk-promote-quotes`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        const data = await res.json();
-        if (data.success) {
+        const data = await apiFetch('/admin/bulk-promote-quotes', { method: 'POST' });
+        if (data && data.success) {
             alert(data.message);
             window.filterQuoteStatus('production'); // Refrescar vista
+        } else if (data) {
+            alert('Error: ' + (data.error || 'Operación fallida'));
         } else {
-            alert('Error: ' + data.error);
+            alert('Sesión expirada o error de red. Por favor inicia sesión de nuevo.');
         }
     } catch (e) {
         console.error('Bulk Promote Error:', e);
