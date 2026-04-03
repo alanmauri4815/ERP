@@ -3368,7 +3368,7 @@ app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
 });
 
 // --- ADMIN: Recalculate All Stock ---
-app.post('/api/admin/recalculate-all-stock', authenticateToken, checkAdmin, async (req, res) => {
+app.post('/api/admin/recalculate-all-stock', authenticateToken, checkSuperAdmin, async (req, res) => {
     try {
         const empresaId = req.empresa_id;
         debugLog(`[RECALC] Starting full stock recalculation for Empresa ID: ${empresaId}`);

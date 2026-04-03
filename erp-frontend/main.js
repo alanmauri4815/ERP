@@ -281,7 +281,7 @@ const views = {
           <span>Ocultar Proyectos [P-]</span>
         </label>
         <button onclick="window.exportProducts()" style="background: var(--secondary)">📊 Exportar</button>
-        ${(currentUser.role === 'admin' || currentUser.role === 'superadmin') ? `
+        ${(currentUser.role === 'superadmin') ? `
           <button onclick="window.recalculateAllCosts()" style="background: var(--accent)" title="Recalcular costos unitarios basados en recetas">🚀 Costos</button>
           <button onclick="window.recalculateAllStock()" style="background: var(--warning); color: var(--bg-dark)" title="Auditoría total: Fix stock según historial de compras/ventas/prods">🔄 Recalcular Stock</button>
         ` : ''}
@@ -390,7 +390,7 @@ const views = {
       <h1>Inventario de Insumos</h1>
       <div style="display: flex; gap: 0.5rem">
         <button onclick="window.exportRawMaterials()" style="background: var(--secondary)">📊 Exportar a Excel</button>
-        ${(currentUser.role === 'admin' || currentUser.role === 'superadmin') ? `
+        ${(currentUser.role === 'superadmin') ? `
           <button onclick="window.recalculateAllStock()" style="background: var(--warning); color: var(--bg-dark)" title="Auditoría total del historial">🔄 Recalcular Stock</button>
         ` : ''}
         <button onclick="document.getElementById('new-rm-modal').style.display='flex'">+ Nuevo Insumo</button>
@@ -5026,7 +5026,17 @@ function renderView(viewName) {
     const footerEmpresa = document.getElementById('footer-empresa-name');
     const dashStrong = document.querySelector('.card p strong');
 
-    if (userDisplay && currentUser) userDisplay.textContent = currentUser.username;
+    if (userDisplay && currentUser) userDisplay.textContent = currentUser.username || currentUser.nombre;
+
+    const roleDisplay = document.getElementById('display-user-role');
+    if (roleDisplay && currentUser) {
+        roleDisplay.textContent = currentUser.role || '-';
+        if (currentUser.role === 'superadmin') {
+            roleDisplay.style.color = 'var(--accent)';
+            roleDisplay.style.fontWeight = '700';
+            roleDisplay.textContent = '👑 Super Admin';
+        }
+    }
 
     if (sidebarEmpresa) sidebarEmpresa.textContent = empresaNombre;
     else {
