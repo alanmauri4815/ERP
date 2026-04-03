@@ -7362,7 +7362,7 @@ window.bulkPromoteQuotes = async () => {
     btn.textContent = '⏳ Procesando...';
 
     try {
-        const res = await fetch(`${API_URL}/admin/bulk-promote-quotes`, {
+        const res = await fetch(`${API_BASE}/admin/bulk-promote-quotes`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
