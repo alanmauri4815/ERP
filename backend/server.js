@@ -3534,6 +3534,81 @@ app.post('/api/admin/bulk-promote-quotes', authenticateToken, checkSuperAdmin, a
     }
 });
 
+// --- ADMIN: Sync History Items (Sales/Production) to Master Catalog ---
+app.post('/api/admin/sync-history-items-to-master', authenticateToken, checkSuperAdmin, async (req, res) => {
+    debugLog(`[ADMIN] Sync History Items requested by Super Admin: ${req.user.id}`);
+    try {
+        const empresaId = req.empresa_id;
+        
+        // 1. Fetch Sales and Productions with a Quotation ID
+        const [{ data: sales }, { data: prods }] = await Promise.all([
+            supabase.from(T.SALES).select('id, quotation_id').neq('quotation_id', null).eq('empresa_id', empresaId),
+            supabase.from(T.PRODUCTION).select('id, quotation_id').neq('quotation_id', null).eq('empresa_id', empresaId)
+        ]);
+
+        let updatedSalesCount = 0;
+        let updatedProdsCount = 0;
+
+        // 2. Sync Sales
+        if (sales) {
+            for (const s of sales) {
+                const { data: sItems } = await supabase.from(T.SALE_ITEMS).select('*').eq('sale_id', s.id);
+                const { data: qItems } = await supabase.from(T.QUOTE_ITEMS).select('*').eq('quotation_id', s.quotation_id);
+                
+                if (sItems && qItems) {
+                    for (const sItem of sItems) {
+                        // Skip if already has a master code
+                        if (sItem.product_code && sItem.product_code.startsWith('CO')) continue;
+
+                        // Match by name (case-insensitive) or description
+                        const match = qItems.find(qi => 
+                            qi.item_type === 'product' && 
+                            qi.item_code?.startsWith('CO') && 
+                            (qi.description.toLowerCase().trim() === (sItem.product_name || sItem.product_code || "").toLowerCase().trim() || 
+                             qi.description.toLowerCase().includes((sItem.product_name || sItem.product_code || "").toLowerCase().trim()))
+                        ) || qItems.find(qi => qi.item_code?.startsWith('CO') && (qi.description.toLowerCase().trim() === (sItem.product_name || "").toLowerCase().trim()));
+
+                        if (match) {
+                            await supabase.from(T.SALE_ITEMS).update({ product_code: match.item_code }).eq('id', sItem.id);
+                            updatedSalesCount++;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Sync Productions
+        if (prods) {
+            for (const p of prods) {
+                const { data: pItems } = await supabase.from(T.PRODUCTION_ITEMS).select('*').eq('production_id', p.id);
+                const { data: qItems } = await supabase.from(T.QUOTE_ITEMS).select('*').eq('quotation_id', p.quotation_id);
+                
+                if (pItems && qItems) {
+                    for (const pItem of pItems) {
+                        // Skip if already has a master code
+                        if (pItem.product_code && pItem.product_code.startsWith('CO')) continue;
+
+                        const match = qItems.find(qi => 
+                            qi.item_type === 'product' && 
+                            qi.item_code?.startsWith('CO') && 
+                            (qi.description.toLowerCase().trim() === (pItem.product_name || pItem.product_code || "").toLowerCase().trim())
+                        ) || qItems.find(qi => qi.item_code?.startsWith('CO') && qi.description.toLowerCase().trim() === (pItem.product_name || pItem.product_code || "").toLowerCase().trim());
+
+                        if (match) {
+                            await supabase.from(T.PRODUCTION_ITEMS).update({ product_code: match.item_code }).eq('id', pItem.id);
+                            updatedProdsCount++;
+                        }
+                    }
+                }
+            }
+        }
+
+        res.json({ success: true, message: `Historial sincronizado: ${updatedSalesCount} items de venta y ${updatedProdsCount} de producción actualizados con sus nuevos códigos maestros.` });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.post('/api/admin/recalculate-all-stock', authenticateToken, checkSuperAdmin, async (req, res) => {
     try {
         const empresaId = req.empresa_id;

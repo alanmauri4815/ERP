@@ -3525,6 +3525,7 @@ views.quotations = () => {
     <div style="display: flex; gap: 0.5rem">
       ${currentUser.role === 'superadmin' ? `
         <button onclick="window.bulkPromoteQuotes()" style="background: var(--accent); color: white;" title="Sincronizar cotizaciones antiguas a productos">🚀 Sincronización Histórica</button>
+        <button onclick="window.syncHistoryItems()" style="background: var(--primary); color: white;" title="Vincular ventas y producciones viejas con los nuevos códigos">📦 Vincular Historial</button>
       ` : ''}
       <button onclick="window.openQuotationModal()">+ Nueva Cotización</button>
     </div>
@@ -7373,6 +7374,31 @@ window.bulkPromoteQuotes = async () => {
         }
     } catch (e) {
         console.error('Bulk Promote Error:', e);
+        alert('Error de conexión');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+};
+
+// Fase 2: Vincular Ventas y Producciones antiguas con los nuevos códigos CO
+window.syncHistoryItems = async () => {
+    if (!confirm('¿Deseas vincular las Ventas y Producciones antiguas con los nuevos códigos CO?\n\nEsto permitirá que al "Recalcular Stock" el inventario se actualice correctamente para esos productos.')) return;
+
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Vinculando...';
+
+    try {
+        const data = await apiFetch('/admin/sync-history-items-to-master', { method: 'POST' });
+        if (data && data.success) {
+            alert(data.message + '\\n\\nIMPORTANTE: Ahora ve a Productos o Insumos y corre el botón "Recalcular Stock" para finalizar la auditoría.');
+        } else if (data) {
+            alert('Error: ' + (data.error || 'Operación fallida'));
+        }
+    } catch (e) {
+        console.error('Sync History Items Error:', e);
         alert('Error de conexión');
     } finally {
         btn.disabled = false;
