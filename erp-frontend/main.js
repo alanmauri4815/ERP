@@ -3631,9 +3631,11 @@ views.quotations = () => {
         </div>
         <div class="form-group">
           <label>% Utilidad</label>
-          <div style="display:flex; align-items:center; gap:0.5rem">
-            <input type="number" id="quote-utility" value="30" min="0" style="width:70px" oninput="window.calculateQuotation()">
-            <div id="res-utility-clp" style="font-weight:bold; color:var(--accent); font-size:0.9rem; white-space:nowrap" title="Utilidad Estimada en Pesos">$0</div>
+          <div style="display:flex; align-items:center; gap:0.4rem; background: rgba(16, 185, 129, 0.05); padding: 4px 8px; border-radius: 8px; border: 1px solid rgba(16, 185, 129, 0.1)">
+            <input type="number" id="quote-utility" value="30" min="0" style="width:45px; border:none; background:transparent; font-weight:700; color:var(--text); padding:0" oninput="window.calculateQuotation()">
+            <span style="opacity:0.5; font-size:0.8rem">%</span>
+            <div style="width:1px; height:16px; background:rgba(255,255,255,0.1); margin:0 2px"></div>
+            <div id="res-utility-clp" style="font-weight:bold; color:#10b981; font-size:0.85rem; white-space:nowrap" title="Utilidad Estimada en Pesos">$0</div>
           </div>
         </div>
         <div class="form-group">
@@ -3760,6 +3762,32 @@ window.saveQuotation = async () => {
 
   if (!clientId || !name) return alert('Por favor complete Cliente y Nombre');
 
+  let method = quoteId ? 'PUT' : 'POST';
+  let endpoint = quoteId ? `/quotations/${quoteId}` : '/quotations';
+  let finalExternalId = externalQuoteId;
+
+  // Lógica de Versionado para Super Admin (Sincronizado con módulo)
+  if (quoteId && currentUser.role === 'superadmin' && (window.currentQuotationStatus === 'sent' || window.currentQuotationStatus === 'production')) {
+      const createNewVersion = confirm(`Esta cotización ya tiene estado "${QUOTE_STATUS_LABELS[window.currentQuotationStatus]}". \n\n¿Deseas guardarla como una NUEVA VERSIÓN para no sobreescribir la original?`);
+      
+      if (createNewVersion) {
+          method = 'POST'; 
+          endpoint = '/quotations';
+          
+          const baseId = externalQuoteId.split('V')[0];
+          const versions = state.quotations
+              .map(q => q.external_quote_id || '')
+              .filter(id => id.startsWith(baseId))
+              .map(id => {
+                  const match = id.match(/V(\d+)$/);
+                  return match ? parseInt(match[1]) : 1;
+              });
+          const nextVer = Math.max(...versions, 1) + 1;
+          finalExternalId = `${baseId}V${nextVer}`;
+          alert(`Se creará la versión: ${finalExternalId}`);
+      }
+  }
+
   btn.disabled = true;
   btn.textContent = 'Guardando...';
 
@@ -3775,7 +3803,7 @@ window.saveQuotation = async () => {
     images: window.quotationImages,
     quote_date: quoteDate,
     delivery_time: deliveryTime,
-    external_quote_id: externalQuoteId,
+    external_quote_id: finalExternalId,
     purchase_order_id: purchaseOrderId,
     quantity: window.quotationProducts.reduce((sum, p) => sum + (p.quantity || 0), 0),
     utility_percentage: parseFloat(document.getElementById('quote-utility').value),
@@ -3792,7 +3820,9 @@ window.saveQuotation = async () => {
           description: it.description,
           quantity: it.quantity,
           unit_cost: it.unit_value_net,
-          total_cost: Math.round(projectTotal)
+          total_cost: Math.round(projectTotal),
+          price_gross: (it.document_type === 'boleta') ? 1 : 0,
+          item_code: it.item_code
         };
       })
   };

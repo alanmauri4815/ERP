@@ -210,9 +210,10 @@ window.editQuotation = async (id) => {
         calculation_type: it.calculation_type || 'unit',
         linked_to: it.linked_to || 'general',
         description: it.description,
-        document_type: (it.price_gross === 1) ? 'boleta' : 'factura',
+        document_type: (it.price_gross == 1) ? 'boleta' : 'factura',
         unit_value_net: it.unit_cost,
-        quantity: it.quantity
+        quantity: it.quantity,
+        item_code: it.item_code // Preserve catalog link
     }));
 
     window.quotationImages = q.images || [];
@@ -295,7 +296,8 @@ window.saveQuotation = async () => {
                     quantity: it.quantity,
                     unit_cost: it.unit_value_net,
                     total_cost: Math.round(projectTotal),
-                    price_gross: (it.document_type === 'boleta') ? 1 : 0
+                    price_gross: (it.document_type === 'boleta') ? 1 : 0,
+                    item_code: it.item_code
                 };
             })
     };

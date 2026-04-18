@@ -1112,6 +1112,8 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
                 ]
             });
         }
+
+        res.json({ success: true, message: 'Compra registrada y contabilidad generada exitosamente.', id: purchase.id });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
@@ -3447,10 +3449,10 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
 const QUOTE_TRANSITIONS = {
     draft: ['sent', 'cancelled'],
     sent: ['approved', 'rejected', 'cancelled'],
-    approved: ['production', 'cancelled'],
-    rejected: [],
-    production: ['cancelled'],
-    cancelled: []
+    approved: ['production', 'cancelled', 'draft'],
+    rejected: ['sent', 'draft'],
+    production: ['approved', 'sent', 'cancelled'],
+    cancelled: ['draft']
 };
 
 app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
