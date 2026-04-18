@@ -409,8 +409,8 @@ const views = {
               <th>Stock</th>
               <th style="text-align: center">Lote</th>
               <th>Unidad</th>
-              <th>Neto</th>
-              <th>Precio Unit.</th>
+              <th>Neto (Lote)</th>
+              <th>Costo Unitario</th>
               <th>Acción</th>
             </tr>
           </thead>
@@ -447,7 +447,7 @@ const views = {
           <div class="form-group"><label>Código</label><input type="text" id="nrm-code" required placeholder="MP-001"></div>
           <div class="form-group"><label>Nombre del Insumo</label><input type="text" id="nrm-name" required></div>
           <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 1rem">
-            <div class="form-group"><label>Lote (Cant. Precio)</label><input type="number" id="nrm-batch-size" value="1" step="0.001" required></div>
+            <div class="form-group"><label>Lote / Cantidad</label><input type="number" id="nrm-batch-size" value="1" step="0.001" required></div>
             <div class="form-group">
                 <label>Tipo de Insumo</label>
                 <select id="nrm-type" style="width: 100%">
@@ -464,13 +464,12 @@ const views = {
               <input type="checkbox" id="nrm-incluye-iva" style="width: 18px; height: 18px; cursor: pointer">
               <label for="nrm-incluye-iva" style="cursor: pointer; font-weight: 600; color: var(--success)">El precio ingresado INCLUYE IVA (19%)</label>
             </div>
-            <div class="form-group" style="margin-bottom: 0.5rem">
-              <label>Costo Unitario ($)</label>
-              <input type="number" id="nrm-precio-input" required placeholder="Ingrese el costo" style="font-size: 1.1rem">
-            </div>
-            <div class="grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-top: 0.75rem; padding: 0.5rem; background: var(--surface-light); border-radius: 0.25rem">
               <div style="text-align: center">
-                <small style="opacity: 0.7">Precio Unitario</small><br>
+                <small style="opacity: 0.7">Costo Lote ($)</small><br>
+                <input type="number" id="nrm-precio-input" required placeholder="Ingrese el costo" style="font-size: 1.1rem; width: 100%; border:none; background:transparent; text-align:center; font-weight:bold">
+              </div>
+              <div style="text-align: center">
+                <small style="opacity: 0.7">Costo Unitario</small><br>
                 <strong id="nrm-unit-price-display" style="color: var(--accent); font-size: 1.1rem">$0</strong>
               </div>
               <div style="text-align: center">
@@ -753,7 +752,7 @@ const views = {
               <tr>
                 <th style="width: 50px">Ítem</th>
                 <th>Insumo</th>
-                <th style="width: 130px">Neto Unit</th>
+                <th style="width: 130px">Neto Unitario</th>
                 <th style="width: 100px">Cant</th>
                 <th style="width: 150px">Sub Tot</th>
               </tr>
@@ -766,7 +765,7 @@ const views = {
                     <select class="item-code" data-index="${i}">
                       <option value="">Seleccione...</option>
                       ${state.rawMaterials.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(m => `
-                        <option value="${m.code}" data-price="${m.cost_net}">${m.code} | ${m.name}</option>
+                        <option value="${m.code}" data-price="${(m.cost_net || 0) / (m.batch_size || 1)}">${m.code} | ${m.name}</option>
                       `).join('')}
                       <option value="__otros__" style="background:#f59e0b; color:#000; font-weight:bold">➕ Otros (escribir nombre)</option>
                     </select>
@@ -3458,46 +3457,11 @@ state.quotations = [];
 state.quoteStatusFilter = 'all';
 window.quotationItems = []; // Temporary items for current editing quote
 
-const QUOTE_STATUS_LABELS = {
-  draft: '📝 Borrador', sent: '📤 Enviada', approved: '✅ Aprobada',
-  rejected: '❌ Rechazada', production: '🏭 Producción', cancelled: '🚫 Anulada'
-};
-const QUOTE_STATUS_COLORS = {
-  draft: '#6b7280', sent: '#3b82f6', approved: '#10b981',
-  rejected: '#ef4444', production: '#f59e0b', cancelled: '#991b1b'
-};
-const QUOTE_TRANSITIONS = {
-  draft: ['sent', 'cancelled'],
-  sent: ['approved', 'rejected', 'cancelled'],
-  approved: ['production', 'cancelled'],
-  rejected: [],
-  production: ['cancelled'],
-  cancelled: []
-};
+// Quotations module initialized at bottom
 
-window.changeQuoteStatus = async (id, newStatus) => {
-  const label = QUOTE_STATUS_LABELS[newStatus] || newStatus;
-  if (!confirm(`¿Cambiar estado a "${label}"?`)) return;
-  try {
-    const res = await apiFetch(`/quotations/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: newStatus })
-    });
-    if (res && res.success) {
-      alert(`✅ ${res.message}`);
-      fetchData();
-    } else {
-      alert('Error: ' + (res?.error || 'Error desconocido'));
-    }
-  } catch (e) {
-    alert('Error: ' + e.message);
-  }
-};
-
-window.filterQuoteStatus = (status) => {
-  state.quoteStatusFilter = status;
-  renderView('quotations');
-};
+function initializeQuotations() {
+  // View and Quotation functions moved to modules/quotations.js
+}
 
 views.quotations = () => {
   const filtered = state.quoteStatusFilter === 'all'
@@ -3754,362 +3718,6 @@ views.quotations = () => {
   </datalist>
 `;
 }
-
-window.openQuotationModal = () => {
-  document.getElementById('quotation-modal').style.display = 'flex';
-  document.getElementById('quote-modal-title').textContent = 'Nueva Cotización';
-  document.getElementById('quote-id').value = '';
-  document.getElementById('quote-name').value = '';
-  document.getElementById('quote-client').value = '';
-  document.getElementById('quote-rut').value = '';
-  document.getElementById('quote-address').value = '';
-  document.getElementById('quote-description-proposal').value = '';
-  document.getElementById('quote-date').value = new Date().toISOString().split('T')[0];
-  document.getElementById('quote-delivery-time').value = '';
-  document.getElementById('quote-external-id').value = '';
-
-  // Auto-increment logic
-  if (state.quotations && state.quotations.length > 0) {
-    const ids = state.quotations
-      .map(q => parseInt(q.external_quote_id))
-      .filter(id => !isNaN(id));
-    if (ids.length > 0) {
-      document.getElementById('quote-external-id').value = Math.max(...ids) + 1;
-    } else {
-      document.getElementById('quote-external-id').value = '1';
-    }
-  } else {
-    document.getElementById('quote-external-id').value = '1';
-  }
-
-  document.getElementById('quote-purchase-order').value = '';
-  document.getElementById('quote-utility').value = '30';
-  document.getElementById('quote-budget').value = '0';
-  document.getElementById('quote-probability').textContent = '-%';
-  document.getElementById('btn-save-quote').disabled = false;
-  document.getElementById('btn-save-quote').textContent = '💾 Guardar Cotización';
-
-  window.quotationItems = [];
-  window.quotationProducts = [
-    { id: 'p' + Date.now(), name: '', quantity: 1 }
-  ];
-  window.quotationImages = [];
-  window.renderQuoteImagePreviews();
-
-  window.renderQuotationProducts();
-  if (window.quotationItems.length === 0) {
-    window.addQuotationItem();
-  } else {
-    window.renderQuotationItems();
-  }
-  window.calculateQuotation();
-};
-
-window.editQuotation = async (id) => {
-  const q = await apiFetch(`/quotations/${id}`);
-  if (!q) return;
-
-  window.openQuotationModal();
-  document.getElementById('quote-modal-title').textContent = 'Editar Cotización';
-  document.getElementById('quote-id').value = q.id;
-  document.getElementById('quote-name').value = q.name || '';
-  document.getElementById('quote-client').value = q.client_id || '';
-  document.getElementById('quote-rut').value = q.rut || '';
-  document.getElementById('quote-address').value = q.address || '';
-  document.getElementById('quote-description-proposal').value = q.description_proposal || '';
-  document.getElementById('quote-date').value = q.quote_date ? q.quote_date.split('T')[0] : '';
-  document.getElementById('quote-delivery-time').value = q.delivery_time || '';
-  document.getElementById('quote-external-id').value = q.external_quote_id || '';
-  document.getElementById('quote-purchase-order').value = q.purchase_order_id || '';
-  document.getElementById('quote-utility').value = q.utility_percentage || 0;
-  document.getElementById('quote-budget').value = q.budget || 0;
-
-  window.quotationProducts = q.products_list || [
-    { id: 'p' + Date.now(), name: q.name, quantity: q.quantity || 1 }
-  ];
-
-  window.quotationItems = q.items.map(it => ({
-    type: it.item_type || 'material',
-    calculation_type: it.calculation_type || 'unit',
-    linked_to: it.linked_to || 'general',
-    description: it.description,
-    document_type: it.document_type || 'factura',
-    unit_value_net: it.unit_cost,
-    quantity: it.quantity
-  }));
-
-  window.quotationImages = q.images || [];
-  window.renderQuoteImagePreviews();
-
-  window.renderQuotationProducts();
-  window.renderQuotationItems();
-  window.calculateQuotation();
-};
-
-window.addQuotationItem = () => {
-  window.quotationItems.push({
-    type: 'material',
-    calculation_type: 'unit', // 'unit' o 'fixed'
-    linked_to: 'general', // ID de producto o 'general'
-    description: '',
-    document_type: 'factura',
-    unit_value_net: 0,
-    quantity: 1
-  });
-  window.renderQuotationItems();
-};
-
-window.renderQuotationItems = () => {
-  const tbody = document.getElementById('quote-items-body');
-  if (!tbody) return;
-
-  tbody.innerHTML = window.quotationItems.map((item, index) => `
-    <tr>
-      <td>
-        <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'linked_to', this.value)">
-          <option value="general" ${item.linked_to === 'general' ? 'selected' : ''}>General</option>
-          ${window.quotationProducts.map(p => `<option value="${p.id}" ${item.linked_to === p.id ? 'selected' : ''}>${p.name || 'Sin nombre'}</option>`).join('')}
-        </select>
-      </td>
-      <td>
-        <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'type', this.value)">
-          <option value="material" ${item.type === 'material' ? 'selected' : ''}>Material</option>
-          <option value="service" ${item.type === 'service' ? 'selected' : ''}>Servicio</option>
-          <option value="labor" ${item.type === 'labor' ? 'selected' : ''}>Mano Obra</option>
-          <option value="other" ${item.type === 'other' ? 'selected' : ''}>Otro</option>
-        </select>
-      </td>
-      <td>
-        <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'calculation_type', this.value)">
-          <option value="unit" ${item.calculation_type === 'unit' ? 'selected' : ''}>Unitario</option>
-          <option value="fixed" ${item.calculation_type === 'fixed' ? 'selected' : ''}>Fijo</option>
-        </select>
-      </td>
-      <td>
-        <input type="text" class="form-input-sm" list="raw-materials-list" value="${item.description}" placeholder="Descripción ítem..." oninput="window.updateQuoteItem(${index}, 'description', this.value)">
-      </td>
-      <td>
-        <select class="form-input-sm" onchange="window.updateQuoteItem(${index}, 'document_type', this.value)">
-          <option value="factura" ${item.document_type === 'factura' ? 'selected' : ''}>Factura</option>
-          <option value="boleta" ${item.document_type === 'boleta' ? 'selected' : ''}>Boleta</option>
-        </select>
-      </td>
-      <td>
-        <input type="number" class="form-input-sm" value="${item.unit_value_net}" style="text-align:right" oninput="window.updateQuoteItem(${index}, 'unit_value_net', this.value)">
-      </td>
-      <td>
-        <input type="number" class="form-input-sm" value="${item.quantity}" style="text-align:center" oninput="window.updateQuoteItem(${index}, 'quantity', this.value)">
-      </td>
-      <td id="quote-item-subtotunit-${index}" style="text-align:right; font-weight:400; color: var(--text-muted)">
-        $${Math.round((item.unit_value_net || 0) * (item.quantity || 0)).toLocaleString()}
-      </td>
-      <td id="quote-item-subtotal-${index}" style="text-align:right; font-weight:500">
-        $${window.getItemProjectTotal(item).toLocaleString()}
-      </td>
-      <td>
-        <button class="btn-sm" onclick="window.removeQuoteItem(${index})" style="background:none; color:var(--danger); border:none; padding:0">✕</button>
-      </td>
-    </tr>
-  `).join('');
-};
-
-window.updateQuoteItem = (index, field, value) => {
-  const item = window.quotationItems[index];
-  item[field] = (field === 'unit_value_net' || field === 'quantity') ? parseFloat(value) || 0 : value;
-
-  // Actualizar SubTot Unit y Subtotal de la fila en tiempo real
-  const subtotUnitTd = document.getElementById(`quote-item-subtotunit-${index}`);
-  if (subtotUnitTd) {
-    subtotUnitTd.textContent = `$${Math.round((item.unit_value_net || 0) * (item.quantity || 0)).toLocaleString()}`;
-  }
-  const subtotalTd = document.getElementById(`quote-item-subtotal-${index}`);
-  if (subtotalTd) {
-    subtotalTd.textContent = `$${window.getItemProjectTotal(item).toLocaleString()}`;
-  }
-
-  // Autocompletado de precio si es Material y coincide con un Insumo
-  if (field === 'description' && item.type === 'material') {
-    const rm = state.rawMaterials.find(x => x.name === value || x.code === value);
-    if (rm) {
-      item.unit_value_net = Math.round((rm.cost_net || 0) / (rm.batch_size || 1));
-      window.renderQuotationItems(); // Re-render to show new price
-    }
-  }
-
-  window.calculateQuotation();
-};
-
-window.addQuotationProduct = () => {
-  window.quotationProducts.push({ id: 'p' + Date.now(), name: '', quantity: 1 });
-  window.renderQuotationProducts();
-  window.renderQuotationItems(); // Para actualizar los selects de vinculación
-};
-
-window.renderQuotationProducts = () => {
-  const container = document.getElementById('quote-products-list');
-  if (!container) return;
-  container.innerHTML = window.quotationProducts.map((p, index) => `
-    <div style="display:flex; gap:0.5rem; align-items:center">
-      <input type="text" class="form-input-sm" placeholder="Nombre Producto (ej: Mantel Spandex)" value="${p.name}" style="flex:2" oninput="window.updateQuotationProduct(${index}, 'name', this.value)">
-      <input type="number" class="form-input-sm" placeholder="Cantidad" value="${p.quantity}" style="width:100px" oninput="window.updateQuotationProduct(${index}, 'quantity', this.value)">
-      <button class="btn-sm" onclick="window.removeQuotationProduct(${index})" style="background:none; color:var(--danger)">✕</button>
-    </div>
-  `).join('');
-};
-
-window.updateQuotationProduct = (index, field, value) => {
-  window.quotationProducts[index][field] = field === 'quantity' ? parseFloat(value) || 0 : value;
-  window.renderQuotationItems(); // Para actualizar los nombres en los selects
-  window.calculateQuotation();
-};
-
-window.removeQuotationProduct = (index) => {
-  const pid = window.quotationProducts[index].id;
-  window.quotationProducts.splice(index, 1);
-  // Desvincular items que apuntaban a este producto
-  window.quotationItems.forEach(it => { if (it.linked_to === pid) it.linked_to = 'general'; });
-  window.renderQuotationProducts();
-  window.renderQuotationItems();
-  window.calculateQuotation();
-};
-
-window.removeQuoteItem = (index) => {
-  window.quotationItems.splice(index, 1);
-  window.renderQuotationItems();
-  window.calculateQuotation();
-};
-
-window.onQuoteClientChange = (cid) => {
-  const client = state.clients.find(c => c.id == cid);
-  if (client) {
-    document.getElementById('quote-rut').value = client.rut || '';
-    document.getElementById('quote-address').value = client.address || '';
-  }
-};
-
-window.calculateQuotation = () => {
-  const utilityPerc = parseFloat(document.getElementById('quote-utility').value) || 0;
-
-  let totalCostGlobal = 0;
-  let factNetGlobal = 0;
-  let bolIVAGlobal = 0;
-
-  // 1. Mapear productos para fácil acceso
-  const products = {};
-  window.quotationProducts.forEach(p => {
-    products[p.id] = { ...p, cost: 0, net: 0, iva: 0 };
-  });
-
-  // 2. Separar costos fijos (generales) y variables (por producto)
-  let generalFixedCost = 0;
-  let generalFixedNet = 0;
-  let generalFixedIVA = 0;
-
-  window.quotationItems.forEach(item => {
-    const raw = (parseFloat(item.unit_value_net) || 0) * (parseFloat(item.quantity) || 0);
-    const isFixed = item.calculation_type === 'fixed';
-
-    let lineCost = raw;
-    let lineIVA = 0;
-    if (item.document_type === 'boleta') {
-      lineCost = raw * 1.19;
-      lineIVA = raw * 0.19;
-    }
-
-    if (item.linked_to === 'general') {
-      if (isFixed) {
-        generalFixedCost += lineCost;
-        generalFixedNet += (item.document_type === 'factura' ? raw : 0);
-        generalFixedIVA += lineIVA;
-      } else {
-        const totalQty = window.quotationProducts.reduce((sum, p) => sum + (parseFloat(p.quantity) || 0), 0);
-        generalFixedCost += lineCost * totalQty;
-        generalFixedNet += (item.document_type === 'factura' ? raw * totalQty : 0);
-        generalFixedIVA += lineIVA * totalQty;
-      }
-    } else {
-      // Robust product lookup
-      const targetProductId = String(item.linked_to);
-      const p = Object.values(products).find(x => String(x.id) === targetProductId);
-
-      if (p) {
-        if (isFixed) {
-          p.cost += lineCost;
-          p.net += (item.document_type === 'factura' ? raw : 0);
-          p.iva += lineIVA;
-        } else {
-          const prodQty = parseFloat(p.quantity) || 0;
-          p.cost += lineCost * prodQty;
-          p.net += (item.document_type === 'factura' ? raw * prodQty : 0);
-          p.iva += lineIVA * prodQty;
-        }
-      }
-    }
-  });
-
-  // 3. Sumar y calcular precios unitarios redondeados (Bottom-Up)
-  let totalNetoVisual = 0;
-  const totalQty = window.quotationProducts.reduce((sum, p) => sum + (p.quantity || 0), 0);
-
-  Object.values(products).forEach(p => {
-    // Proporción de costos generales (basado en cantidad de unidades)
-    const share = totalQty > 0 ? (p.quantity / totalQty) : 0;
-    const pTotalCost = p.cost + (generalFixedCost * share);
-
-    // Precio Unitario Neto propuesto (Costo + Utilidad)
-    const unitPriceNetRaw = (pTotalCost / (p.quantity || 1)) * (1 + (utilityPerc / 100));
-    const unitPriceNetRounded = Math.round(unitPriceNetRaw);
-
-    const productSubtotalNet = unitPriceNetRounded * (p.quantity || 0);
-    totalNetoVisual += productSubtotalNet;
-
-    // Guardar para uso en la vista
-    p.unitPriceNet = unitPriceNetRounded;
-    p.subtotalNet = productSubtotalNet;
-
-    totalCostGlobal += pTotalCost;
-    factNetGlobal += p.net + (generalFixedNet * share);
-    bolIVAGlobal += p.iva + (generalFixedIVA * share);
-  });
-
-  const priceNet = totalNetoVisual;
-  const iva = Math.round(priceNet * 0.19);
-  const priceGross = priceNet + iva;
-
-  // Probabilidad
-  const budget = parseFloat(document.getElementById('quote-budget').value) || 0;
-  let probPercent = 0;
-  if (budget > 0) {
-    const rawProb = -1.6 * (priceGross / budget) + 1.7;
-    probPercent = Math.max(0, Math.min(100, rawProb * 100));
-  }
-  const probEl = document.getElementById('quote-probability');
-  if (probEl) {
-    probEl.textContent = budget > 0 ? `${Math.round(probPercent)}%` : '-%';
-    probEl.style.color = probPercent > 50 ? '#10b981' : (probPercent > 20 ? '#f59e0b' : '#ef4444');
-  }
-
-  document.getElementById('res-cost-net').textContent = `$${Math.round(factNetGlobal).toLocaleString()}`;
-  document.getElementById('res-cost-iva').textContent = `$${Math.round(bolIVAGlobal).toLocaleString()}`;
-  document.getElementById('res-cost-total').textContent = `$${Math.round(totalCostGlobal).toLocaleString()}`;
-
-  // CTU promedio
-  document.getElementById('res-ctu').textContent = `$${Math.round(totalCostGlobal / (totalQty || 1)).toLocaleString()}`;
-
-  document.getElementById('res-price-net').textContent = `$${Math.round(priceNet).toLocaleString()}`;
-  document.getElementById('res-price-iva').textContent = `$${Math.round(iva).toLocaleString()}`;
-  document.getElementById('res-price-total').textContent = `$${Math.round(priceGross).toLocaleString()}`;
-  document.getElementById('res-pvp').textContent = `$${Math.round(priceGross / (totalQty || 1)).toLocaleString()}`;
-
-  window.currentQuoteCalcs = {
-    total_net_cost: totalCostGlobal,
-    total_price_net: priceNet,
-    total_iva: iva,
-    total_price_gross: priceGross,
-    budget: budget,
-    success_probability: probPercent
-  };
-};
 
 // Función auxiliar para calcular el impacto total de una fila de costo en el proyecto
 window.getItemProjectTotal = (item) => {
@@ -5471,9 +5079,6 @@ function renderView(viewName) {
       window.recalculateSaleTotals();
     };
 
-    // window.toggleSaleType is now defined globally for better availability.
-    // Logic removed here to avoid duplication.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.vl.p
-
     // --- SALE PULL LOGIC ---
     window.toggleSaleCategory = function () {
       const cat = document.getElementById('sale-category')?.value;
@@ -6770,7 +6375,8 @@ function setupItemTable(prefix) {
     const parseNum = (val) => parseFloat(String(val).replace(',', '.')) || 0;
 
     const calculateRow = () => {
-      const price = parseNum(priceInput.value);
+      // Usar el valor real (con decimales) si existe, sino el del input
+      const price = row.dataset.realPrice ? parseFloat(row.dataset.realPrice) : parseNum(priceInput.value);
       const qty = parseNum(qtyInput.value);
       const subtotal = price * qty;
       subtotalInput.value = Math.round(subtotal);
@@ -6795,15 +6401,22 @@ function setupItemTable(prefix) {
           customNameInput.value = '';
         }
         if (option && option.dataset.price) {
-          priceInput.value = option.dataset.price;
+          const realPrice = parseFloat(option.dataset.price) || 0;
+          priceInput.value = Math.round(realPrice); 
+          row.dataset.realPrice = realPrice; // Guardar valor real con decimales
         } else {
           priceInput.value = 0;
+          row.dataset.realPrice = 0;
         }
       }
       calculateRow();
     });
 
-    priceInput.addEventListener('input', calculateRow);
+    priceInput.addEventListener('input', () => {
+        // Si el usuario edita manualmente, el valor ingresado es el nuevo "real"
+        row.dataset.realPrice = priceInput.value;
+        calculateRow();
+    });
     qtyInput.addEventListener('input', calculateRow);
   });
 }
@@ -7217,6 +6830,8 @@ window.setLogisticsTab = (tab) => {
   window.currentLogisticsTab = tab;
   renderView('logistics');
 };
+
+window.initializeQuotations();
 
 window.openLogisticsModal = async (type, id, transaction_type) => {
   const modal = document.getElementById('logistics-modal');
