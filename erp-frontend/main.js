@@ -110,6 +110,7 @@ async function apiFetch(endpoint, options = {}) {
     return null;
   }
 }
+window.apiFetch = apiFetch;
 
 let state = {
   products: [],
@@ -7020,3 +7021,11 @@ window.syncHistoryItems = async () => {
         btn.textContent = originalText;
     }
 };
+
+// Exponer funciones y estado al ámbito global para compatibilidad con módulos legacy
+window.apiFetch = apiFetch;
+window.fetchData = fetchData;
+window.renderView = renderView;
+window.state = state;
+window.currentUser = currentUser;
+
