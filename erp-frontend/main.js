@@ -3631,7 +3631,10 @@ views.quotations = () => {
         </div>
         <div class="form-group">
           <label>% Utilidad</label>
-          <input type="number" id="quote-utility" value="30" min="0" oninput="window.calculateQuotation()">
+          <div style="display:flex; align-items:center; gap:0.5rem">
+            <input type="number" id="quote-utility" value="30" min="0" style="width:70px" oninput="window.calculateQuotation()">
+            <div id="res-utility-clp" style="font-weight:bold; color:var(--accent); font-size:0.9rem; white-space:nowrap" title="Utilidad Estimada en Pesos">$0</div>
+          </div>
         </div>
         <div class="form-group">
           <label>Presupuesto (P)</label>

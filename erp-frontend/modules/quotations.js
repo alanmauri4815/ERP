@@ -210,7 +210,7 @@ window.editQuotation = async (id) => {
         calculation_type: it.calculation_type || 'unit',
         linked_to: it.linked_to || 'general',
         description: it.description,
-        document_type: it.document_type || 'factura',
+        document_type: (it.price_gross === 1) ? 'boleta' : 'factura',
         unit_value_net: it.unit_cost,
         quantity: it.quantity
     }));
@@ -295,7 +295,7 @@ window.saveQuotation = async () => {
                     quantity: it.quantity,
                     unit_cost: it.unit_value_net,
                     total_cost: Math.round(projectTotal),
-                    document_type: it.document_type
+                    price_gross: (it.document_type === 'boleta') ? 1 : 0
                 };
             })
     };
@@ -414,6 +414,12 @@ window.calculateQuotation = () => {
     document.getElementById('res-price-iva').textContent = `$${Math.round(iva).toLocaleString()}`;
     document.getElementById('res-price-total').textContent = `$${Math.round(priceGross).toLocaleString()}`;
     document.getElementById('res-pvp').textContent = `$${Math.round(priceGross / (totalQty || 1)).toLocaleString()}`;
+    
+    const utilityAmount = priceNet - totalCostGlobal;
+    const utilityEl = document.getElementById('res-utility-clp');
+    if (utilityEl) {
+        utilityEl.textContent = `$${Math.round(utilityAmount).toLocaleString()}`;
+    }
 
     window.currentQuoteCalcs = {
         total_net_cost: totalCostGlobal,

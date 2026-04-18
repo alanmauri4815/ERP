@@ -414,6 +414,12 @@ window.calculateQuotation = () => {
     document.getElementById('res-price-iva').textContent = `$${Math.round(iva).toLocaleString()}`;
     document.getElementById('res-price-total').textContent = `$${Math.round(priceGross).toLocaleString()}`;
     document.getElementById('res-pvp').textContent = `$${Math.round(priceGross / (totalQty || 1)).toLocaleString()}`;
+    
+    const utilityAmount = priceNet - totalCostGlobal;
+    const utilityEl = document.getElementById('res-utility-clp');
+    if (utilityEl) {
+        utilityEl.textContent = `$${Math.round(utilityAmount).toLocaleString()}`;
+    }
 
     window.currentQuoteCalcs = {
         total_net_cost: totalCostGlobal,
