@@ -205,7 +205,7 @@ window.editQuotation = async (id) => {
         { id: 'p' + Date.now(), name: q.name, quantity: q.quantity || 1 }
     ];
 
-    window.quotationItems = q.items.map(it => ({
+    window.quotationItems = (q.items || []).map(it => ({
         type: it.item_type || 'material',
         calculation_type: it.calculation_type || 'unit',
         linked_to: it.linked_to || 'general',
