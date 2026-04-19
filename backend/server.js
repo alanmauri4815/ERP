@@ -2997,6 +2997,32 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
     });
 });
 
+app.delete('/api/quotations/:id', authenticateToken, checkSuperAdmin, async (req, res) => {
+    const { id } = req.params;
+    console.log(`[DELETE] Request to delete Quotation #${id} by User ${req.user.id}`);
+
+    try {
+        // 1. Delete linked items first (FK constraint safety)
+        const { error: iError } = await supabase.from(T.QUOTE_ITEMS).delete().eq('quotation_id', id).eq('empresa_id', req.empresa_id);
+        if (iError) {
+            console.error('Delete Items Error:', iError);
+            throw iError;
+        }
+
+        // 2. Delete the quotation header
+        const { error: qError } = await supabase.from(T.QUOTATIONS).delete().eq('id', id).eq('empresa_id', req.empresa_id);
+        if (qError) {
+            console.error('Delete Header Error:', qError);
+            throw qError;
+        }
+
+        console.log(`[DELETE] Quotation #${id} removed successfully`);
+        res.json({ success: true, message: 'Cotización eliminada correctamente' });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // --- Accounting System Endpoints ---
 
 app.get('/api/accounting/accounts', authenticateToken, async (req, res) => {
@@ -3362,14 +3388,15 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
         if (items && items.length > 0) {
             const itemsWithId = items.map(item => ({
                 ...item,
-                quotation_id: quote.id
+                quotation_id: quote.id,
+                empresa_id: req.empresa_id // Explicitly set for RLS and consistency
             }));
             const { error: iError } = await supabase.from(T.QUOTE_ITEMS).insert(itemsWithId);
             if (iError) {
-                console.error('Items Error:', iError);
+                console.error('Items Insert Error:', iError);
                 throw iError;
             }
-            console.log('Items inserted successfully');
+            console.log(`[QUOTE] ${itemsWithId.length} items inserted for Quote #${quote.id}`);
         }
 
         res.json({ success: true, message: 'Cotización guardada exitosamente', id: quote.id });
@@ -3420,7 +3447,12 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
         }
 
         // 2. Replace Items (Delete then Insert)
-        const { error: dError } = await supabase.from(T.QUOTE_ITEMS).delete().eq('quotation_id', id);
+        // Ensure we delete only items belonging to this quote AND empresa for safety
+        const { error: dError } = await supabase.from(T.QUOTE_ITEMS)
+            .delete()
+            .eq('quotation_id', id)
+            .eq('empresa_id', req.empresa_id);
+
         if (dError) {
             console.error('Delete Items Error:', dError);
             throw dError;
@@ -3429,14 +3461,15 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
         if (items && items.length > 0) {
             const itemsWithId = items.map(item => ({
                 ...item,
-                quotation_id: id
+                quotation_id: id,
+                empresa_id: req.empresa_id // Explicitly set to avoid RLS/persistence issues
             }));
             const { error: iError } = await supabase.from(T.QUOTE_ITEMS).insert(itemsWithId);
             if (iError) {
-                console.error('Insert Items Error:', iError);
+                console.error('Update Items Insert Error:', iError);
                 throw iError;
             }
-            console.log('Items updated successfully');
+            console.log(`[QUOTE] ${itemsWithId.length} items updated for Quote #${id}`);
         }
 
         res.json({ success: true, message: 'Cotización actualizada exitosamente' });

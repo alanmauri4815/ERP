@@ -118,6 +118,9 @@ window.initializeQuotations = () => {
                                             <div style="display:flex; gap:0.3rem; justify-content:center; flex-wrap:wrap">
                                                 <button class="btn-sm" onclick="window.viewQuotation('${q.id}')">👁️ Ver</button>
                                                 ${status !== 'rejected' && status !== 'cancelled' ? `<button class="btn-sm" style="background:var(--accent)" onclick="window.editQuotation('${q.id}')">✏️</button>` : ''}
+                                                ${currentUser.role === 'superadmin' ? `
+                                                    <button class="btn-sm" style="background:#ef4444; color:white" onclick="window.deleteQuotation('${q.id}', '${q.name}')" title="Eliminar Cotización">🗑️</button>
+                                                ` : ''}
                                                 ${transitions.length > 0 ? `
                                                     <select onchange="if(this.value) window.changeQuoteStatus('${q.id}', this.value); this.value='';" style="padding:0.25rem 0.4rem; font-size:0.78rem; border-radius:6px; border:1px solid var(--border); background:var(--surface-light); color:var(--text); cursor:pointer; max-width:120px">
                                                         <option value="">⚡ Estado...</option>
@@ -666,5 +669,31 @@ window.onQuoteClientChange = (cid) => {
     if (client) {
         document.getElementById('quote-rut').value = client.rut || '';
         document.getElementById('quote-address').value = client.address || '';
+    }
+};
+
+window.deleteQuotation = async (id, name) => {
+    if (!confirm(`¿Estás seguro de que deseas eliminar definitivamente la cotización "${name || id}"?\n\nEsta acción NO se puede deshacer.`)) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/quotations/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('erp_token')}`
+            }
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            showNotification('Cotización eliminada correctamente', 'success');
+            // Refresh table
+            await window.loadQuotations();
+            window.navigate('quotations');
+        } else {
+            showNotification('Error al eliminar: ' + result.error, 'error');
+        }
+    } catch (err) {
+        console.error('Delete error:', err);
+        showNotification('Error de conexión al intentar eliminar', 'error');
     }
 };
