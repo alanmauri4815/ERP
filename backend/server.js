@@ -1567,6 +1567,7 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
             event_name: event_name || null,
             transferred: false,
             document_number: document_number || null,
+            document_type: document_type || 'boleta',
             paid_amount: auto_collect ? total : 0,
             payment_status: auto_collect ? 'pagado' : 'pendiente'
         };
@@ -1576,7 +1577,7 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
         // If some columns are missing, retry without them
         if (sError && sError.message.includes('column')) {
             console.warn("Retrying sale insert without extended columns...", sError.message);
-            const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, document_number: _dn, ...fallbackPayload } = payload;
+            const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, document_number: _dn, document_type: _dt, ...fallbackPayload } = payload;
             const retryReq = await supabase.from(T.SALES).insert({ ...fallbackPayload, empresa_id: req.empresa_id }).select().single();
             sale = retryReq.data;
             sError = retryReq.error;
@@ -1713,6 +1714,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
             machine_id: machine_id || null,
             event_name: event_name || null,
             document_number: document_number || null,
+            document_type: document_type || 'boleta',
             paid_amount: (payment_method && payment_method !== 'credit') ? total : 0,
             payment_status: (payment_method && payment_method !== 'credit') ? 'pagado' : 'pendiente'
         };
@@ -1721,7 +1723,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
 
         if (updateError && updateError.message.includes('column')) {
             console.warn("Retrying sale update without extended columns...", updateError.message);
-            const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, ...fallbackUpdate } = updatePayload;
+            const { category: _cat, quotation_id: _qid, commission: _comm, discount: _disc, document_type: _dt, ...fallbackUpdate } = updatePayload;
             const retryReq = await supabase.from(T.SALES).update(fallbackUpdate).eq('id', saleId).eq('empresa_id', req.empresa_id);
             updateError = retryReq.error;
         }
