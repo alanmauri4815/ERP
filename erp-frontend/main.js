@@ -5211,7 +5211,7 @@ function renderView(viewName) {
       const isSuperAdmin = currentUser?.role === 'superadmin';
       if (!isSuperAdmin) {
         for (const item of body.items) {
-          const productCode = item.product_code || item.description;
+          const productCode = item.productCode || item.description;
           let product = state.products.find(p => p.code?.toLowerCase() === productCode?.toLowerCase());
           
           // If not found, check if it's a project product [P-XXX]
