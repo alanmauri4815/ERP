@@ -2989,9 +2989,23 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
     if (itemsRes.error) return res.status(500).json({ error: itemsRes.error.message });
 
     const clientData = Array.isArray(quotation.clients) ? quotation.clients[0] : quotation.clients;
+    
+    // Ensure JSON fields are parsed if they come as strings
+    let productsList = quotation.products_list;
+    if (typeof productsList === 'string') {
+        try { productsList = JSON.parse(productsList); } catch (e) { productsList = []; }
+    }
+    
+    let images = quotation.images;
+    if (typeof images === 'string') {
+        try { images = JSON.parse(images); } catch (e) { images = []; }
+    }
+
     res.json({
         ...quotation,
         clients: clientData,
+        products_list: productsList || [],
+        images: images || [],
         items: itemsRes.data,
         related_sales: salesRes.data || [],
         related_purchases: purchasesRes.data || [],

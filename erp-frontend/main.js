@@ -4052,7 +4052,7 @@ window.viewQuotation = async (id) => {
                 <tbody>
                   ${(q.products_list || []).map(p => {
                     const quoted = p.quantity || 0;
-                    const code = p.id?.toLowerCase() || '';
+                    const code = (p.master_code || p.id)?.toLowerCase() || '';
                     const produced = producedQtyMap[code] || 0;
                     const diff = quoted - produced;
                     let status = '<span style="color:var(--success)">✅</span>';
