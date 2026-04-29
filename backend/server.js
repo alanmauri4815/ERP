@@ -314,13 +314,26 @@ app.get('/api/empresas', async (req, res) => {
 
 // --- Empresa Management (Solo Gestor del ERP / superadmin) ---
 app.get('/api/empresas/admin', authenticateToken, checkSuperAdmin, async (req, res) => {
-    const { data, error } = await supabase.from('empresas').select('*').order('nombre');
+    const { data: empresas, error } = await supabase.from('empresas').select('*').order('nombre');
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data || []);
+
+    // Fetch plan_categoria for all empresas
+    const { data: planes } = await supabase.from(T.SETTINGS).select('empresa_id, value').eq('key', 'plan_categoria');
+    const planMap = {};
+    if (planes) {
+        planes.forEach(p => { planMap[p.empresa_id] = p.value; });
+    }
+
+    const empresasConPlan = empresas.map(emp => ({
+        ...emp,
+        plan_categoria: planMap[emp.id] || 'completo'
+    }));
+
+    res.json(empresasConPlan || []);
 });
 
 app.post('/api/empresas', authenticateToken, checkSuperAdmin, async (req, res) => {
-    const { nombre, rut, direccion, telefono, email } = req.body;
+    const { nombre, rut, direccion, telefono, email, plan_categoria } = req.body;
     if (!nombre) return res.status(400).json({ error: 'El nombre de la empresa es obligatorio.' });
 
     try {
@@ -342,6 +355,9 @@ app.post('/api/empresas', authenticateToken, checkSuperAdmin, async (req, res) =
             console.warn('No se pudo crear usuario admin para la empresa:', userErr.message);
         }
 
+        const selectedPlan = plan_categoria || 'completo';
+        await supabase.from(T.SETTINGS).insert({ key: 'plan_categoria', value: selectedPlan, empresa_id: data.id });
+
         res.json({
             success: true,
             message: `Empresa "${nombre}" creada exitosamente. Usuario admin creado (contraseña: admin123).`,
@@ -353,11 +369,18 @@ app.post('/api/empresas', authenticateToken, checkSuperAdmin, async (req, res) =
 });
 
 app.put('/api/empresas/:id', authenticateToken, checkSuperAdmin, async (req, res) => {
-    const { nombre, rut, direccion, telefono, email, activa } = req.body;
+    const { nombre, rut, direccion, telefono, email, activa, plan_categoria } = req.body;
     const { error } = await supabase.from('empresas')
         .update({ nombre, rut, direccion, telefono, email, activa })
         .eq('id', req.params.id);
     if (error) return res.status(500).json({ error: error.message });
+
+    if (plan_categoria) {
+        // Upsert no es tan directo sin saber si existe, borramos e insertamos
+        await supabase.from(T.SETTINGS).delete().eq('key', 'plan_categoria').eq('empresa_id', req.params.id);
+        await supabase.from(T.SETTINGS).insert({ key: 'plan_categoria', value: plan_categoria, empresa_id: req.params.id });
+    }
+
     res.json({ success: true, message: 'Empresa actualizada.' });
 });
 
@@ -421,10 +444,12 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
             { expiresIn: '24h' }
         );
 
-        // Obtener nombre de la empresa
+        // Obtener nombre de la empresa y plan
         const { data: empresa } = await supabase.from('empresas').select('nombre').eq('id', userEmpresaId).single();
+        const { data: planData } = await supabase.from(T.SETTINGS).select('value').eq('key', 'plan_categoria').eq('empresa_id', userEmpresaId).single();
+        const plan_categoria = planData?.value || 'completo';
 
-        debugLog(`[LOGIN] SUCCESS: User "${username}" logged in. Empresa: ${empresa?.nombre}`);
+        debugLog(`[LOGIN] SUCCESS: User "${username}" logged in. Empresa: ${empresa?.nombre}, Plan: ${plan_categoria}`);
 
         res.json({
             success: true,
@@ -433,7 +458,8 @@ app.post('/api/auth/login', loginRateLimiter, async (req, res) => {
                 username: user.username,
                 role: user.role,
                 empresa_id: userEmpresaId,
-                empresa_nombre: empresa?.nombre || 'Empresa'
+                empresa_nombre: empresa?.nombre || 'Empresa',
+                plan_categoria
             }
         });
     } catch (e) {

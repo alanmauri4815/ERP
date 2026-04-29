@@ -146,6 +146,56 @@ let state = {
   hideProjectProducts: localStorage.getItem('erp_hide_projects') === 'true'
 };
 
+window.applyPlanRestrictions = function() {
+  if (!currentUser) return;
+  const plan = currentUser.plan_categoria || 'completo';
+  
+  const navFinanzas = document.getElementById('nav-group-finanzas');
+  const navInformes = document.getElementById('nav-group-informes');
+  
+  const navItemProduccion = document.querySelector('.nav-item[data-view="production"]');
+  const navItemCotizaciones = document.querySelector('.nav-item[data-view="quotations"]');
+  const navItemInformes = document.querySelector('.nav-item[data-view="reports"]');
+  const navItemLogistica = document.querySelector('.nav-item[data-view="logistics"]');
+  const navItemPipeline = document.querySelector('.nav-item[data-view="pipeline"]');
+  
+  if (plan === 'basico') {
+    if (navFinanzas) navFinanzas.style.display = 'none';
+    
+    // Ocultar partes complejas
+    if (navItemProduccion) navItemProduccion.style.display = 'none';
+    if (navItemCotizaciones) navItemCotizaciones.style.display = 'none';
+    if (navItemInformes) navItemInformes.style.display = 'none';
+    if (navItemLogistica) navItemLogistica.style.display = 'none';
+    if (navItemPipeline) navItemPipeline.style.display = 'none';
+
+    // Deshabilitar proyectos en compras y ventas
+    const purProjectGroup = document.getElementById('pur-project-group');
+    if (purProjectGroup) purProjectGroup.style.display = 'none';
+    const saleQuotationGroup = document.getElementById('sale-quotation-group');
+    if (saleQuotationGroup) saleQuotationGroup.style.display = 'none';
+
+    // Ocultar opciones pull
+    document.querySelectorAll('.pro-only-option').forEach(el => el.style.display = 'none');
+  } else {
+    // Restaurar si es completo
+    if (navFinanzas) navFinanzas.style.display = 'block';
+    
+    if (navItemProduccion) navItemProduccion.style.display = 'flex';
+    if (navItemCotizaciones) navItemCotizaciones.style.display = 'flex';
+    if (navItemInformes) navItemInformes.style.display = 'flex';
+    if (navItemLogistica) navItemLogistica.style.display = 'flex';
+    if (navItemPipeline) navItemPipeline.style.display = 'flex';
+
+    // Restaurar opciones y grupos PULL
+    const purProjectGroup = document.getElementById('pur-project-group');
+    if (purProjectGroup) purProjectGroup.style.display = 'block';
+    const saleQuotationGroup = document.getElementById('sale-quotation-group');
+    if (saleQuotationGroup) saleQuotationGroup.style.display = 'block';
+    document.querySelectorAll('.pro-only-option').forEach(el => el.style.display = 'block');
+  }
+};
+
 window.toggleHideProjects = (val) => {
   state.hideProjectProducts = val;
   localStorage.setItem('erp_hide_projects', val);
@@ -255,6 +305,10 @@ async function fetchData() {
     state.ledger = state.accounting.asientos;
 
     const activeView = document.querySelector('.nav-item.active')?.dataset.view || 'dashboard';
+    
+    // Aplicar restricciones del plan
+    window.applyPlanRestrictions();
+    
     renderView(activeView);
   } catch (error) {
     console.error('Error fetching data:', error);
@@ -673,7 +727,7 @@ const views = {
               <label style="font-weight: 600; color: var(--text)">Categoría de Compra</label>
               <select id="pur-category" onchange="window.togglePurCategory()" style="font-size: 1rem">
                 <option value="general">📦 General (sin producción específica)</option>
-                <option value="pull">🔄 Pull (de cotización ganada)</option>
+                <option value="pull" class="pro-only-option">🔄 Pull (de cotización ganada)</option>
                 <option value="push">🚀 Push (para fabricar y vender)</option>
                 <option value="comercializacion">🏪 Comercialización (reventa)</option>
               </select>
@@ -867,7 +921,7 @@ const views = {
             <label>Categoría (PUSH/PULL)</label>
             <select id="sale-category" onchange="window.toggleSaleCategory()">
               <option value="push">PUSH (Venta Directa/Stock)</option>
-              <option value="pull">PULL (Cotización/Encargo)</option>
+              <option value="pull" class="pro-only-option">PULL (Cotización/Encargo)</option>
             </select>
           </div>
         </div>
@@ -1547,6 +1601,7 @@ const views = {
               <th>Nombre</th>
               <th>RUT</th>
               <th>Email</th>
+              <th>Plan</th>
               <th>Estado</th>
               <th>Acción</th>
             </tr>
@@ -1584,6 +1639,13 @@ const views = {
           <div class="form-group">
             <label>Email</label>
             <input type="email" id="empresa-email" placeholder="contacto@empresa.cl">
+          </div>
+          <div class="form-group">
+            <label>Plan de Suscripción (SaaS)</label>
+            <select id="empresa-plan">
+              <option value="completo">Plan Completo (Pro)</option>
+              <option value="basico">Plan Básico (Micro/Artesano)</option>
+            </select>
           </div>
           <div class="form-group">
             <label>Dirección</label>
@@ -5760,6 +5822,7 @@ function renderView(viewName) {
             <td><strong>${e.nombre}</strong></td>
             <td>${e.rut || '-'}</td>
             <td>${e.email || '-'}</td>
+            <td><span class="badge ${e.plan_categoria === 'basico' ? 'badge-warning' : 'badge-primary'}" style="background:${e.plan_categoria === 'basico' ? '#f59e0b' : '#3b82f6'}; color:#fff">${e.plan_categoria === 'basico' ? 'Básico' : 'Pro'}</span></td>
             <td><span class="badge ${e.activa ? 'badge-success' : 'badge-danger'}">${e.activa ? 'Activa' : 'Inactiva'}</span></td>
             <td>
               <button class="btn-sm" onclick="window.editEmpresa(${e.id})">✏️</button>
@@ -5781,6 +5844,7 @@ function renderView(viewName) {
         document.getElementById('empresa-rut').value = '';
         document.getElementById('empresa-telefono').value = '';
         document.getElementById('empresa-email').value = '';
+        document.getElementById('empresa-plan').value = 'completo';
         document.getElementById('empresa-direccion').value = '';
         document.getElementById('empresa-modal-title').textContent = 'Nueva Empresa';
         document.getElementById('empresa-modal').style.display = 'flex';
@@ -5794,6 +5858,7 @@ function renderView(viewName) {
         document.getElementById('empresa-rut').value = e.rut || '';
         document.getElementById('empresa-telefono').value = e.telefono || '';
         document.getElementById('empresa-email').value = e.email || '';
+        document.getElementById('empresa-plan').value = e.plan_categoria || 'completo';
         document.getElementById('empresa-direccion').value = e.direccion || '';
         document.getElementById('empresa-modal-title').textContent = 'Editar Empresa';
         document.getElementById('empresa-modal').style.display = 'flex';
@@ -5820,7 +5885,8 @@ function renderView(viewName) {
           rut: document.getElementById('empresa-rut').value,
           direccion: document.getElementById('empresa-direccion').value,
           telefono: document.getElementById('empresa-telefono').value,
-          email: document.getElementById('empresa-email').value
+          email: document.getElementById('empresa-email').value,
+          plan_categoria: document.getElementById('empresa-plan').value
         };
 
         let result;
