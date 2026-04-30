@@ -518,10 +518,41 @@ const views = {
             </div>
           </div>
           
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05)">
+          <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05)">
             <div class="form-group" style="margin:0">
-              <label style="font-weight: 600; color: var(--accent)">📦 Costo Materiales / Insumos ($)</label>
+              <label style="font-weight: 600; color: var(--accent)">📦 Costo MP / Insumos ($)</label>
               <input type="number" id="prod-material-cost" value="0" style="border-color: var(--accent)44">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600; color: var(--primary)">🧵 Mano de Obra / Confecc. ($)</label>
+              <input type="number" id="prod-labor-cost" value="0" style="border-color: var(--primary)44" oninput="document.getElementById('mo-details-group').style.display = (parseFloat(this.value) > 0 ? 'block' : 'none')">
+            </div>
+            </div>
+            <div id="mo-details-group" style="grid-column: span 3; display: none; background: rgba(var(--primary-rgb), 0.03); padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(var(--primary-rgb), 0.1); margin-top: 0.5rem">
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem">
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:0.8rem; opacity:0.8">Tipo Pago MO</label>
+                  <select id="prod-mo-subcontracted" style="font-size:0.9rem">
+                    <option value="direct">Interno / Directo</option>
+                    <option value="subcontracted">Subcontratado (Externo)</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:0.8rem; opacity:0.8">Documento MO</label>
+                  <select id="prod-mo-doc-type" style="font-size:0.9rem">
+                    <option value="none">Sin Documento</option>
+                    <option value="boleta">Boleta de Honorarios</option>
+                    <option value="factura">Factura de Servicios</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:0.8rem; opacity:0.8">Estado Pago MO</label>
+                  <select id="prod-mo-status" style="font-size:0.9rem">
+                    <option value="paid">✅ Pagado</option>
+                    <option value="due">⏳ Por Pagar</option>
+                  </select>
+                </div>
+              </div>
             </div>
             <div class="form-group" style="margin:0">
               <label style="font-weight: 600; color: var(--warning)">⚙️ Gastos Generales / Varios ($)</label>
@@ -1830,6 +1861,13 @@ const views = {
               ${state.pendingLogistics.map(p => `
                 <tr>
                   <td>${p.date ? p.date.split('T')[0] : '-'}</td>
+                <td>
+                  ${(() => {
+                    const q = p.quotation_id ? state.quotations.find(quote => quote.id == p.quotation_id) : null;
+                    const cName = q?.clients?.name || q?.name || p.client_name || '-';
+                    return `<strong>${cName}</strong>`;
+                  })()}
+                </td>
                   <td>
                     <span class="badge ${p.type === 'inbound' ? 'badge-success' : 'badge-warning'}">
                       ${p.type === 'inbound' ? '⬇️ ENTRADA' : '⬆️ SALIDA'}
@@ -2119,6 +2157,7 @@ function renderHistoryTable(type) {
           <tr>
             <th>ID</th>
             <th>Fecha</th>
+            <th>Cliente / Origen</th>
             <th>Método / Proyecto</th>
             <th style="text-align: center">Cant.</th>
             <th style="text-align: right">Costo M.O.</th>
@@ -2142,7 +2181,7 @@ function renderHistoryTable(type) {
             else if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
           }
           return sum + (cost * (it.quantity || 0));
-      }, 0);
+      }, 0) + (p.labor_cost || 0);
       const totalMP = itList.reduce((sum, it) => {
           const pm = state.products.find(prod => prod.code === it.product_code);
           const rm = state.rawMaterials.find(m => m.code === it.product_code);
@@ -2944,6 +2983,13 @@ window.openProductionModal = (code) => {
   mtos.forEach(m => m.value = '0');
 
   if (document.getElementById('prod-material-cost')) document.getElementById('prod-material-cost').value = '0';
+  if (document.getElementById('prod-labor-cost')) {
+    document.getElementById('prod-labor-cost').value = '0';
+    document.getElementById('mo-details-group').style.display = 'none';
+  }
+  if (document.getElementById('prod-mo-subcontracted')) document.getElementById('prod-mo-subcontracted').value = 'direct';
+  if (document.getElementById('prod-mo-doc-type')) document.getElementById('prod-mo-doc-type').value = 'none';
+  if (document.getElementById('prod-mo-status')) document.getElementById('prod-mo-status').value = 'paid';
   if (document.getElementById('prod-general-expenses')) document.getElementById('prod-general-expenses').value = '0';
 
   if (code) {
@@ -2966,7 +3012,26 @@ window.editProduction = (id) => {
   document.getElementById('prod-edit-mode').value = 'true';
   document.getElementById('prod-edit-id').value = id;
   document.getElementById('prod-date').value = production.date.split('T')[0];
+  
+  const catSelect = document.getElementById('prod-category');
+  const quoteSelect = document.getElementById('prod-quotation');
+  
+  if (catSelect) {
+    catSelect.value = production.production_category || 'push';
+    window.toggleProdCategory(); 
+  }
+  if (quoteSelect) {
+    quoteSelect.value = production.quotation_id || '';
+  }
   if (document.getElementById('prod-material-cost')) document.getElementById('prod-material-cost').value = production.material_cost || 0;
+  if (document.getElementById('prod-labor-cost')) {
+    const lval = production.labor_cost || 0;
+    document.getElementById('prod-labor-cost').value = lval;
+    document.getElementById('mo-details-group').style.display = (lval > 0 ? 'block' : 'none');
+  }
+  if (document.getElementById('prod-mo-subcontracted')) document.getElementById('prod-mo-subcontracted').value = production.mo_subcontracted || 'direct';
+  if (document.getElementById('prod-mo-doc-type')) document.getElementById('prod-mo-doc-type').value = production.mo_doc_type || 'none';
+  if (document.getElementById('prod-mo-status')) document.getElementById('prod-mo-status').value = production.mo_status || 'paid';
   if (document.getElementById('prod-general-expenses')) document.getElementById('prod-general-expenses').value = production.general_expenses || 0;
 
   const rows = modal.querySelectorAll('#production-items-body .item-row');
@@ -3945,7 +4010,11 @@ window.viewQuotation = async (id) => {
       const totalRealPurchase = (q.related_purchases || []).reduce((sum, p) => sum + (p.total || 0), 0);
       const totalRealSales = (q.related_sales || []).reduce((sum, s) => sum + (s.total || 0), 0);
 
-      const totalProductionCosts = (q.related_productions || []).reduce((sum, pr) => sum + (pr.material_cost || 0) + (pr.general_expenses || 0), 0);
+      const totalProductionCosts = (q.related_productions || []).reduce((sum, pr) => {
+        const itemMP = (pr.items || []).reduce((s, it) => s + ((parseFloat(it.mp_cost) || 0) * (parseFloat(it.quantity) || 0)), 0);
+        const itemMO = (pr.items || []).reduce((s, it) => s + ((parseFloat(it.mo_cost) || 0) * (parseFloat(it.quantity) || 0)), 0);
+        return sum + itemMP + itemMO + (parseFloat(pr.material_cost) || 0) + (parseFloat(pr.labor_cost) || 0) + (parseFloat(pr.general_expenses) || 0);
+      }, 0);
 
       // Map production quantities by product code
       const producedQtyMap = {};
@@ -3976,18 +4045,22 @@ window.viewQuotation = async (id) => {
 
       tableHtml = `
         <div class="circuit-monitoring animate-fade">
-          <div class="grid-3" style="gap: 1.5rem; margin-bottom: 2rem">
+          <div class="grid-4" style="gap: 1.5rem; margin-bottom: 2rem">
             <div class="card" style="border-left: 4px solid var(--secondary)">
               <small style="opacity:0.7">Presupuesto (Costo Estimado)</small>
-              <div style="font-size:1.5rem; font-weight:700">$ ${Math.round(totalEstimatedCost).toLocaleString()}</div>
+              <div style="font-size:1.3rem; font-weight:700">$ ${Math.round(totalEstimatedCost).toLocaleString()}</div>
+            </div>
+            <div class="card" style="border-left: 4px solid var(--primary)">
+              <small style="opacity:0.7">Costo Producción (Real)</small>
+              <div style="font-size:1.3rem; font-weight:700">$ ${Math.round(totalProductionCosts).toLocaleString()}</div>
             </div>
             <div class="card" style="border-left: 4px solid var(--accent)">
               <small style="opacity:0.7">Gasto Real (Compras)</small>
-              <div style="font-size:1.5rem; font-weight:700">$ ${Math.round(totalRealPurchase).toLocaleString()}</div>
+              <div style="font-size:1.3rem; font-weight:700">$ ${Math.round(totalRealPurchase).toLocaleString()}</div>
             </div>
             <div class="card" style="border-left: 4px solid var(--success)">
               <small style="opacity:0.7">Ingreso Real (Ventas)</small>
-              <div style="font-size:1.5rem; font-weight:700">$ ${Math.round(totalRealSales).toLocaleString()}</div>
+              <div style="font-size:1.3rem; font-weight:700">$ ${Math.round(totalRealSales).toLocaleString()}</div>
             </div>
           </div>
 
@@ -5537,6 +5610,17 @@ function renderView(viewName) {
                   }
                 });
 
+                // Sumar toda la mano de obra suelta de la cotización
+                const extraLabor = quote.items
+                  .filter(it => it.item_type === 'labor' || it.item_type === 'mo' || it.type === 'MO')
+                  .reduce((sum, it) => sum + (parseFloat(it.total_cost) || (parseFloat(it.unit_cost) * parseFloat(it.quantity)) || 0), 0);
+                
+                const laborInput = document.getElementById('prod-labor-cost');
+                if (laborInput) {
+                  laborInput.value = Math.round(extraLabor);
+                  document.getElementById('mo-details-group').style.display = (extraLabor > 0 ? 'block' : 'none');
+                }
+
                 // Store full list for summary
                 window.currentProductionItems = quote.items;
                 window.updateProductionDatalist(quote); // Pass full quote object
@@ -5624,6 +5708,10 @@ function renderView(viewName) {
           production_category: document.getElementById('prod-category')?.value || 'push',
           quotation_id: document.getElementById('prod-quotation')?.value || null,
           material_cost: parseFloat(document.getElementById('prod-material-cost')?.value || 0),
+          labor_cost: parseFloat(document.getElementById('prod-labor-cost')?.value || 0),
+          mo_subcontracted: document.getElementById('prod-mo-subcontracted')?.value || 'direct',
+          mo_doc_type: document.getElementById('prod-mo-doc-type')?.value || 'none',
+          mo_status: document.getElementById('prod-mo-status')?.value || 'paid',
           general_expenses: parseFloat(document.getElementById('prod-general-expenses')?.value || 0)
         };
 
