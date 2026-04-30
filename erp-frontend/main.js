@@ -4686,7 +4686,13 @@ function renderView(viewName) {
       viewer: ['dashboard', 'reports', 'history', 'profile'] // El "Externo" que solo revisa informes
     };
 
-    const allowedViews = permissions[userRole] || permissions['user'];
+    let allowedViews = permissions[userRole] || permissions['user'];
+
+    // Remover vistas restringidas para el plan básico
+    if (currentUser?.plan_categoria === 'basico') {
+      const restrictedViews = ['production', 'quotations', 'reports', 'logistics', 'pipeline', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'];
+      allowedViews = allowedViews.filter(v => !restrictedViews.includes(v));
+    }
 
     navItems.forEach(item => {
       const view = item.dataset.view;
@@ -4725,6 +4731,10 @@ function renderView(viewName) {
       if (group) group.classList.add('open');
     }
   });
+
+  if (typeof window.applyPlanRestrictions === 'function') {
+    window.applyPlanRestrictions();
+  }
 
   // --- Branding Dinámico v2.2 ---
   function forceBranding() {
