@@ -2988,22 +2988,19 @@ window.editProduction = async (id) => {
     catSelect.value = production.production_category || 'push';
   }
 
-  // Restore quotation association and trigger UI update
+  // Show/hide the project group UI without triggering onchange
   const quoteSelect = document.getElementById('prod-quotation');
-  if (production.production_category === 'pull' && production.quotation_id) {
-    // Show the project group and set the quotation
+  if (production.production_category === 'pull') {
     if (window.toggleProdCategory) await window.toggleProdCategory();
-    if (quoteSelect) {
+    if (quoteSelect && production.quotation_id) {
       quoteSelect.value = production.quotation_id;
-      // Trigger loading of quotation items for MO costs
-      if (quoteSelect.onchange) await quoteSelect.onchange();
     }
   } else {
     if (window.toggleProdCategory) await window.toggleProdCategory();
   }
 
+  // 1. Reset ALL rows first
   const rows = modal.querySelectorAll('#production-items-body .item-row');
-  // Reset all rows
   rows.forEach(row => {
     row.querySelector('.prod-item-code').value = '';
     row.querySelector('.prod-item-qty').value = '0';
@@ -3011,24 +3008,102 @@ window.editProduction = async (id) => {
     row.querySelector('.prod-item-mo').value = '0';
   });
 
-  // Fill data from saved production items
+  // 2. Fill from saved production items
   production.items.forEach((item, i) => {
     if (rows[i]) {
       rows[i].querySelector('.prod-item-code').value = item.product_code;
       rows[i].querySelector('.prod-item-qty').value = item.quantity;
       rows[i].querySelector('.prod-item-mp').value = item.material_cost || 0;
-
-      // For MO cost: use saved value first, fallback to product master labor_cost
-      let moCost = item.mo_cost || 0;
-      if (moCost === 0) {
-        const masterProd = state.products.find(p => p.code === item.product_code);
-        if (masterProd && masterProd.labor_cost) {
-          moCost = masterProd.labor_cost;
-        }
-      }
-      rows[i].querySelector('.prod-item-mo').value = moCost;
+      rows[i].querySelector('.prod-item-mo').value = item.mo_cost || 0;
     }
   });
+
+  // 3. For PULL: fetch the quotation to supplement missing costs
+  if (production.production_category === 'pull' && production.quotation_id) {
+    try {
+      const quote = await apiFetch(`/quotations/${production.quotation_id}`);
+      if (quote && quote.items) {
+        // Store for summary panel
+        window.currentProductionItems = quote.items;
+        window.updateProductionDatalist(quote);
+
+        // Calculate total labor cost from quotation labor items
+        const laborItems = quote.items.filter(it => 
+          it.item_type === 'labor' || it.item_type === 'MO' || it.item_type === 'mano_de_obra'
+        );
+        const totalLaborFromQuote = laborItems.reduce((sum, it) => {
+          return sum + (parseFloat(it.total_cost) || (parseFloat(it.unit_cost || 0) * parseFloat(it.quantity || 1)));
+        }, 0);
+
+        // Calculate total material cost from quotation material items
+        const materialItems = quote.items.filter(it => it.item_type === 'material');
+        const totalMaterialFromQuote = materialItems.reduce((sum, it) => {
+          return sum + (parseFloat(it.total_cost) || (parseFloat(it.unit_cost || 0) * parseFloat(it.quantity || 1)));
+        }, 0);
+
+        // Get sellable items from quote to match with production rows
+        const quoteProducts = quote.items.filter(it => 
+          it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type
+        );
+        const totalProductQty = quoteProducts.reduce((sum, it) => sum + (parseFloat(it.quantity) || 1), 0);
+
+        // Supplement each production row with costs from quotation
+        production.items.forEach((item, i) => {
+          if (!rows[i]) return;
+          const mpInput = rows[i].querySelector('.prod-item-mp');
+          const moInput = rows[i].querySelector('.prod-item-mo');
+          const currentMP = parseFloat(mpInput.value) || 0;
+          const currentMO = parseFloat(moInput.value) || 0;
+
+          // Find matching quote product for this item
+          const matchingQuoteItem = quoteProducts.find(qi => 
+            (qi.item_code === item.product_code) || (qi.description === item.product_code)
+          );
+
+          // Supplement MP cost if currently 0
+          if (currentMP === 0) {
+            if (matchingQuoteItem) {
+              mpInput.value = matchingQuoteItem.unit_cost || matchingQuoteItem.cost_unit || 0;
+            } else {
+              const masterProd = state.products.find(p => p.code === item.product_code);
+              if (masterProd) mpInput.value = masterProd.cost_unit || 0;
+            }
+          }
+
+          // Supplement MO cost if currently 0
+          if (currentMO === 0) {
+            if (matchingQuoteItem && (matchingQuoteItem.labor_cost || matchingQuoteItem.mo_cost)) {
+              moInput.value = matchingQuoteItem.labor_cost || matchingQuoteItem.mo_cost;
+            } else if (totalLaborFromQuote > 0 && totalProductQty > 0) {
+              // Distribute total labor proportionally
+              moInput.value = Math.round(totalLaborFromQuote / totalProductQty);
+            } else {
+              const masterProd = state.products.find(p => p.code === item.product_code);
+              if (masterProd && masterProd.labor_cost) moInput.value = masterProd.labor_cost;
+            }
+          }
+        });
+      }
+    } catch (e) {
+      console.error('Error loading quotation for edit:', e);
+    }
+  } else {
+    // For PUSH: supplement MO from product master
+    production.items.forEach((item, i) => {
+      if (!rows[i]) return;
+      const moInput = rows[i].querySelector('.prod-item-mo');
+      const mpInput = rows[i].querySelector('.prod-item-mp');
+      const currentMO = parseFloat(moInput.value) || 0;
+      const currentMP = parseFloat(mpInput.value) || 0;
+      const masterProd = state.products.find(p => p.code === item.product_code);
+      if (currentMO === 0 && masterProd && masterProd.labor_cost) {
+        moInput.value = masterProd.labor_cost;
+      }
+      if (currentMP === 0 && masterProd && masterProd.cost_unit) {
+        mpInput.value = masterProd.cost_unit;
+      }
+    });
+  }
 
   // Re-calculate totals
   if (window.updateProdRecipeView) window.updateProdRecipeView();
