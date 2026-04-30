@@ -562,12 +562,7 @@ const views = {
                     <option value="due">⏳ Por Pagar</option>
                   </select>
                 </div>
-              </div>
-            </div>
-          </div>
-            </div>
-          </div>
-          </div>
+                        </div>
         </div>
 
         <table class="item-table">
@@ -5598,7 +5593,12 @@ function renderView(viewName) {
 
                 // Filter items that are "producto" or "venta" (not material/labor)
                 // In Ross ERP, we usually want to produce what we are selling.
-                const itemsToProduce = quote.items.filter(it => it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type);
+                // En PULL, filtramos solo los productos a fabricar (no MP ni MO suelta)
+                const itemsToProduce = quote.items.filter(it => 
+                  it.item_type === 'venta' || 
+                  it.item_type === 'producto' || 
+                  (it.type !== 'MP' && it.type !== 'MO' && it.item_type !== 'material' && it.item_type !== 'labor')
+                );
 
                 itemsToProduce.forEach((item, idx) => {
                   if (rows[idx]) {
