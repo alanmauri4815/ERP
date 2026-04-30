@@ -5631,49 +5631,78 @@ function renderView(viewName) {
                   r.querySelector('.prod-item-mo').value = '0';
                 });
 
-                // Filter items that are "producto" or "venta" (not material/labor)
-                // In Ross ERP, we usually want to produce what we are selling.
-                const itemsToProduce = quote.items.filter(it => it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type);
+
+
+                const quoteProductsList = quote.products_list || [];
+                
+                // Also get sellable items from analysis
+                const itemsToProduce = quoteProductsList.length > 0
+                  ? quoteProductsList
+                  : quote.items.filter(it => it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type);
 
                 // Calculate total labor cost from quotation labor items
                 const laborItems = quote.items.filter(it => it.item_type === 'labor' || it.item_type === 'MO' || it.item_type === 'mano_de_obra');
                 const totalLaborFromQuote = laborItems.reduce((sum, it) => {
                   return sum + (parseFloat(it.total_cost) || (parseFloat(it.unit_cost || 0) * parseFloat(it.quantity || 1)));
                 }, 0);
+                
+                // Calculate total material cost from quotation material items
+                const materialItems = quote.items.filter(it => it.item_type === 'material');
+                const totalMaterialFromQuote = materialItems.reduce((sum, it) => {
+                  return sum + (parseFloat(it.total_cost) || (parseFloat(it.unit_cost || 0) * parseFloat(it.quantity || 1)));
+                }, 0);
 
-                // Distribute labor cost proportionally across products
                 const totalProductQty = itemsToProduce.reduce((sum, it) => sum + (parseFloat(it.quantity) || 1), 0);
 
                 itemsToProduce.forEach((item, idx) => {
                   if (rows[idx]) {
-                    const codeInput = rows[idx].querySelector('.prod-item-code');
+                    const codeSelect = rows[idx].querySelector('.prod-item-code');
                     const qtyInput = rows[idx].querySelector('.prod-item-qty');
                     const mpInput = rows[idx].querySelector('.prod-item-mp');
                     const moInput = rows[idx].querySelector('.prod-item-mo');
 
-                    codeInput.value = item.item_code || item.description || '';
-                    qtyInput.value = item.quantity || 1;
-
-                    // Búsqueda inteligente de costos (Cotización o Maestro)
-                    const masterProd = state.products.find(p => p.code === (item.item_code || item.description));
-                    const unit_cost = item.unit_cost || item.cost_unit || masterProd?.cost_unit || 0;
-
-                    // MO cost: from item itself, from product master, or distributed from quotation labor items
-                    let labor_cost = item.labor_cost || item.mo_cost || masterProd?.labor_cost || 0;
-                    if (labor_cost === 0 && totalLaborFromQuote > 0 && totalProductQty > 0) {
-                      // Distribute total labor proportionally by quantity
-                      const itemQty = parseFloat(item.quantity) || 1;
-                      labor_cost = Math.round((totalLaborFromQuote / totalProductQty) * itemQty / itemQty); // per-unit MO
+                    // Use code if available (new flow), fallback to item_code/name
+                    const productCode = item.code || item.item_code || item.description || '';
+                    
+                    // Check if product exists in dropdown options
+                    const existsInDropdown = Array.from(codeSelect.options).some(opt => opt.value === productCode);
+                    
+                    if (existsInDropdown) {
+                      codeSelect.value = productCode;
+                    } else if (productCode) {
+                      // Add as temporary option so user can see it
+                      const opt = document.createElement('option');
+                      opt.value = productCode;
+                      opt.textContent = `⚠️ ${productCode} | ${item.name || item.description || ''} (no inventariado)`;
+                      codeSelect.appendChild(opt);
+                      codeSelect.value = productCode;
                     }
 
-                    mpInput.value = unit_cost;
+                    qtyInput.value = item.quantity || 1;
+
+                    // Costs from product master
+                    const masterProd = state.products.find(p => p.code === productCode);
+                    const unit_cost = masterProd?.cost_unit || item.unit_cost || item.cost_unit || 0;
+
+                    // MO cost: from product master, or distributed from quotation labor items
+                    let labor_cost = masterProd?.labor_cost || item.labor_cost || item.mo_cost || 0;
+                    if (labor_cost === 0 && totalLaborFromQuote > 0 && totalProductQty > 0) {
+                      labor_cost = Math.round(totalLaborFromQuote / totalProductQty);
+                    }
+
+                    // MP cost: from product master, or distributed from quotation material items
+                    let mp_cost = unit_cost;
+                    if (mp_cost === 0 && totalMaterialFromQuote > 0 && totalProductQty > 0) {
+                      mp_cost = Math.round(totalMaterialFromQuote / totalProductQty);
+                    }
+
+                    mpInput.value = mp_cost;
                     moInput.value = labor_cost;
                   }
                 });
 
                 // Store full list for summary
                 window.currentProductionItems = quote.items;
-                window.updateProductionDatalist(quote); // Pass full quote object
                 window.updateProdRecipeView();
                 window.updateProdTotals();
               }

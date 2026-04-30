@@ -201,9 +201,20 @@ window.editQuotation = async (id) => {
     document.getElementById('quote-utility').value = q.utility_percentage || 0;
     document.getElementById('quote-budget').value = q.budget || 0;
 
-    window.quotationProducts = q.products_list || [
+    window.quotationProducts = (q.products_list || [
         { id: 'p' + Date.now(), name: q.name, quantity: q.quantity || 1 }
-    ];
+    ]).map(p => {
+        // Backward compat: if no code, try to find product by name
+        if (!p.code && p.name) {
+            const match = state.products.find(pr => 
+                pr.name === p.name || 
+                pr.code === p.name ||
+                (pr.name && p.name && pr.name.toLowerCase().includes(p.name.toLowerCase()))
+            );
+            if (match) p.code = match.code;
+        }
+        return { ...p, code: p.code || '' };
+    });
 
     window.quotationItems = (q.items || []).map(it => ({
         type: it.item_type || 'material',
@@ -622,7 +633,7 @@ window.removeQuoteImage = (idx) => {
 };
 
 window.addQuotationProduct = () => {
-    window.quotationProducts.push({ id: 'p' + Date.now(), name: '', quantity: 1 });
+    window.quotationProducts.push({ id: 'p' + Date.now(), name: '', code: '', quantity: 1 });
     window.renderQuotationProducts();
     window.renderQuotationItems();
     window.calculateQuotation();
@@ -631,13 +642,90 @@ window.addQuotationProduct = () => {
 window.renderQuotationProducts = () => {
     const container = document.getElementById('quote-products-list');
     if (!container) return;
+    
+    const productOptions = state.products
+        .slice()
+        .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        .map(p => `<option value="${p.code}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>`)
+        .join('');
+
     container.innerHTML = window.quotationProducts.map((p, index) => `
-        <div style="display:flex; gap:0.5rem; align-items:center">
-            <input type="text" class="form-input-sm" placeholder="Nombre Producto" value="${p.name}" style="flex:2" oninput="window.updateQuotationProduct(${index}, 'name', this.value)">
-            <input type="number" class="form-input-sm" placeholder="Cant" value="${p.quantity}" style="width:100px" oninput="window.updateQuotationProduct(${index}, 'quantity', this.value)">
-            <button class="btn-sm" onclick="window.removeQuotationProduct(${index})" style="background:none; color:var(--danger)">✕</button>
+        <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.4rem">
+            <select class="form-input-sm" style="flex:2" onchange="window.onQuoteProductSelect(${index}, this.value)">
+                <option value="">-- Seleccione producto --</option>
+                ${productOptions}
+                ${p.code && !state.products.find(pr => pr.code === p.code) ? `<option value="${p.code}" selected>⚠️ ${p.code} | ${p.name} (no inventariado)</option>` : ''}
+            </select>
+            <input type="number" class="form-input-sm" placeholder="Cant" value="${p.quantity}" style="width:80px" oninput="window.updateQuotationProduct(${index}, 'quantity', this.value)">
+            <button type="button" class="btn-sm" onclick="window.quickCreateQuoteProduct(${index})" title="Crear producto nuevo" style="padding:0.2rem 0.5rem; font-size:0.9rem; background:var(--secondary); flex-shrink:0">+</button>
+            <button class="btn-sm" onclick="window.removeQuotationProduct(${index})" style="background:none; color:var(--danger); flex-shrink:0">✕</button>
         </div>
     `).join('');
+
+    // Set selected values after render
+    const selects = container.querySelectorAll('select');
+    window.quotationProducts.forEach((p, i) => {
+        if (selects[i] && p.code) {
+            selects[i].value = p.code;
+        }
+    });
+};
+
+window.onQuoteProductSelect = (index, code) => {
+    const prod = state.products.find(p => p.code === code);
+    if (prod) {
+        window.quotationProducts[index].code = prod.code;
+        window.quotationProducts[index].name = prod.name + (prod.color ? ' (' + prod.color + ')' : '') + (prod.size ? ' [' + prod.size + ']' : '');
+    } else {
+        window.quotationProducts[index].code = '';
+        window.quotationProducts[index].name = '';
+    }
+    window.renderQuotationItems();
+    window.calculateQuotation();
+};
+
+window.quickCreateQuoteProduct = async (index) => {
+    const code = prompt('Código del nuevo producto:\n(Ej: MAN-001, FUNDA-AZ, etc.)');
+    if (!code || !code.trim()) return;
+
+    const name = prompt('Nombre del producto:\n(Ej: Mantel Azul Spandex)');
+    if (!name || !name.trim()) return;
+
+    const laborStr = prompt('Costo Mano de Obra unitario ($):\n(0 si no aplica)', '0');
+    const laborCost = parseFloat(laborStr) || 0;
+
+    try {
+        const res = await apiFetch('/products', {
+            method: 'POST',
+            body: JSON.stringify({
+                code: code.trim().toUpperCase(),
+                name: name.trim(),
+                type: 'terminado',
+                price_sale: 0,
+                cost_unit: 0,
+                labor_cost: laborCost
+            })
+        });
+
+        if (res && res.success) {
+            const newProd = { code: code.trim().toUpperCase(), name: name.trim(), type: 'terminado', stock: 0, cost_unit: 0, labor_cost: laborCost };
+            state.products.push(newProd);
+
+            // Assign to this quotation product slot
+            window.quotationProducts[index].code = newProd.code;
+            window.quotationProducts[index].name = newProd.name;
+
+            window.renderQuotationProducts();
+            window.renderQuotationItems();
+            window.calculateQuotation();
+
+            alert(`✅ Producto "${newProd.code} | ${newProd.name}" creado e inventariado.`);
+        } else {
+            alert('Error: ' + (res?.error || 'No se pudo crear'));
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
 };
 
 window.updateQuotationProduct = (index, field, value) => {
