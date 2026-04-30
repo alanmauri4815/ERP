@@ -587,7 +587,7 @@ const views = {
         <div class="form-group" style="margin-bottom: 0; min-width: 200px">
           <label style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; display: block">Tipo de Registro</label>
           <select onchange="window.updatePurchaseFilters('type', this.value)" style="padding: 0.6rem; border-radius: 8px; background: var(--surface-light); border: 1px solid var(--border); color: var(--text); width: 100%">
-            <option value="all" ${state.purchaseFilters.type === 'all' ? 'selected' : ''}>­ƒôæ Todos los registros</option>
+            <option value="all" ${state.purchaseFilters.type === 'all' ? 'selected' : ''}>📦 Todos los registros</option>
             <option value="mp" ${state.purchaseFilters.type === 'mp' ? 'selected' : ''}>📦 Insumos (Inventariable)</option>
             <option value="expense" ${state.purchaseFilters.type === 'expense' ? 'selected' : ''}>💸 Gasto / Caja Chica</option>
           </select>
@@ -1083,7 +1083,7 @@ const views = {
                     <div style="font-size:0.75rem; font-style:italic; max-width:180px">${c.notes || '-'}</div>
                     <div style="display:flex; gap:0.3rem">
                       <button class="btn-sm" onclick="window.editClient('${c.id}')">📝</button>
-                      <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteClient('${c.id}')">­ƒùæ´©Å</button>
+                      <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteClient('${c.id}')">🗑️</button>
                     </div>
                   </div>
                 </td>
@@ -1143,7 +1143,7 @@ const views = {
                     <div style="font-size:0.75rem; font-style:italic; max-width:180px">${p.notes || '-'}</div>
                     <div style="display:flex; gap:0.3rem">
                       <button class="btn-sm" onclick="window.editProvider('${p.id}')">📝</button>
-                      <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteProvider('${p.id}')">­ƒùæ´©Å</button>
+                      <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteProvider('${p.id}')">🗑️</button>
                     </div>
                   </div>
                 </td>
@@ -1175,7 +1175,7 @@ const views = {
                 <td><span style="color: ${m.active !== false ? 'var(--success)' : 'var(--danger)'}">${m.active !== false ? 'ÔùÅ Activa' : 'Ôùï Inactiva'}</span></td>
                 <td>
                   <button class="btn-sm" onclick="window.editMachine('${m.id}')">📝</button>
-                  <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteMachine('${m.id}')">­ƒùæ´©Å</button>
+                  <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteMachine('${m.id}')">🗑️</button>
                 </td>
               </tr>
             `).join('')}
@@ -1244,7 +1244,7 @@ const views = {
                 <td><input type="checkbox" class="sale-checkbox" data-id="${s.id}" data-total="${s.total}" data-iva="${s.iva || 0}" data-exempt="${s.is_iva_exempt}" data-machine="${s.payment_machines?.commission_percent || 0}"></td>
                 <td>${s.date}</td>
                 <td>${s.event_name || '-'}</td>
-                <td>${s.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : s.payment_method === 'machine' ? '­ƒÆ│ Máquina' : '🔄 Transf.'}</td>
+                <td>${s.payment_method === 'cash' ? '💵 Efectivo' : s.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transf.'}</td>
                 <td>${s.payment_machines?.name || '-'}</td>
                 <td><strong>$${(s.total || 0).toLocaleString('es-CL')}</strong></td>
                 <td>$${(s.iva || 0).toLocaleString('es-CL')}</td>
@@ -1428,7 +1428,7 @@ const views = {
                 <td>${u.empresa_nombre || 'Sin empresa'}</td>
                 <td>
                   <button class="btn-sm" onclick="window.editUser(${u.id})">📝</button>
-                  ${u.username !== currentUser.username ? `<button class="btn-sm" onclick="window.deleteUser(${u.id})" style="background:var(--danger)">­ƒùæ´©Å</button>` : ''}
+                  ${u.username !== currentUser.username ? `<button class="btn-sm" onclick="window.deleteUser(${u.id})" style="background:var(--danger)">🗑️</button>` : ''}
                 </td>
               </tr>
             `).join('')}
@@ -1884,7 +1884,7 @@ const views = {
                     <span style="font-size:0.75rem; font-weight:700; color:var(--primary)">${l.status.toUpperCase()}</span>
                   </td>
                   <td style="text-align: center">
-                     <button class="btn-sm" onclick="window.viewTransactionDetails('${l.transaction_type}', ${l.transaction_id})">­ƒæü´©Å Doc</button>
+                     <button class="btn-sm" onclick="window.viewTransactionDetails('${l.transaction_type}', ${l.transaction_id})">👁️ Doc</button>
                   </td>
                 </tr>
               `}).join('')}
@@ -2080,11 +2080,11 @@ function renderHistoryTable(type) {
                 </td>
                 <td>
                   <strong>${h.client_name || 'Venta Directa'}</strong>
-                  ${h.event_name ? `<br><small style="color:var(--text-muted)">­ƒÄí ${h.event_name}</small>` : ''}
+                  ${h.event_name ? `<br><small style="color:var(--text-muted)">🎪 ${h.event_name}</small>` : ''}
                 </td>
                 <td>
                   <span style="font-size:0.8rem">
-                    ${h.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : h.payment_method === 'machine' ? '­ƒÆ│ Máquina' : '🔄 Transferencia'}
+                    ${h.payment_method === 'cash' ? '💵 Efectivo' : h.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transferencia'}
                   </span>
                 </td>
                 <td style="text-align: right; font-weight:700">
@@ -2092,12 +2092,12 @@ function renderHistoryTable(type) {
                 </td>
                 <td style="text-align: center">
                   <div style="display: flex; gap: 0.3rem; justify-content: center">
-                    <button class="btn-sm" onclick="window.showTransactionDetails('sale', '${h.id}')" title="Ver detalle">­ƒæü´©Å Ver</button>
+                    <button class="btn-sm" onclick="window.showTransactionDetails('sale', '${h.id}')" title="Ver detalle">👁️ Ver</button>
                     ${currentUser?.role === 'superadmin' || currentUser?.role === 'admin' ? `
                       <button class="btn-sm" onclick="window.editTransaction('sale', '${h.id}')" style="background:var(--secondary)" title="Editar">📝 Editar</button>
                     ` : ''}
                     ${currentUser?.role === 'superadmin' ? `
-                      <button class="btn-sm" onclick="window.deleteSale('${h.id}')" style="background:var(--danger)" title="Eliminar">­ƒùæ´©Å Borrar</button>
+                      <button class="btn-sm" onclick="window.deleteSale('${h.id}')" style="background:var(--danger)" title="Eliminar">🗑️ Borrar</button>
                     ` : ''}
                   </div>
                 </td>
@@ -2183,9 +2183,9 @@ function renderHistoryTable(type) {
                 </td>
                 <td style="text-align: center">
                    <div style="display: flex; gap: 0.3rem; justify-content: center">
-                     <button class="btn-sm" onclick="window.showTransactionDetails('production', '${p.id}')">­ƒæü´©Å Ver</button>
+                     <button class="btn-sm" onclick="window.showTransactionDetails('production', '${p.id}')">👁️ Ver</button>
                      <button class="btn-sm" onclick="window.editProduction(${p.id})" style="background:var(--secondary)">📝 Editar</button>
-                     <button class="btn-sm" onclick="window.deleteProduction(${p.id})" style="background:var(--danger)">­ƒùæ´©Å Borrar</button>
+                     <button class="btn-sm" onclick="window.deleteProduction(${p.id})" style="background:var(--danger)">🗑️ Borrar</button>
                    </div>
                 </td>
               </tr>
@@ -2230,7 +2230,7 @@ function renderHistoryTable(type) {
                   <span class="badge ${h.type === 'expense' ? 'badge-warning' : 'badge-info'}" style="font-size: 0.7rem">
                     ${h.type === 'expense' ? 'GASTO' : 'INSUMO'}
                   </span><br>
-                  <small>${h.project_name ? '­ƒÅù´©Å ' + h.project_name : 'General'}</small>
+                  <small>${h.project_name ? '🏷️ ' + h.project_name : 'General'}</small>
                 </td>
                 <td>
                   <span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.72rem; font-weight:700; background:${CAT_COLORS[cat]}22; color:${CAT_COLORS[cat]}; border:1px solid ${CAT_COLORS[cat]}44">
@@ -2245,12 +2245,12 @@ function renderHistoryTable(type) {
                 <td style="font-weight: 600">$${(h.total || 0).toLocaleString()}</td>
                 <td style="text-align: center">
                   <div style="display: flex; gap: 0.3rem; justify-content: center">
-                    <button class="btn-sm" onclick="window.showTransactionDetails('purchase', '${h.id}')" title="Ver detalle">­ƒæü´©Å Ver</button>
+                    <button class="btn-sm" onclick="window.showTransactionDetails('purchase', '${h.id}')" title="Ver detalle">👁️ Ver</button>
                     ${currentUser?.role === 'superadmin' || currentUser?.role === 'admin' ? `
                       <button class="btn-sm" onclick="window.editTransaction('purchase', '${h.id}')" style="background:var(--secondary)" title="Editar">📝 Editar</button>
                     ` : ''}
                     ${currentUser?.role === 'superadmin' ? `
-                      <button class="btn-sm" onclick="window.deletePurchase('${h.id}')" style="background:var(--danger)" title="Eliminar">­ƒùæ´©Å Borrar</button>
+                      <button class="btn-sm" onclick="window.deletePurchase('${h.id}')" style="background:var(--danger)" title="Eliminar">🗑️ Borrar</button>
                     ` : ''}
                   </div>
                 </td>
@@ -2286,7 +2286,7 @@ window.showTransactionDetails = (type, id) => {
       <h3>Detalle de ${title} #${transaction.id}</h3>
       <div style="text-align: right">
         <span style="color: var(--text-muted); display: block">Fecha: ${transaction.date.split('T')[0]}</span>
-        ${transaction.event_name ? `<span class="badge" style="background:var(--secondary-light); color:var(--secondary)">­ƒÄí ${transaction.event_name}</span>` : ''}
+        ${transaction.event_name ? `<span class="badge" style="background:var(--secondary-light); color:var(--secondary)">🎪 ${transaction.event_name}</span>` : ''}
       </div>
     </div>
       
@@ -2308,7 +2308,7 @@ window.showTransactionDetails = (type, id) => {
           </div>
           <div>
             <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Método de Pago</label>
-            <span>${transaction.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : transaction.payment_method === 'machine' ? '­ƒÆ│ Máquina' : transaction.payment_method === 'credit' ? '­ƒÆ│ Crédito' : '🔄 Transferencia'}</span>
+            <span>${transaction.payment_method === 'cash' ? '💵 Efectivo' : transaction.payment_method === 'machine' ? '💳 Máquina' : transaction.payment_method === 'credit' ? '💳 Crédito' : '🔄 Transferencia'}</span>
             ${transaction.is_iva_exempt ? ' <small style="color:var(--warning)">(Exento de IVA)</small>' : ''}
           </div>
         </div>
@@ -3247,7 +3247,7 @@ window.refreshRecipeView = () => {
       <td style="text-align: right; font-weight: 700">$${Math.round(calculatedUnitCost || 0).toLocaleString()}</td>
       <td style="text-align: center">
         <button class="btn-sm" onclick="window.editRecipeRow(${i})" title="Modificar">📝</button>
-        <button class="btn-sm" onclick="window.deleteRecipeRow(${i})" style="background: var(--danger)" title="Eliminar">­ƒùæ´©Å</button>
+        <button class="btn-sm" onclick="window.deleteRecipeRow(${i})" style="background: var(--danger)" title="Eliminar">🗑️</button>
       </td>
     </tr>
     `;
@@ -3519,7 +3519,7 @@ views.quotations = () => {
                 </td>
                 <td style="text-align:center">
                   <div style="display:flex; gap:0.3rem; justify-content:center; flex-wrap:wrap">
-                    <button class="btn-sm" onclick="window.viewQuotation('${q.id}')">­ƒæü´©Å Ver</button>
+                    <button class="btn-sm" onclick="window.viewQuotation('${q.id}')">👁️ Ver</button>
                     ${status !== 'rejected' && status !== 'cancelled' ? `<button class="btn-sm" style="background:var(--accent)" onclick="window.editQuotation('${q.id}')">📝</button>` : ''}
                     ${transitions.length > 0 ? `
                       <select onchange="if(this.value) window.changeQuoteStatus('${q.id}', this.value); this.value='';" style="padding:0.25rem 0.4rem; font-size:0.78rem; border-radius:6px; border:1px solid var(--border); background:var(--surface-light); color:var(--text); cursor:pointer; max-width:120px">
@@ -5892,7 +5892,7 @@ function renderView(viewName) {
             <td><input type="checkbox" class="sale-checkbox" data-id="${s.id}" data-total="${s.total}" data-iva="${s.iva || 0}" data-exempt="${s.is_iva_exempt}" data-machine="${s.payment_machines?.commission_percent || 0}"></td>
             <td>${s.date}</td>
             <td>${s.event_name || '-'}</td>
-            <td>${s.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : s.payment_method === 'machine' ? '­ƒÆ│ Máquina' : '🔄 Transf.'}</td>
+            <td>${s.payment_method === 'cash' ? '💵 Efectivo' : s.payment_method === 'machine' ? '💳 Máquina' : '🔄 Transf.'}</td>
             <td>${s.payment_machines?.name || '-'}</td>
             <td><strong>$${(s.total || 0).toLocaleString('es-CL')}</strong></td>
             <td>$${(s.iva || 0).toLocaleString('es-CL')}</td>
