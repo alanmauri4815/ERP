@@ -383,60 +383,6 @@ const views = {
       </div>
     </div>
 
-    <!-- New Product Modal -->
-    <div id="new-prod-modal" class="modal" style="display:none">
-      <div class="card modal-content">
-        <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
-          <h3><span id="prod-modal-title">Nuevo Producto Terminado</span></h3>
-          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted); border:none; font-size: 1.2rem; cursor:pointer">✕</button>
-        </header>
-        <form id="new-prod-form">
-          <input type="hidden" id="np-edit-mode" value="false">
-          <input type="hidden" id="np-original-code" value="">
-          <div class="form-group"><label>Código</label><input type="text" id="np-code" required placeholder="PT-001"></div>
-          <div class="form-group"><label>Nombre del Producto</label><input type="text" id="np-name" required></div>
-          <div class="form-group"><label>Tipo</label><input type="text" id="np-type" placeholder="Textil, etc."></div>
-          
-          <div style="background: rgba(59, 130, 246, 0.1); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; border: 1px solid var(--primary)">
-            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem">
-              <input type="checkbox" id="np-incluye-iva" style="width: 18px; height: 18px; cursor: pointer">
-              <label for="np-incluye-iva" style="cursor: pointer; font-weight: 600; color: var(--primary)">El precio ingresado INCLUYE IVA (19%)</label>
-            </div>
-            <div class="form-group" style="margin-bottom: 0.5rem">
-              <label>Precio Ingresado ($)</label>
-              <input type="number" id="np-precio-input" required placeholder="Ingrese el precio" style="font-size: 1.1rem">
-            </div>
-            <div class="grid-3" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; margin-top: 0.75rem; padding: 0.5rem; background: var(--surface-light); border-radius: 0.25rem">
-              <div style="text-align: center">
-                <small style="opacity: 0.7">Neto</small><br>
-                <strong id="np-neto-display">$0</strong>
-                <input type="hidden" id="np-pnet" value="0">
-              </div>
-              <div style="text-align: center">
-                <small style="opacity: 0.7">IVA (19%)</small><br>
-                <strong id="np-iva-display" style="color: var(--accent)">$0</strong>
-                <input type="hidden" id="np-iva" value="0">
-              </div>
-              <div style="text-align: center">
-                <small style="opacity: 0.7">Precio Venta</small><br>
-                <strong id="np-total-display" style="color: var(--secondary)">$0</strong>
-                <input type="hidden" id="np-psale" value="0">
-              </div>
-            </div>
-          </div>
-          
-          <div class="grid-2">
-            <div class="form-group"><label>Atributo</label><input type="text" id="np-color" placeholder="Ej: Sabor, Material"></div>
-            <div class="form-group"><label>Tamaño</label><input type="text" id="np-size" placeholder="Ej: XL"></div>
-          </div>
-          <div class="form-group"><label>Costo Estimado ($)</label><input type="number" id="np-cost" value="0"></div>
-          <div class="form-group"><label>Es Variante de (Código Base)</label><input type="text" id="np-parent" placeholder="Ej: TOALLA-BASE"></div>
-          <div class="form-actions">
-            <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
-            <button type="submit">Guardar</button>
-          </div>
-        </form>
-      </div>
     </div>
   `,
 
@@ -488,76 +434,12 @@ const views = {
         </table>
       </div>
     </div>
-
-    <!-- New RM Modal -->
-    <div id="new-rm-modal" class="modal" style="display:none">
-      <div class="card modal-content">
-        <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
-          <h3><span id="rm-modal-title">Nuevo Insumo / Materia Prima</span></h3>
-          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted); border:none; font-size: 1.2rem; cursor:pointer">✕</button>
-        </header>
-        <form id="new-rm-form">
-          <input type="hidden" id="nrm-edit-mode" value="false">
-          <input type="hidden" id="nrm-original-code" value="">
-          <div class="form-group"><label>Código</label><input type="text" id="nrm-code" required placeholder="MP-001"></div>
-          <div class="form-group"><label>Nombre del Insumo</label><input type="text" id="nrm-name" required></div>
-          <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 1rem">
-            <div class="form-group"><label>Lote / Cantidad</label><input type="number" id="nrm-batch-size" value="1" step="0.001" required></div>
-            <div class="form-group">
-                <label>Tipo de Insumo</label>
-                <select id="nrm-type" style="width: 100%">
-                    <option value="MP">📦 Material / Insumo</option>
-                    <option value="MO">👷 Mano de Obra</option>
-                    <option value="Servicio">🛠️ Servicio / Externo</option>
-                </select>
-            </div>
-          </div>
-          <div class="form-group"><label>Unidad de Medida</label><input type="text" id="nrm-unit" required placeholder="Mts, Kg, Uni"></div>
-          
-          <div style="background: rgba(16, 185, 129, 0.1); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; border: 1px solid var(--success)">
-            <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem">
-              <input type="checkbox" id="nrm-incluye-iva" style="width: 18px; height: 18px; cursor: pointer">
-              <label for="nrm-incluye-iva" style="cursor: pointer; font-weight: 600; color: var(--success)">El precio ingresado INCLUYE IVA (19%)</label>
-            </div>
-              <div style="text-align: center">
-                <small style="opacity: 0.7">Costo Lote ($)</small><br>
-                <input type="number" id="nrm-precio-input" required placeholder="Ingrese el costo" style="font-size: 1.1rem; width: 100%; border:none; background:transparent; text-align:center; font-weight:bold">
-              </div>
-              <div style="text-align: center">
-                <small style="opacity: 0.7">Costo Unitario</small><br>
-                <strong id="nrm-unit-price-display" style="color: var(--accent); font-size: 1.1rem">$0</strong>
-              </div>
-              <div style="text-align: center">
-                <small style="opacity: 0.7">Neto</small><br>
-                <strong id="nrm-neto-display">$0</strong>
-                <input type="hidden" id="nrm-cost" value="0">
-              </div>
-              <div style="text-align: center">
-                <small style="opacity: 0.7">Costo Total (c/IVA)</small><br>
-                <strong id="nrm-total-display" style="color: var(--success)">$0</strong>
-                <input type="hidden" id="nrm-total" value="0">
-                <input type="hidden" id="nrm-iva" value="0">
-              </div>
-            </div>
-          </div>
-
-          <div class="grid-2">
-            <div class="form-group"><label>Atributo</label><input type="text" id="nrm-color" placeholder="Ej: Sabor, Material"></div>
-            <div class="form-group"><label>Tamaño</label><input type="text" id="nrm-size" placeholder="Ej: XL"></div>
-          </div>
-          <div class="form-group"><label>Es Variante de (Código Base)</label><input type="text" id="nrm-parent" placeholder="Ej: TELA-BASE"></div>
-          <div class="form-actions">
-            <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
-            <button type="submit">Guardar</button>
-          </div>
-        </form>
-      </div>
-    </div>
   `,
 
   design: () => `
     <header class="animate-fade">
       <h1>Diseño (Recetas)</h1>
+      <button onclick="document.getElementById('new-prod-modal').style.display='flex'">+ Nuevo Diseño</button>
     </header>
     <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem">
       <div class="card animate-fade">
@@ -1429,28 +1311,6 @@ const views = {
             </tbody>
           </table>
         </div>
-      </div>
-    </div>
-
-    <!-- Raw Material Modal -->
-    <div id="mp-modal" class="modal" style="display:none">
-      <div class="card modal-content">
-        <h3>Nueva Materia Prima</h3>
-        <form id="new-mp-form">
-          <div class="form-group"><label>Código</label><input type="text" id="nmp-code" required placeholder="MP-001"></div>
-          <div class="form-group"><label>Nombre Insumo</label><input type="text" id="nmp-name" required></div>
-          <div class="form-group"><label>Unidad (Mts, Uni, Kg, etc.)</label><input type="text" id="nmp-unit" required></div>
-          <div class="form-group"><label>Costo Neto Unitario ($)</label><input type="number" id="nmp-cost" required></div>
-          <div class="grid-2">
-            <div class="form-group"><label>Atributo</label><input type="text" id="nmp-color" placeholder="Ej: Sabor, Material"></div>
-            <div class="form-group"><label>Tamaño</label><input type="text" id="nmp-size" placeholder="Ej: XL"></div>
-          </div>
-          <div class="form-group"><label>Es Variante de (Código Base)</label><input type="text" id="nmp-parent" placeholder="Ej: TELA-BASE"></div>
-          <div class="form-actions">
-            <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
-            <button type="submit">Guardar</button>
-          </div>
-        </form>
       </div>
     </div>
   `,
