@@ -1862,13 +1862,6 @@ const views = {
                 <tr>
                   <td>${p.date ? p.date.split('T')[0] : '-'}</td>
                 <td>
-                  ${(() => {
-                    const q = p.quotation_id ? state.quotations.find(quote => quote.id == p.quotation_id) : null;
-                    const cName = q?.clients?.name || q?.name || p.client_name || '-';
-                    return `<strong>${cName}</strong>`;
-                  })()}
-                </td>
-                  <td>
                     <span class="badge ${p.type === 'inbound' ? 'badge-success' : 'badge-warning'}">
                       ${p.type === 'inbound' ? '⬇️ ENTRADA' : '⬆️ SALIDA'}
                     </span>
@@ -2201,6 +2194,13 @@ function renderHistoryTable(type) {
               <tr>
                 <td><strong>#${p.id}</strong></td>
                 <td>${p.date ? p.date.split('T')[0] : '-'}</td>
+                <td>
+                  ${(() => {
+                    const q = p.quotation_id ? state.quotations.find(quote => quote.id == p.quotation_id) : null;
+                    const cName = q?.clients?.name || q?.name || p.client_name || '-';
+                    return `<strong>${cName}</strong>`;
+                  })()}
+                </td>
                 <td>
                   <span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.75rem; font-weight:700; background:${PROD_CAT_COLORS[pcat] || '#6b7280'}22; color:${PROD_CAT_COLORS[pcat] || '#6b7280'}; border:1px solid ${PROD_CAT_COLORS[pcat] || '#6b7280'}44">
                     ${PROD_CAT_LABELS[pcat] || pcat}
