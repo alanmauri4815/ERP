@@ -696,230 +696,71 @@ const views = {
               <button type="button" onclick="window.openProviderModal(); document.getElementById('prov-modal').style.display='flex'; document.getElementById('prov-modal').style.zIndex='10000';" style="padding: 0 0.75rem" title="Nuevo Proveedor">+</button>
             </div>
           </div>
-          <div class="form-group">
-            <label style="font-weight: 600">Fecha de Registro</label>
-            <input type="date" id="pur-date" value="${new Date().toISOString().split('T')[0]}" required>
-          </div>
-          <div class="form-group">
-            <label style="font-weight: 600">N° Documento</label>
-            <input type="text" id="pur-doc-number" placeholder="Ej: 12345">
-          </div>
-          <div class="form-group" id="pur-project-group">
-            <label style="font-weight: 600; color: var(--secondary)">📁 Proyecto Asociado</label>
-            <select id="pur-project" style="border: 1px solid var(--secondary)44">
-              <option value="">Gasto General (Sin Proyecto)</option>
-              <optgroup label="Cotizaciones Aprobadas / En Producción">
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''}</option>`).join('')}
-              </optgroup>
-              <optgroup label="Ventas Realizadas">
-                ${state.history.sales.slice(0, 10).map(s => `<option value="S-${s.id}">💰 Venta #${s.id} - ${s.client_name || 'Vta Directa'}</option>`).join('')}
-              </optgroup>
-            </select>
-          </div>
+          
+        <div class="form-group">
+          <label>Fecha</label>
+          <input type="date" id="prod-date" value="${new Date().toISOString().split('T')[0]}">
         </div>
 
-        <div class="form-group" id="pur-desc-group" style="display:none; margin-bottom: 1rem">
-          <label style="font-weight: 600">Descripción / Motivo del Gasto</label>
-          <input type="text" id="pur-description" placeholder="Ej: Compra de hilos, Almuerzo terreno, etc.">
-        </div>
-
-        <div style="background: var(--surface-light); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px solid var(--border)">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; align-items: center">
+        <div style="background: rgba(var(--primary-rgb), 0.05); padding: 1.2rem; border-radius: 0.8rem; margin-bottom: 1.5rem; border: 1px solid rgba(var(--primary-rgb), 0.2)">
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-bottom: 1.2rem">
             <div class="form-group" style="margin:0">
-              <label style="font-weight: 600">Método de Pago Sugerido</label>
-              <select id="pur-payment-method">
-                <option value="transfer">Transferencia</option>
-                <option value="debit">Débito</option>
-                <option value="credit">Crédito (Cuentas por Pagar)</option>
-                <option value="cash">Efectivo / Caja Chica</option>
+              <label style="font-weight: 700; color: var(--primary)">Método de Producción</label>
+              <select id="prod-category" onchange="window.toggleProdCategory()" style="font-size: 1rem; padding: 0.6rem">
+                <option value="push">🚀 Push (fabricar para vender)</option>
+                <option value="pull">🔄 Pull (de cotización ganada)</option>
               </select>
             </div>
-            <div class="form-group" style="margin:0">
-              <label style="font-weight: 600">Cuenta / Fondo Origen</label>
-              <select id="pur-account">
-                <option value="">Seleccionar cuenta...</option>
-                ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
+            <div class="form-group" id="prod-project-group" style="margin:0; display:none">
+              <label style="font-weight: 700; color: var(--secondary)">📁 Cotización Asociada</label>
+              <select id="prod-quotation" style="border: 2px solid var(--secondary); padding: 0.6rem">
+                <option value="">Sin asociar</option>
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} — 👤 ${q.clients?.name || 'Cliente'}</option>`).join('')}
               </select>
             </div>
-            <div class="form-group" style="margin:0; display: flex; flex-direction: column; justify-content: center;">
-              <label style="font-weight: 600; color: var(--success); display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                <input type="checkbox" id="pur-auto-pay" checked>
-                Pagar al contado
-              </label>
-              <small style="opacity: 0.7; font-size: 0.65rem; line-height: 1.1">Registra egreso y liquida deuda.</small>
+          </div>
+          
+          <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:1rem; padding: 1rem; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.1)">
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 700; color: #f59e0b; font-size: 0.8rem; margin-bottom: 0.4rem; display: block">📦 Costo MP / Insumos ($)</label>
+              <input type="number" id="prod-material-cost" value="0" style="border-color: #f59e0b44; background: rgba(245,158,11,0.02)">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 700; color: #3b82f6; font-size: 0.8rem; margin-bottom: 0.4rem; display: block">🧵 Mano de Obra / Confecc. ($)</label>
+              <input type="number" id="prod-labor-cost" value="0" style="border-color: #3b82f644; background: rgba(59,130,246,0.02)" oninput="document.getElementById('mo-details-group').style.display = (parseFloat(this.value) > 0 ? 'block' : 'none')">
+            </div>
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 700; color: #6b7280; font-size: 0.8rem; margin-bottom: 0.4rem; display: block">⚙️ Gastos Generales ($)</label>
+              <input type="number" id="prod-general-expenses" value="0" style="border-color: rgba(255,255,255,0.1)">
+            </div>
+
+            <div id="mo-details-group" style="grid-column: span 3; display: none; background: rgba(59,130,246,0.05); padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(59,130,246,0.1); margin-top: 0.5rem">
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem">
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:0.7rem; text-transform: uppercase; opacity:0.7; font-weight:700">Tipo Pago</label>
+                  <select id="prod-mo-subcontracted" style="font-size:0.85rem">
+                    <option value="direct">Interno / Directo</option>
+                    <option value="subcontracted">Subcontratado</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:0.7rem; text-transform: uppercase; opacity:0.7; font-weight:700">Documento</label>
+                  <select id="prod-mo-doc-type" style="font-size:0.85rem">
+                    <option value="none">Sin Documento</option>
+                    <option value="boleta">Boleta Honorarios</option>
+                    <option value="factura">Factura Servicios</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0">
+                  <label style="font-size:0.7rem; text-transform: uppercase; opacity:0.7; font-weight:700">Estado</label>
+                  <select id="prod-mo-status" style="font-size:0.85rem">
+                    <option value="paid">✅ Pagado</option>
+                    <option value="due">⏳ Por Pagar</option>
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div id="pur-items-container">
-          <table class="item-table">
-            <thead>
-              <tr>
-                <th style="width: 50px">Ítem</th>
-                <th>Insumo</th>
-                <th style="width: 130px">Neto Unitario</th>
-                <th style="width: 100px">Cant</th>
-                <th style="width: 150px">Sub Tot</th>
-              </tr>
-            </thead>
-            <tbody id="pur-items-body">
-              ${Array.from({ length: 8 }).map((_, i) => `
-                <tr class="item-row">
-                  <td style="text-align: center; color: var(--text-muted)">${i + 1}</td>
-                  <td>
-                    <select class="item-code" data-index="${i}">
-                      <option value="">Seleccione...</option>
-                      ${state.rawMaterials.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(m => `
-                        <option value="${m.code}" data-price="${(m.cost_net || 0) / (m.batch_size || 1)}">${m.code} | ${m.name}</option>
-                      `).join('')}
-                      <option value="__otros__" style="background:#f59e0b; color:#000; font-weight:bold">➕ Otros (escribir nombre)</option>
-                    </select>
-                    <input type="text" class="item-custom-name" placeholder="Nombre del producto eventual..." style="display:none; margin-top:4px; width:100%; background:var(--surface-light); border:1px solid var(--accent); color:var(--text); padding:0.4rem; border-radius:4px; font-size:0.85rem">
-                  </td>
-                  <td><input type="number" class="item-price" step="0.01" value="0"></td>
-                  <td><input type="number" class="item-qty" step="0.01" value="0"></td>
-                  <td><input type="number" class="item-subtotal" readonly value="0" style="font-weight: 600; text-align: right"></td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-
-        <div id="pur-expense-amount-container" style="display: none; background: var(--surface-light); padding: 1.5rem; border-radius: 0.5rem; border: 1px solid var(--border)">
-           <div class="form-group" style="max-width: 300px; margin: 0 auto">
-             <label style="font-size: 1.1rem; text-align: center; display: block">Monto Total del Gasto ($)</label>
-             <input type="number" id="pur-expense-total" value="0" style="font-size: 1.5rem; text-align: center; font-weight: 700; color: var(--primary)">
-             <p style="font-size: 0.8rem; opacity: 0.6; text-align: center; margin-top: 0.5rem">Se contabilizará como Gasto Operacional neto.</p>
-           </div>
-        </div>
-
-        <div class="summary-section" id="pur-summary-section">
-          <table class="summary-table">
-            <tr><td>Neto</td><td style="text-align: right; padding-right: 1rem;">$ <span id="pur-net-display">0</span></td></tr>
-            <tr><td>IVA (19%)</td><td style="text-align: right; padding-right: 1rem;">$ <span id="pur-iva-display">0</span></td></tr>
-            <tr style="font-size: 1.1rem; color: var(--primary)"><td style="background: var(--primary); color: white">Total</td><td style="text-align: right; padding-right: 1rem;"><strong>$ <span id="pur-total-display">0</span></strong></td></tr>
-          </table>
-          <input type="hidden" id="pur-net" value="0">
-          <input type="hidden" id="pur-iva" value="0">
-          <input type="hidden" id="pur-total" value="0">
-        </div>
-
-        <div class="form-actions">
-          <button type="button" onclick="this.closest('.modal').style.display='none'" style="background: var(--surface-light)">Cancelar</button>
-          <button id="btn-submit-purchase" style="background: var(--primary); padding: 0.8rem 2rem; font-weight: 700">Registrar Compra</button>
-        </div>
-      </div>
-    </div>
-  `,
-
-  sales: () => `
-    <header class="animate-fade">
-      <h1>Ventas (Salida PT)</h1>
-      <div style="display: flex; gap: 0.5rem">
-        <button onclick="window.exportSales()" style="background: var(--accent)">📊 Exportar a Excel</button>
-        <button onclick="window.openSaleModal()" style="background: var(--secondary)">+ Registrar Venta</button>
-      </div>
-    </header>
-
-    <div class="card animate-fade">
-      <h2>Historial de Ventas</h2>
-      <div id="sales-history-content">
-        ${renderHistoryTable('sales')}
-      </div>
-    </div>
-
-    <!-- Sale Modal -->
-    <div id="sale-modal" class="modal" style="display:none">
-      <div class="card modal-content modal-wide">
-        <header>
-          <h3 id="sale-modal-title">Nueva Venta de Productos</h3>
-          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted)">✕</button>
-        </header>
-
-        <input type="hidden" id="sale-edit-mode" value="false">
-        <input type="hidden" id="sale-edit-id" value="">
-
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem">
-          <div class="form-group">
-            <label>Cliente</label>
-            <select id="sale-client">
-              <option value="">Venta Directa</option>
-              ${state.clients.map(c => `<option value="${c.id}">${c.name || 'Cliente ' + c.id}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Fecha</label>
-            <input type="date" id="sale-date" value="${new Date().toISOString().split('T')[0]}">
-          </div>
-          <div class="form-group">
-            <label>N° Documento</label>
-            <input type="text" id="sale-doc-number" placeholder="Ej: 98765">
-          </div>
-          <div class="form-group">
-            <label>Tipo Documento</label>
-            <select id="sale-doc-type">
-              <option value="boleta">Boleta</option>
-              <option value="factura">Factura</option>
-              <option value="n/a">Sin Documento</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Evento/Feria</label>
-            <input type="text" id="sale-event-name" placeholder="Ej: Feria Navideña">
-          </div>
-          <div class="form-group">
-            <label>Categoría (PUSH/PULL)</label>
-            <select id="sale-category" onchange="window.toggleSaleCategory()">
-              <option value="push">PUSH (Venta Directa/Stock)</option>
-              <option value="pull" class="pro-only-option">PULL (Cotización/Encargo)</option>
-            </select>
-          </div>
-        </div>
-        <div style="margin-bottom: 1.5rem">
-          <div class="form-group" id="sale-quotation-group">
-            <label style="font-weight: 600; color: var(--secondary)">📁 Asociar a Proyecto (ABC)</label>
-            <select id="sale-quotation" style="border: 1px solid var(--secondary)">
-              <option value="">Sin Proyecto / Venta Directa</option>
-              <optgroup label="Cotizaciones Aprobadas / En Producción">
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} — 👤 ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
-              </optgroup>
-            </select>
-            <small style="font-size: 0.7rem; opacity: 0.7">Vincula esta venta a un proyecto para cerrar el ciclo PULL.</small>
-          </div>
-        </div>
-        <div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
-          <div class="form-group" style="flex: 1">
-            <label>Método de Pago</label>
-            <select id="sale-payment-method" onchange="window.updatePaymentFields()">
-              <option value="transfer">Transferencia</option>
-              <option value="machine">Máquina (Tarjeta)</option>
-              <option value="cash">Efectivo</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex: 1" id="machine-selector-group">
-            <label>Máquina de Pago</label>
-            <select id="sale-machine">
-              <option value="">Seleccionar máquina...</option>
-              ${state.paymentMachines?.filter(m => m.active !== false).map(m => `<option value="${m.id}" data-commission="${m.commission_percent}">${m.name} (${m.commission_percent}%)</option>`).join('') || ''}
-            </select>
-          </div>
-          <div class="form-group" style="flex: 1">
-            <label>Cuenta Destino</label>
-            <select id="sale-account">
-              <option value="">Sin asignar</option>
-              ${state.accounts?.map(a => `<option value="${a.id}">${a.name}</option>`).join('') || ''}
-            </select>
-          </div>
-        </div>
-        <div style="display: flex; gap: 2rem; margin-bottom: 1rem; align-items: center; background: var(--surface-light); padding: 0.75rem 1rem; border-radius: 0.5rem; border: 1px solid var(--border)">
-          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--success); font-weight: 600;">
-            <input type="checkbox" id="sale-auto-collect" checked>
-            <span>Cobrar ahora al contado</span>
-          </label>
-          <label style="display: flex; align-items: center; gap: 0.7rem; cursor: pointer; font-weight: 500">
-            <input type="checkbox" id="sale-iva-exempt" onchange="window.recalculateSaleTotals()">
-            <span>Exento de IVA</span>
-          </label>
         </div>
 
         <table class="item-table">
@@ -5622,7 +5463,13 @@ function renderView(viewName) {
 
                 // Sumar toda la mano de obra suelta de la cotización
                 const extraLabor = quote.items
-                  .filter(it => it.item_type === 'labor' || it.item_type === 'mo' || it.type === 'MO')
+                  .filter(it => 
+                    it.item_type === 'labor' || 
+                    it.item_type === 'mo' || 
+                    it.type === 'MO' || 
+                    (it.description || '').toLowerCase().includes('confección') ||
+                    (it.description || '').toLowerCase().includes('mano de obra')
+                  )
                   .reduce((sum, it) => sum + (parseFloat(it.total_cost) || (parseFloat(it.unit_cost) * parseFloat(it.quantity)) || 0), 0);
                 
                 const laborInput = document.getElementById('prod-labor-cost');
