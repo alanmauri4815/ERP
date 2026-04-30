@@ -140,6 +140,10 @@ let state = {
     type: 'all',
     order: 'asc'
   },
+  purchaseFilters: {
+    type: 'all',
+    search: ''
+  },
   logistics: [],
   pendingLogistics: [],
   costCenters: [],
@@ -578,8 +582,37 @@ const views = {
       </div>
     </header>
 
+    <div class="card animate-fade" style="margin-bottom: 1.5rem; padding: 1.25rem; border-left: 4px solid var(--primary)">
+      <div style="display: flex; gap: 1.5rem; align-items: flex-end; flex-wrap: wrap">
+        <div class="form-group" style="margin-bottom: 0; min-width: 200px">
+          <label style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; display: block">Tipo de Registro</label>
+          <select onchange="window.updatePurchaseFilters('type', this.value)" style="padding: 0.6rem; border-radius: 8px; background: var(--surface-light); border: 1px solid var(--border); color: var(--text); width: 100%">
+            <option value="all" ${state.purchaseFilters.type === 'all' ? 'selected' : ''}>📑 Todos los registros</option>
+            <option value="mp" ${state.purchaseFilters.type === 'mp' ? 'selected' : ''}>📦 Insumos (Inventariable)</option>
+            <option value="expense" ${state.purchaseFilters.type === 'expense' ? 'selected' : ''}>💸 Gasto / Caja Chica</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 250px">
+          <label style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; display: block">Buscar Proyecto, Proveedor o Glosa</label>
+          <div style="position: relative">
+            <i class="fas fa-search" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); opacity: 0.4"></i>
+            <input type="text" 
+              placeholder="Escribe para filtrar resultados..." 
+              value="${state.purchaseFilters.search}"
+              oninput="window.updatePurchaseFilters('search', this.value)"
+              style="padding: 0.6rem 0.6rem 0.6rem 2.5rem; border-radius: 8px; background: var(--surface-light); border: 1px solid var(--border); color: var(--text); width: 100%">
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card animate-fade">
-      <h2>Historial de Movimientos</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem">
+        <h2 style="margin: 0">Historial de Movimientos</h2>
+        <span class="badge" style="background: var(--primary-muted); color: var(--primary); font-size: 0.8rem">
+          Mostrando: ${state.history.purchases.length} registros
+        </span>
+      </div>
       <div id="purchases-history-content">
         ${renderHistoryTable('purchases')}
       </div>
@@ -2164,6 +2197,22 @@ function renderHistoryTable(type) {
   `;
   }
   if (type === 'purchases') {
+    let data = state.history.purchases;
+    
+    // Aplicar filtros
+    if (state.purchaseFilters.type !== 'all') {
+      data = data.filter(p => p.type === state.purchaseFilters.type);
+    }
+    if (state.purchaseFilters.search) {
+      const s = state.purchaseFilters.search.toLowerCase();
+      data = data.filter(p => 
+        (p.project_name && p.project_name.toLowerCase().includes(s)) ||
+        (p.provider_name && p.provider_name.toLowerCase().includes(s)) ||
+        (p.description && p.description.toLowerCase().includes(s)) ||
+        (p.purchase_order_id && p.purchase_order_id.toLowerCase().includes(s))
+      );
+    }
+
     const CAT_LABELS = { general: '📦 General', pull: '🔄 Pull', push: '🚀 Push', comercializacion: '🏪 Comerc.' };
     const CAT_COLORS = { general: '#6b7280', pull: '#3b82f6', push: '#f59e0b', comercializacion: '#8b5cf6' };
     return `
@@ -6998,3 +7047,11 @@ window.renderView = renderView;
 window.state = state;
 window.currentUser = currentUser;
 
+
+window.updatePurchaseFilters = (field, value) => {
+  state.purchaseFilters[field] = value;
+  const container = document.getElementById('purchases-history-content');
+  if (container) {
+    container.innerHTML = renderHistoryTable('purchases');
+  }
+};
