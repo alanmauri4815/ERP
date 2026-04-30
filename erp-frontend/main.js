@@ -150,22 +150,22 @@ let state = {
   hideProjectProducts: localStorage.getItem('erp_hide_projects') === 'true'
 };
 
-window.applyPlanRestrictions = function() {
+window.applyPlanRestrictions = function () {
   if (!currentUser) return;
   const plan = currentUser.plan_categoria || 'completo';
-  
+
   const navFinanzas = document.getElementById('nav-group-finanzas');
   const navInformes = document.getElementById('nav-group-informes');
-  
+
   const navItemProduccion = document.querySelector('.nav-item[data-view="production"]');
   const navItemCotizaciones = document.querySelector('.nav-item[data-view="quotations"]');
   const navItemInformes = document.querySelector('.nav-item[data-view="reports"]');
   const navItemLogistica = document.querySelector('.nav-item[data-view="logistics"]');
   const navItemPipeline = document.querySelector('.nav-item[data-view="pipeline"]');
-  
+
   if (plan === 'basico') {
     if (navFinanzas) navFinanzas.style.display = 'none';
-    
+
     // Ocultar partes complejas
     if (navItemProduccion) navItemProduccion.style.display = 'none';
     if (navItemCotizaciones) navItemCotizaciones.style.display = 'none';
@@ -184,7 +184,7 @@ window.applyPlanRestrictions = function() {
   } else {
     // Restaurar si es completo
     if (navFinanzas) navFinanzas.style.display = 'block';
-    
+
     if (navItemProduccion) navItemProduccion.style.display = 'flex';
     if (navItemCotizaciones) navItemCotizaciones.style.display = 'flex';
     if (navItemInformes) navItemInformes.style.display = 'flex';
@@ -309,10 +309,10 @@ async function fetchData() {
     state.ledger = state.accounting.asientos;
 
     const activeView = document.querySelector('.nav-item.active')?.dataset.view || 'dashboard';
-    
+
     // Aplicar restricciones del plan
     window.applyPlanRestrictions();
-    
+
     renderView(activeView);
   } catch (error) {
     console.error('Error fetching data:', error);
@@ -367,8 +367,8 @@ const views = {
           </thead>
           <tbody>
             ${state.products
-              .filter(p => !state.hideProjectProducts || !p.code?.startsWith('[P-'))
-              .map(p => `
+      .filter(p => !state.hideProjectProducts || !p.code?.startsWith('[P-'))
+      .map(p => `
               <tr>
                 <td><strong>${p.code}</strong></td>
                 <td>${p.name}</td>
@@ -2134,24 +2134,24 @@ function renderHistoryTable(type) {
       const pcat = p.production_category || 'push';
       const itList = p.items || [];
       const totalMO = itList.reduce((sum, it) => {
-          const pm = state.products.find(prod => prod.code === it.product_code);
-          const rm = state.rawMaterials.find(m => m.code === it.product_code);
-          let cost = it.mo_cost || 0;
-          if (cost === 0) {
-            if (pm) cost = pm.labor_cost || 0;
-            else if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
-          }
-          return sum + (cost * (it.quantity || 0));
+        const pm = state.products.find(prod => prod.code === it.product_code);
+        const rm = state.rawMaterials.find(m => m.code === it.product_code);
+        let cost = it.mo_cost || 0;
+        if (cost === 0) {
+          if (pm) cost = pm.labor_cost || 0;
+          else if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
+        }
+        return sum + (cost * (it.quantity || 0));
       }, 0);
       const totalMP = itList.reduce((sum, it) => {
-          const pm = state.products.find(prod => prod.code === it.product_code);
-          const rm = state.rawMaterials.find(m => m.code === it.product_code);
-          let cost = it.material_cost || 0;
-          if (cost === 0) {
-            if (pm) cost = pm.cost_unit || 0;
-            else if (rm && rm.type !== 'MO' && rm.type !== 'Mano de Obra' && rm.type !== 'Servicio') cost = rm.cost_net || 0;
-          }
-          return sum + (cost * (it.quantity || 0));
+        const pm = state.products.find(prod => prod.code === it.product_code);
+        const rm = state.rawMaterials.find(m => m.code === it.product_code);
+        let cost = it.material_cost || 0;
+        if (cost === 0) {
+          if (pm) cost = pm.cost_unit || 0;
+          else if (rm && rm.type !== 'MO' && rm.type !== 'Mano de Obra' && rm.type !== 'Servicio') cost = rm.cost_net || 0;
+        }
+        return sum + (cost * (it.quantity || 0));
       }, 0) + (p.material_cost || 0);
       const totalCost = totalMO + totalMP + (p.general_expenses || 0);
       const income = p.quotation_total || 0;
@@ -2199,14 +2199,14 @@ function renderHistoryTable(type) {
   }
   if (type === 'purchases') {
     let data = state.history.purchases;
-    
+
     // Aplicar filtros
     if (state.purchaseFilters.type !== 'all') {
       data = data.filter(p => p.type === state.purchaseFilters.type);
     }
     if (state.purchaseFilters.search) {
       const s = state.purchaseFilters.search.toLowerCase();
-      data = data.filter(p => 
+      data = data.filter(p =>
         (p.project_name && p.project_name.toLowerCase().includes(s)) ||
         (p.provider_name && p.provider_name.toLowerCase().includes(s)) ||
         (p.description && p.description.toLowerCase().includes(s)) ||
@@ -2380,44 +2380,44 @@ window.showTransactionDetails = (type, id) => {
       ${isProduction ? `
       <div class="summary-section">
         <table class="summary-table">
-          <tr><td>Costo Mano de Obra (M.O.)</td><td style="text-align: right">$${(transaction.items.reduce((sum, it) => { 
-                const pm = state.products.find(p => p.code === it.product_code);
-                const rm = state.rawMaterials.find(m => m.code === it.product_code);
-                let cost = it.mo_cost || 0;
-                if (cost === 0) {
-                   if (pm) cost = pm.labor_cost || 0;
-                   else if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
-                }
-                return sum + (cost * (it.quantity || 0));
-              }, 0)).toLocaleString()}</td></tr>
+          <tr><td>Costo Mano de Obra (M.O.)</td><td style="text-align: right">$${(transaction.items.reduce((sum, it) => {
+    const pm = state.products.find(p => p.code === it.product_code);
+    const rm = state.rawMaterials.find(m => m.code === it.product_code);
+    let cost = it.mo_cost || 0;
+    if (cost === 0) {
+      if (pm) cost = pm.labor_cost || 0;
+      else if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
+    }
+    return sum + (cost * (it.quantity || 0));
+  }, 0)).toLocaleString()}</td></tr>
           <tr><td>Costo Materiales / Insumos</td><td style="text-align: right">$${(transaction.items.reduce((sum, it) => {
-                const pm = state.products.find(p => p.code === it.product_code);
-                const rm = state.rawMaterials.find(m => m.code === it.product_code);
-                let cost = it.material_cost || 0;
-                if (cost === 0) {
-                   if (pm) cost = pm.cost_unit || 0;
-                   else if (rm && rm.type !== 'MO' && rm.type !== 'Mano de Obra' && rm.type !== 'Servicio') cost = rm.cost_net || 0;
-                }
-                return sum + (cost * (it.quantity || 0));
-              }, 0) + (transaction.material_cost || 0)).toLocaleString()}</td></tr>
+    const pm = state.products.find(p => p.code === it.product_code);
+    const rm = state.rawMaterials.find(m => m.code === it.product_code);
+    let cost = it.material_cost || 0;
+    if (cost === 0) {
+      if (pm) cost = pm.cost_unit || 0;
+      else if (rm && rm.type !== 'MO' && rm.type !== 'Mano de Obra' && rm.type !== 'Servicio') cost = rm.cost_net || 0;
+    }
+    return sum + (cost * (it.quantity || 0));
+  }, 0) + (transaction.material_cost || 0)).toLocaleString()}</td></tr>
           <tr><td>Gastos Generales / Varios</td><td style="text-align: right">$${(transaction.general_expenses || 0).toLocaleString()}</td></tr>
           <tr style="font-size: 1.1rem; border-top: 2px solid var(--border); color: var(--danger)">
              <td>COSTO TOTAL ESTIMADO</td>
               <td style="text-align: right"><strong>$${((transaction.items.reduce((sum, it) => {
-                 const pm = state.products.find(p => p.code === it.product_code);
-                 const rm = state.rawMaterials.find(m => m.code === it.product_code);
-                 
-                 let costMP = it.material_cost || 0;
-                 let costMO = it.mo_cost || 0;
-                 if (costMP === 0 && costMO === 0) {
-                    if (pm) { costMP = pm.cost_unit || 0; costMO = pm.labor_cost || 0; }
-                    else if (rm) {
-                      if (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio') costMO = rm.cost_net || 0;
-                      else costMP = rm.cost_net || 0;
-                    }
-                 }
-                 return sum + ((costMP + costMO) * (it.quantity || 0));
-              }, 0)) + (transaction.material_cost || 0) + (transaction.general_expenses || 0)).toLocaleString()}</strong></td>
+    const pm = state.products.find(p => p.code === it.product_code);
+    const rm = state.rawMaterials.find(m => m.code === it.product_code);
+
+    let costMP = it.material_cost || 0;
+    let costMO = it.mo_cost || 0;
+    if (costMP === 0 && costMO === 0) {
+      if (pm) { costMP = pm.cost_unit || 0; costMO = pm.labor_cost || 0; }
+      else if (rm) {
+        if (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio') costMO = rm.cost_net || 0;
+        else costMP = rm.cost_net || 0;
+      }
+    }
+    return sum + ((costMP + costMO) * (it.quantity || 0));
+  }, 0)) + (transaction.material_cost || 0) + (transaction.general_expenses || 0)).toLocaleString()}</strong></td>
           </tr>
           ${transaction.quotation_total > 0 ? `
             <tr style="font-size: 1rem; border-top: 1px dashed var(--border); color: var(--success); margin-top: 10px">
@@ -2727,7 +2727,7 @@ window.editItem = (type, code) => {
 
 window.recalculateAllStock = async () => {
   if (!confirm('Esta operación auditará todo el historial para recalcular los niveles de stock (PT y MP) desde cero. ¿Desea continuar?')) return;
-  
+
   const finishBtn = (btn, originalText) => {
     btn.innerHTML = originalText;
     btn.disabled = false;
@@ -2937,7 +2937,7 @@ window.openProductionModal = (code) => {
   document.getElementById('prod-edit-id').value = '';
   document.getElementById('prod-modal-title').textContent = 'Nueva Orden de Producción';
   document.getElementById('btn-prod-text').textContent = 'Iniciar Producción';
-  
+
   // Reset category to push and hide project group
   const catSelect = document.getElementById('prod-category');
   if (catSelect) catSelect.value = 'push';
@@ -3028,7 +3028,7 @@ window.editProduction = async (id) => {
         window.updateProductionDatalist(quote);
 
         // Calculate total labor cost from quotation labor items
-        const laborItems = quote.items.filter(it => 
+        const laborItems = quote.items.filter(it =>
           it.item_type === 'labor' || it.item_type === 'MO' || it.item_type === 'mano_de_obra'
         );
         const totalLaborFromQuote = laborItems.reduce((sum, it) => {
@@ -3042,7 +3042,7 @@ window.editProduction = async (id) => {
         }, 0);
 
         // Get sellable items from quote to match with production rows
-        const quoteProducts = quote.items.filter(it => 
+        const quoteProducts = quote.items.filter(it =>
           it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type
         );
         const totalProductQty = quoteProducts.reduce((sum, it) => sum + (parseFloat(it.quantity) || 1), 0);
@@ -3056,7 +3056,7 @@ window.editProduction = async (id) => {
           const currentMO = parseFloat(moInput.value) || 0;
 
           // Find matching quote product for this item
-          const matchingQuoteItem = quoteProducts.find(qi => 
+          const matchingQuoteItem = quoteProducts.find(qi =>
             (qi.item_code === item.product_code) || (qi.description === item.product_code)
           );
 
@@ -3152,7 +3152,7 @@ window.updateProdRecipeView = async () => {
       const qtyInput = row.querySelector('.prod-item-qty');
       const mpInput = row.querySelector('.prod-item-mp');
       const moInput = row.querySelector('.prod-item-mo');
-      
+
       const qtyProduced = parseFloat(qtyInput?.value) || 0;
       if (!rowItemCode || qtyProduced <= 0) continue;
 
@@ -3167,13 +3167,13 @@ window.updateProdRecipeView = async () => {
             recipeItems.forEach(r => {
               const batchSize = parseFloat(r.batch_size) || 1;
               const unitContrib = parseFloat(r.unit_cost) || 0;
-              
+
               const totalCostForThisRow = unitContrib * qtyProduced;
               const totalQtyForThisRow = (parseFloat(r.quantity) || 0) / batchSize * qtyProduced;
 
               const typeText = (r.type || r.raw_materials?.type || '').toLowerCase();
               const isMO = (typeText.includes('mo') || typeText.includes('mano') || typeText.includes('labor') || typeText.includes('servicio'));
-              
+
               if (isMO) {
                 rowUnitMO += unitContrib;
                 totalMO += totalCostForThisRow;
@@ -3235,16 +3235,16 @@ window.updateProdRecipeView = async () => {
 };
 
 window.recalculateProductionHistory = async () => {
-    if (!confirm('Esta acción recalculará los costos y devolverá el stock de insumos mal descontado de TODA la historia de producción. ¿Estás seguro?')) return;
-    
-    try {
-        const res = await apiFetch('/admin/recalculate-production', { method: 'POST' });
-        if (res.error) throw new Error(res.error);
-        alert('Ô£à ├ëxito: ' + res.message);
-        window.loadHistory(); // Refresh history table
-    } catch (e) {
-        alert('ÔØî Error al recalcular: ' + e.message);
-    }
+  if (!confirm('Esta acción recalculará los costos y devolverá el stock de insumos mal descontado de TODA la historia de producción. ¿Estás seguro?')) return;
+
+  try {
+    const res = await apiFetch('/admin/recalculate-production', { method: 'POST' });
+    if (res.error) throw new Error(res.error);
+    alert('Ô£à ├ëxito: ' + res.message);
+    window.loadHistory(); // Refresh history table
+  } catch (e) {
+    alert('ÔØî Error al recalcular: ' + e.message);
+  }
 };
 
 window.updateProdTotals = () => {
@@ -3258,12 +3258,12 @@ window.updateProdTotals = () => {
     const qtyInput = row.querySelector('.prod-item-qty');
     const mpInput = row.querySelector('.prod-item-mp');
     const moInput = row.querySelector('.prod-item-mo');
-    
+
     if (qtyInput && mpInput && moInput) {
       const qty = parseFloat(qtyInput.value) || 0;
       const mp = parseFloat(mpInput.value) || 0;
       const mo = parseFloat(moInput.value) || 0;
-      
+
       if (qty > 0) {
         // En Ross ERP, el costo por ítem se ingresa como Unitario. Multiplicamos por cantidad.
         totalItemsMP += (mp * qty);
@@ -3274,10 +3274,10 @@ window.updateProdTotals = () => {
 
   const costHeaderMP = document.getElementById('prod-material-cost');
   const costHeaderExpenses = document.getElementById('prod-general-expenses');
-  
+
   // El input 'prod-material-cost' representa el costo TOTAL de materiales de la producción.
   if (costHeaderMP) costHeaderMP.value = Math.round(totalItemsMP);
-  
+
   // Actualizamos el resumen visual en el modal si existe (puedes añadir un label para MO)
 };
 
@@ -3857,24 +3857,24 @@ window.saveQuotation = async () => {
 
   // Lógica de Versionado para Super Admin (Sincronizado con módulo)
   if (quoteId && currentUser.role === 'superadmin' && (window.currentQuotationStatus === 'sent' || window.currentQuotationStatus === 'production')) {
-      const createNewVersion = confirm(`Esta cotización ya tiene estado "${QUOTE_STATUS_LABELS[window.currentQuotationStatus]}". \n\n¿Deseas guardarla como una NUEVA VERSI├ôN para no sobreescribir la original?`);
-      
-      if (createNewVersion) {
-          method = 'POST'; 
-          endpoint = '/quotations';
-          
-          const baseId = externalQuoteId.split('V')[0];
-          const versions = state.quotations
-              .map(q => q.external_quote_id || '')
-              .filter(id => id.startsWith(baseId))
-              .map(id => {
-                  const match = id.match(/V(\d+)$/);
-                  return match ? parseInt(match[1]) : 1;
-              });
-          const nextVer = Math.max(...versions, 1) + 1;
-          finalExternalId = `${baseId}V${nextVer}`;
-          alert(`Se creará la versión: ${finalExternalId}`);
-      }
+    const createNewVersion = confirm(`Esta cotización ya tiene estado "${QUOTE_STATUS_LABELS[window.currentQuotationStatus]}". \n\n¿Deseas guardarla como una NUEVA VERSI├ôN para no sobreescribir la original?`);
+
+    if (createNewVersion) {
+      method = 'POST';
+      endpoint = '/quotations';
+
+      const baseId = externalQuoteId.split('V')[0];
+      const versions = state.quotations
+        .map(q => q.external_quote_id || '')
+        .filter(id => id.startsWith(baseId))
+        .map(id => {
+          const match = id.match(/V(\d+)$/);
+          return match ? parseInt(match[1]) : 1;
+        });
+      const nextVer = Math.max(...versions, 1) + 1;
+      finalExternalId = `${baseId}V${nextVer}`;
+      alert(`Se creará la versión: ${finalExternalId}`);
+    }
   }
 
   btn.disabled = true;
@@ -4088,7 +4088,7 @@ window.viewQuotation = async (id) => {
         // Si es factura, el costo real es el NETO (el IVA es crédito fiscal)
         return (p.document_type === 'boleta') ? sum + (p.total || 0) : sum + (p.net || 0);
       }, 0);
-      
+
       const netProfit = totalNetSales - totalNetCostPurchases - totalProductionCosts;
       const balance = totalRealSales - totalRealPurchase - totalProductionCosts;
 
@@ -4140,14 +4140,14 @@ window.viewQuotation = async (id) => {
                 <thead><tr><th>Producto</th><th style="text-align:center">Pedido</th><th style="text-align:center">Fabricado</th><th style="text-align:center">Estado</th></tr></thead>
                 <tbody>
                   ${(q.products_list || []).map(p => {
-                    const quoted = p.quantity || 0;
-                    const code = (p.master_code || p.id)?.toLowerCase() || '';
-                    const produced = producedQtyMap[code] || 0;
-                    const diff = quoted - produced;
-                    let status = '<span style="color:var(--success)">Ô£à</span>';
-                    if (diff > 0) status = `<span style="color:var(--warning); font-weight:700">${diff} pend.</span>`;
-                    
-                    return `
+        const quoted = p.quantity || 0;
+        const code = (p.master_code || p.id)?.toLowerCase() || '';
+        const produced = producedQtyMap[code] || 0;
+        const diff = quoted - produced;
+        let status = '<span style="color:var(--success)">Ô£à</span>';
+        if (diff > 0) status = `<span style="color:var(--warning); font-weight:700">${diff} pend.</span>`;
+
+        return `
                       <tr>
                         <td>${p.name || p.id}</td>
                         <td style="text-align:center">${quoted}</td>
@@ -4155,7 +4155,7 @@ window.viewQuotation = async (id) => {
                         <td style="text-align:center">${status}</td>
                       </tr>
                     `;
-                  }).join('')}
+      }).join('')}
                 </tbody>
               </table>
               ${(q.related_productions || []).length > 0 ? `
@@ -4777,12 +4777,12 @@ function renderView(viewName) {
 
     const roleDisplay = document.getElementById('display-user-role');
     if (roleDisplay && currentUser) {
-        roleDisplay.textContent = currentUser.role || '-';
-        if (currentUser.role === 'superadmin') {
-            roleDisplay.style.color = 'var(--accent)';
-            roleDisplay.style.fontWeight = '700';
-            roleDisplay.textContent = '­ƒææ Super Admin';
-        }
+      roleDisplay.textContent = currentUser.role || '-';
+      if (currentUser.role === 'superadmin') {
+        roleDisplay.style.color = 'var(--accent)';
+        roleDisplay.style.fontWeight = '700';
+        roleDisplay.textContent = '­ƒææ Super Admin';
+      }
     }
 
     if (sidebarEmpresa) sidebarEmpresa.textContent = empresaNombre;
@@ -5226,7 +5226,7 @@ function renderView(viewName) {
         const q = await apiFetch(`/quotations/${qId}`);
         if (q && q.items) {
           const rows = document.querySelectorAll('#sale-items-body .item-row');
-          
+
           // Clear current rows values first
           rows.forEach(row => {
             const codeInput = row.querySelector('.item-code');
@@ -5240,13 +5240,13 @@ function renderView(viewName) {
           });
 
           const sellableItems = q.items.filter(it => it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type);
-          
+
           sellableItems.forEach((item, idx) => {
             if (rows[idx]) {
               const codeInput = rows[idx].querySelector('.item-code');
               const qtyInput = rows[idx].querySelector('.item-qty');
               const priceInput = rows[idx].querySelector('.item-price');
-              
+
               if (codeInput) {
                 const originalCode = item.item_code || item.description || '';
                 const projectCode = `[P-${qId}] ${originalCode}`;
@@ -5257,13 +5257,13 @@ function renderView(viewName) {
               if (priceInput) priceInput.value = item.unit_price || 0;
             }
           });
-          
+
           // Set client if possible
           if (q.client_id) {
             const clientSelect = document.getElementById('sale-client');
             if (clientSelect) clientSelect.value = q.client_id;
           }
-          
+
           calculateTotals('sale');
         }
       } catch (err) {
@@ -5312,7 +5312,7 @@ function renderView(viewName) {
         for (const item of body.items) {
           const productCode = item.productCode || item.description;
           let product = state.products.find(p => p.code?.toLowerCase() === productCode?.toLowerCase());
-          
+
           // If not found, check if it's a project product [P-XXX]
           if (!product && body.quotation_id) {
             const projectCode = `[P-${body.quotation_id}] ${productCode}`;
@@ -5640,7 +5640,7 @@ function renderView(viewName) {
                 const totalLaborFromQuote = laborItems.reduce((sum, it) => {
                   return sum + (parseFloat(it.total_cost) || (parseFloat(it.unit_cost || 0) * parseFloat(it.quantity || 1)));
                 }, 0);
-                
+
                 // Distribute labor cost proportionally across products
                 const totalProductQty = itemsToProduce.reduce((sum, it) => sum + (parseFloat(it.quantity) || 1), 0);
 
@@ -5653,11 +5653,11 @@ function renderView(viewName) {
 
                     codeInput.value = item.item_code || item.description || '';
                     qtyInput.value = item.quantity || 1;
-                    
+
                     // Búsqueda inteligente de costos (Cotización o Maestro)
                     const masterProd = state.products.find(p => p.code === (item.item_code || item.description));
                     const unit_cost = item.unit_cost || item.cost_unit || masterProd?.cost_unit || 0;
-                    
+
                     // MO cost: from item itself, from product master, or distributed from quotation labor items
                     let labor_cost = item.labor_cost || item.mo_cost || masterProd?.labor_cost || 0;
                     if (labor_cost === 0 && totalLaborFromQuote > 0 && totalProductQty > 0) {
@@ -5723,15 +5723,15 @@ function renderView(viewName) {
             if (!exists && isFromQuote) {
               const quoteId = document.getElementById('prod-quotation')?.value;
               const projectCode = `[P-${quoteId}] ${productCode}`;
-              
+
               // Check if it was already registered with the prefix in this session or previous
               const existsWithPrefix = state.products.find(p => p.code === projectCode);
-              
+
               if (!existsWithPrefix) {
                 console.log('Auto-registering project product:', projectCode);
                 await postData('/products', {
                   code: projectCode,
-                  name: productCode, 
+                  name: productCode,
                   type: 'terminado',
                   price_sale: 0,
                   cost_unit: 0
@@ -6555,7 +6555,7 @@ function setupItemTable(prefix) {
         }
         if (option && option.dataset.price) {
           const realPrice = parseFloat(option.dataset.price) || 0;
-          priceInput.value = Math.round(realPrice); 
+          priceInput.value = Math.round(realPrice);
           row.dataset.realPrice = realPrice; // Guardar valor real con decimales
         } else {
           priceInput.value = 0;
@@ -6566,9 +6566,9 @@ function setupItemTable(prefix) {
     });
 
     priceInput.addEventListener('input', () => {
-        // Si el usuario edita manualmente, el valor ingresado es el nuevo "real"
-        row.dataset.realPrice = priceInput.value;
-        calculateRow();
+      // Si el usuario edita manualmente, el valor ingresado es el nuevo "real"
+      row.dataset.realPrice = priceInput.value;
+      calculateRow();
     });
     qtyInput.addEventListener('input', calculateRow);
   });
@@ -7123,55 +7123,55 @@ document.addEventListener('submit', async (e) => {
 });
 // Borrar si existía (limpieza de turnos previos si falló)
 window.bulkPromoteQuotes = async () => {
-    if (!confirm('¿Estás seguro de sincronizar todas las cotizaciones históricas? \n\nEsta acción buscará todas las cotizaciones en "Producción" que no han sido promocionadas y creará automáticamente sus productos, insumos y recetas en el catálogo.')) return;
+  if (!confirm('¿Estás seguro de sincronizar todas las cotizaciones históricas? \n\nEsta acción buscará todas las cotizaciones en "Producción" que no han sido promocionadas y creará automáticamente sus productos, insumos y recetas en el catálogo.')) return;
 
-    const btn = event.target;
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'ÔÅ│ Procesando...';
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'ÔÅ│ Procesando...';
 
-    try {
-        const data = await apiFetch('/admin/bulk-promote-quotes', { method: 'POST' });
-        if (data && data.success) {
-            alert(data.message);
-            window.filterQuoteStatus('production'); // Refrescar vista
-        } else if (data) {
-            alert('Error: ' + (data.error || 'Operación fallida'));
-        } else {
-            alert('Sesión expirada o error de red. Por favor inicia sesión de nuevo.');
-        }
-    } catch (e) {
-        console.error('Bulk Promote Error:', e);
-        alert('Error de conexión');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
+  try {
+    const data = await apiFetch('/admin/bulk-promote-quotes', { method: 'POST' });
+    if (data && data.success) {
+      alert(data.message);
+      window.filterQuoteStatus('production'); // Refrescar vista
+    } else if (data) {
+      alert('Error: ' + (data.error || 'Operación fallida'));
+    } else {
+      alert('Sesión expirada o error de red. Por favor inicia sesión de nuevo.');
     }
+  } catch (e) {
+    console.error('Bulk Promote Error:', e);
+    alert('Error de conexión');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 };
 
 // Fase 2: Vincular Ventas y Producciones antiguas con los nuevos códigos CO
 window.syncHistoryItems = async () => {
-    if (!confirm('¿Deseas vincular las Ventas y Producciones antiguas con los nuevos códigos CO?\n\nEsto permitirá que al "Recalcular Stock" el inventario se actualice correctamente para esos productos.')) return;
+  if (!confirm('¿Deseas vincular las Ventas y Producciones antiguas con los nuevos códigos CO?\n\nEsto permitirá que al "Recalcular Stock" el inventario se actualice correctamente para esos productos.')) return;
 
-    const btn = event.target;
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'ÔÅ│ Vinculando...';
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'ÔÅ│ Vinculando...';
 
-    try {
-        const data = await apiFetch('/admin/sync-history-items-to-master', { method: 'POST' });
-        if (data && data.success) {
-            alert(data.message + '\\n\\nIMPORTANTE: Ahora ve a Productos o Insumos y corre el botón "Recalcular Stock" para finalizar la auditoría.');
-        } else if (data) {
-            alert('Error: ' + (data.error || 'Operación fallida'));
-        }
-    } catch (e) {
-        console.error('Sync History Items Error:', e);
-        alert('Error de conexión');
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
+  try {
+    const data = await apiFetch('/admin/sync-history-items-to-master', { method: 'POST' });
+    if (data && data.success) {
+      alert(data.message + '\\n\\nIMPORTANTE: Ahora ve a Productos o Insumos y corre el botón "Recalcular Stock" para finalizar la auditoría.');
+    } else if (data) {
+      alert('Error: ' + (data.error || 'Operación fallida'));
     }
+  } catch (e) {
+    console.error('Sync History Items Error:', e);
+    alert('Error de conexión');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 };
 
 // Exponer funciones y estado al ámbito global para compatibilidad con módulos legacy
