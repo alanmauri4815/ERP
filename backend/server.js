@@ -2141,7 +2141,7 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
         // 0. REVERSE OLD ACCOUNTING ENTRY
         await supabase.from(T.PC_ASIENTOS).delete()
             .eq('empresa_id', req.empresa_id)
-            .ilike('description', `%Producción #${prodId}%`);
+            .ilike('glosa', `%Producción #${prodId}%`);
 
         // 1. REVERSE OLD STOCK IMPACT
         const { data: prodHeader } = await supabase.from(T.PRODUCTION).select('production_category, quotation_id').eq('id', prodId).single();

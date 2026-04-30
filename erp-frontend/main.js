@@ -2932,6 +2932,18 @@ window.openProductionModal = (code) => {
   if (!modal) return;
   modal.style.display = 'flex';
 
+  // Reset edit mode
+  document.getElementById('prod-edit-mode').value = 'false';
+  document.getElementById('prod-edit-id').value = '';
+  document.getElementById('prod-modal-title').textContent = 'Nueva Orden de Producción';
+  document.getElementById('btn-prod-text').textContent = 'Iniciar Producción';
+  
+  // Reset category to push and hide project group
+  const catSelect = document.getElementById('prod-category');
+  if (catSelect) catSelect.value = 'push';
+  const projGroup = document.getElementById('prod-project-group');
+  if (projGroup) projGroup.style.display = 'none';
+
   window.populateProductDropdowns('.prod-item-code');
 
   // Reset fields
@@ -2953,7 +2965,7 @@ window.openProductionModal = (code) => {
   }
 };
 
-window.editProduction = (id) => {
+window.editProduction = async (id) => {
   const production = state.history.production.find(p => p.id === id);
   if (!production) return;
 
@@ -2970,6 +2982,26 @@ window.editProduction = (id) => {
   if (document.getElementById('prod-material-cost')) document.getElementById('prod-material-cost').value = production.material_cost || 0;
   if (document.getElementById('prod-general-expenses')) document.getElementById('prod-general-expenses').value = production.general_expenses || 0;
 
+  // Restore production category (pull/push)
+  const catSelect = document.getElementById('prod-category');
+  if (catSelect) {
+    catSelect.value = production.production_category || 'push';
+  }
+
+  // Restore quotation association and trigger UI update
+  const quoteSelect = document.getElementById('prod-quotation');
+  if (production.production_category === 'pull' && production.quotation_id) {
+    // Show the project group and set the quotation
+    if (window.toggleProdCategory) await window.toggleProdCategory();
+    if (quoteSelect) {
+      quoteSelect.value = production.quotation_id;
+      // Trigger loading of quotation items for MO costs
+      if (quoteSelect.onchange) await quoteSelect.onchange();
+    }
+  } else {
+    if (window.toggleProdCategory) await window.toggleProdCategory();
+  }
+
   const rows = modal.querySelectorAll('#production-items-body .item-row');
   // Reset all rows
   rows.forEach(row => {
@@ -2979,18 +3011,28 @@ window.editProduction = (id) => {
     row.querySelector('.prod-item-mo').value = '0';
   });
 
-  // Fill data
+  // Fill data from saved production items
   production.items.forEach((item, i) => {
     if (rows[i]) {
       rows[i].querySelector('.prod-item-code').value = item.product_code;
       rows[i].querySelector('.prod-item-qty').value = item.quantity;
       rows[i].querySelector('.prod-item-mp').value = item.material_cost || 0;
-      rows[i].querySelector('.prod-item-mo').value = item.mo_cost || 0;
+
+      // For MO cost: use saved value first, fallback to product master labor_cost
+      let moCost = item.mo_cost || 0;
+      if (moCost === 0) {
+        const masterProd = state.products.find(p => p.code === item.product_code);
+        if (masterProd && masterProd.labor_cost) {
+          moCost = masterProd.labor_cost;
+        }
+      }
+      rows[i].querySelector('.prod-item-mo').value = moCost;
     }
   });
 
-  // Re-calculate based on recipes (Fills 0s automatically)
-  window.updateProdRecipeView();
+  // Re-calculate totals
+  if (window.updateProdRecipeView) window.updateProdRecipeView();
+  if (window.updateProdTotals) window.updateProdTotals();
 };
 
 window.updateProdRecipeView = async () => {
@@ -5518,6 +5560,15 @@ function renderView(viewName) {
                 // In Ross ERP, we usually want to produce what we are selling.
                 const itemsToProduce = quote.items.filter(it => it.item_type === 'venta' || it.item_type === 'producto' || !it.item_type);
 
+                // Calculate total labor cost from quotation labor items
+                const laborItems = quote.items.filter(it => it.item_type === 'labor' || it.item_type === 'MO' || it.item_type === 'mano_de_obra');
+                const totalLaborFromQuote = laborItems.reduce((sum, it) => {
+                  return sum + (parseFloat(it.total_cost) || (parseFloat(it.unit_cost || 0) * parseFloat(it.quantity || 1)));
+                }, 0);
+                
+                // Distribute labor cost proportionally across products
+                const totalProductQty = itemsToProduce.reduce((sum, it) => sum + (parseFloat(it.quantity) || 1), 0);
+
                 itemsToProduce.forEach((item, idx) => {
                   if (rows[idx]) {
                     const codeInput = rows[idx].querySelector('.prod-item-code');
@@ -5531,7 +5582,14 @@ function renderView(viewName) {
                     // Búsqueda inteligente de costos (Cotización o Maestro)
                     const masterProd = state.products.find(p => p.code === (item.item_code || item.description));
                     const unit_cost = item.unit_cost || item.cost_unit || masterProd?.cost_unit || 0;
-                    const labor_cost = item.labor_cost || item.mo_cost || masterProd?.labor_cost || 0;
+                    
+                    // MO cost: from item itself, from product master, or distributed from quotation labor items
+                    let labor_cost = item.labor_cost || item.mo_cost || masterProd?.labor_cost || 0;
+                    if (labor_cost === 0 && totalLaborFromQuote > 0 && totalProductQty > 0) {
+                      // Distribute total labor proportionally by quantity
+                      const itemQty = parseFloat(item.quantity) || 1;
+                      labor_cost = Math.round((totalLaborFromQuote / totalProductQty) * itemQty / itemQty); // per-unit MO
+                    }
 
                     mpInput.value = unit_cost;
                     moInput.value = labor_cost;
