@@ -12,7 +12,7 @@ import {
   formatLedgerForExport
 } from './export-utils.js'
 
-// M├│dulos de Contabilidad ContaChile
+// Módulos de Contabilidad ContaChile
 import { renderDashboard as renderProDashboard } from './modules/dashboard/dashboard.page.js'
 import { renderPlanCuentas } from './modules/plan-cuentas/plan-cuentas.page.js'
 import { renderLibroDiario } from './modules/libro-diario/libro-diario.page.js'
@@ -279,7 +279,7 @@ async function fetchData() {
       db.getAll('asiento_movimientos').catch(e => { console.error(e); return []; })
     ]);
 
-    // Asignaciones est├índar
+    // Asignaciones estándar
     state.products = Array.isArray(prods) ? prods : [];
     state.rawMaterials = Array.isArray(rms) ? rms : [];
     state.providers = Array.isArray(provs) ? provs : [];
@@ -316,7 +316,7 @@ async function fetchData() {
     renderView(activeView);
   } catch (error) {
     console.error('Error fetching data:', error);
-    alert('Error al sincronizar con Supabase. Verifique su conexi├│n.');
+    alert('Error al sincronizar con Supabase. Verifique su conexión.');
   }
 }
 
@@ -339,10 +339,10 @@ const views = {
           <input type="checkbox" ${state.hideProjectProducts ? 'checked' : ''} onchange="window.toggleHideProjects(this.checked)">
           <span>Ocultar Proyectos [P-]</span>
         </label>
-        <button onclick="window.exportProducts()" style="background: var(--secondary)">­ƒôè Exportar</button>
+        <button onclick="window.exportProducts()" style="background: var(--secondary)">📊 Exportar</button>
         ${(currentUser.role === 'superadmin') ? `
-          <button onclick="window.recalculateAllCosts()" style="background: var(--accent)" title="Recalcular costos unitarios basados en recetas">­ƒÜÇ Costos</button>
-          <button onclick="window.recalculateAllStock()" style="background: var(--warning); color: var(--bg-dark)" title="Auditor├¡a total: Fix stock seg├║n historial de compras/ventas/prods">­ƒöä Recalcular Stock</button>
+          <button onclick="window.recalculateAllCosts()" style="background: var(--accent)" title="Recalcular costos unitarios basados en recetas">🚀 Costos</button>
+          <button onclick="window.recalculateAllStock()" style="background: var(--warning); color: var(--bg-dark)" title="Auditoría total: Fix stock según historial de compras/ventas/prods">🔄 Recalcular Stock</button>
         ` : ''}
         <button onclick="document.getElementById('new-prod-modal').style.display='flex'">+ Nuevo</button>
       </div>
@@ -353,16 +353,16 @@ const views = {
         <table>
           <thead>
             <tr>
-              <th>C├│digo</th>
+              <th>Código</th>
               <th>Producto</th>
               <th>Atributo</th>
-              <th>Tama├▒o</th>
+              <th>Tamaño</th>
               <th>Stock</th>
               <th>Costo Unit.</th>
               <th>Neto</th>
               <th>IVA (19%)</th>
               <th>P. Venta (Bruto)</th>
-              <th>Acci├│n</th>
+              <th>Acción</th>
             </tr>
           </thead>
           <tbody>
@@ -379,7 +379,7 @@ const views = {
                 <td>$${(p.price_net || 0).toLocaleString('es-CL')}</td>
                 <td style="color: var(--accent)">$${(p.iva || 0).toLocaleString('es-CL')}</td>
                 <td style="font-weight: 600; color: var(--secondary)">$${(p.price_sale || 0).toLocaleString('es-CL')}</td>
-                <td><button class="btn-sm" onclick="window.editItem('product', '${p.code}')" title="Editar producto">Ô£Å´©Å</button></td>
+                <td><button class="btn-sm" onclick="window.editItem('product', '${p.code}')" title="Editar producto">📝</button></td>
               </tr>
             `).join('')}
           </tbody>
@@ -394,9 +394,9 @@ const views = {
     <header class="animate-fade">
       <h1>Inventario de Insumos</h1>
       <div style="display: flex; gap: 0.5rem">
-        <button onclick="window.exportRawMaterials()" style="background: var(--secondary)">­ƒôè Exportar a Excel</button>
+        <button onclick="window.exportRawMaterials()" style="background: var(--secondary)">📊 Exportar a Excel</button>
         ${(currentUser.role === 'superadmin') ? `
-          <button onclick="window.recalculateAllStock()" style="background: var(--warning); color: var(--bg-dark)" title="Auditor├¡a total del historial">­ƒöä Recalcular Stock</button>
+          <button onclick="window.recalculateAllStock()" style="background: var(--warning); color: var(--bg-dark)" title="Auditoría total del historial">🔄 Recalcular Stock</button>
         ` : ''}
         <button onclick="document.getElementById('new-rm-modal').style.display='flex'">+ Nuevo Insumo</button>
       </div>
@@ -407,16 +407,16 @@ const views = {
         <table>
           <thead>
             <tr>
-              <th>C├│digo</th>
+              <th>Código</th>
               <th>Insumo</th>
               <th>Atributo</th>
-              <th>Tama├▒o</th>
+              <th>Tamaño</th>
               <th>Stock</th>
               <th style="text-align: center">Lote</th>
               <th>Unidad</th>
               <th>Neto (Lote)</th>
               <th>Costo Unitario</th>
-              <th>Acci├│n</th>
+              <th>Acción</th>
             </tr>
           </thead>
           <tbody>
@@ -431,7 +431,7 @@ const views = {
                 <td>${m.unit}</td>
                 <td>$${(m.cost_net || 0).toLocaleString('es-CL')}</td>
                 <td style="font-weight: 600; color: var(--accent)">$${Math.round((m.cost_net || 0) / (m.batch_size || 1)).toLocaleString('es-CL')}</td>
-                <td><button class="btn-sm" onclick="window.editItem('rm', '${m.code}')" title="Editar insumo">Ô£Å´©Å</button></td>
+                <td><button class="btn-sm" onclick="window.editItem('rm', '${m.code}')" title="Editar insumo">📝</button></td>
               </tr>
             `).join('')}
           </tbody>
@@ -442,8 +442,8 @@ const views = {
 
   design: () => `
     <header class="animate-fade">
-      <h1>Dise├▒o (Recetas)</h1>
-      <button onclick="document.getElementById('new-prod-modal').style.display='flex'">+ Nuevo Dise├▒o</button>
+      <h1>Diseño (Recetas)</h1>
+      <button onclick="document.getElementById('new-prod-modal').style.display='flex'">+ Nuevo Diseño</button>
     </header>
     <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1.5rem">
       <div class="card animate-fade">
@@ -469,15 +469,15 @@ const views = {
 
   production: () => `
     <header class="animate-fade">
-      <h1>Producci├│n</h1>
+      <h1>Producción</h1>
       <div style="display: flex; gap: 0.5rem">
-        <button onclick="window.exportProduction()" style="background: var(--accent)">­ƒôè Exportar a Excel</button>
-        <button onclick="window.openProductionModal()" style="background: var(--secondary)">+ Registrar Producci├│n</button>
+        <button onclick="window.exportProduction()" style="background: var(--accent)">📊 Exportar a Excel</button>
+        <button onclick="window.openProductionModal()" style="background: var(--secondary)">+ Registrar Producción</button>
       </div>
     </header>
 
     <div class="card animate-fade">
-      <h2>Historial Detallado de Producci├│n</h2>
+      <h2>Historial Detallado de Producción</h2>
       <div id="production-history-content">
         ${renderHistoryTable('production')}
       </div>
@@ -488,8 +488,8 @@ const views = {
     <div id="production-modal" class="modal" style="display:none">
       <div class="card modal-content modal-wide">
         <header>
-          <h3 id="prod-modal-title">Nueva Orden de Producci├│n</h3>
-          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted)">Ô£ò</button>
+          <h3 id="prod-modal-title">Nueva Orden de Producción</h3>
+          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted)">✖</button>
         </header>
 
         <input type="hidden" id="prod-edit-mode" value="false">
@@ -503,24 +503,24 @@ const views = {
         <div style="background: rgba(var(--primary-rgb), 0.05); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px dashed var(--primary)">
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem">
             <div class="form-group" style="margin:0">
-              <label style="font-weight: 600">M├®todo de Producci├│n</label>
+              <label style="font-weight: 600">Método de Producción</label>
               <select id="prod-category" onchange="window.toggleProdCategory()" style="font-size: 1.1rem; padding: 0.5rem">
-                <option value="push">­ƒÜÇ Push (fabricar para vender)</option>
-                <option value="pull">­ƒöä Pull (de cotizaci├│n ganada)</option>
+                <option value="push">🚀 Push (fabricar para vender)</option>
+                <option value="pull">🔄 Pull (de cotización ganada)</option>
               </select>
             </div>
             <div class="form-group" id="prod-project-group" style="margin:0; display:none">
-              <label style="font-weight: 600; color: var(--secondary)">­ƒôü Cotizaci├│n Asociada</label>
+              <label style="font-weight: 600; color: var(--secondary)">📁 Cotización Asociada</label>
               <select id="prod-quotation" style="border: 1px solid var(--secondary)">
                 <option value="">Sin asociar</option>
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">­ƒôï ${q.name || ('Cotizaci├│n #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} ÔÇö ­ƒæñ ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} ÔÇö 👤 ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
               </select>
             </div>
           </div>
           
           <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05)">
             <div class="form-group" style="margin:0">
-              <label style="font-weight: 600; color: var(--accent)">­ƒôª Costo Materiales / Insumos ($)</label>
+              <label style="font-weight: 600; color: var(--accent)">📦 Costo Materiales / Insumos ($)</label>
               <input type="number" id="prod-material-cost" value="0" style="border-color: var(--accent)44">
             </div>
             <div class="form-group" style="margin:0">
@@ -534,7 +534,7 @@ const views = {
           <thead>
             <tr>
               <th style="width: 50px">├ìtem</th>
-              <th style="width: 280px">Producto (C├│digo o Nuevo)</th>
+              <th style="width: 280px">Producto (Código o Nuevo)</th>
               <th style="width: 80px; text-align: center">Cantidad</th>
               <th style="width: 110px; text-align: center">Costo M.P. ($)</th>
               <th style="width: 110px; text-align: center">Costo M.O. ($)</th>
@@ -545,7 +545,7 @@ const views = {
               <tr class="item-row">
                 <td style="text-align: center; color: var(--text-muted)">${i + 1}</td>
                 <td>
-                  <input type="text" class="prod-item-code" data-index="${i}" list="production-products-list" placeholder="C├│digo o producto nuevo..." style="width:100%" oninput="window.updateProdRecipeView()">
+                  <input type="text" class="prod-item-code" data-index="${i}" list="production-products-list" placeholder="Código o producto nuevo..." style="width:100%" oninput="window.updateProdRecipeView()">
                 </td>
                 <td><input type="number" class="prod-item-qty" step="1" value="0" placeholder="0" oninput="window.updateProdRecipeView()"></td>
                 <td><input type="number" class="prod-item-mp" step="0.01" value="0" oninput="window.updateProdTotals()"></td>
@@ -558,7 +558,7 @@ const views = {
         <!-- Recipe/Materials Visualizer -->
         <div id="production-material-summary" style="margin-top: 1.5rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; display:none">
           <h4 style="margin: 0 0 1rem 0; color: var(--secondary); font-size: 0.9rem">
-            ­ƒö¼ Composici├│n y Consumos Proyectados
+            ­ƒö¼ Composición y Consumos Proyectados
           </h4>
           <div id="material-summary-content" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; font-size: 0.8rem">
             <!-- Will be populated by updateProdRecipeView -->
@@ -566,7 +566,7 @@ const views = {
         </div>
         <div class="form-actions">
           <button type="button" onclick="this.closest('.modal').style.display='none'" style="background: var(--surface-light)">Cancelar</button>
-          <button id="btn-submit-production" style="background: var(--accent)">­ƒÜÇ <span id="btn-prod-text">Iniciar Producci├│n</span></button>
+          <button id="btn-submit-production" style="background: var(--accent)">🚀 <span id="btn-prod-text">Iniciar Producción</span></button>
         </div>
       </div>
     </div>
@@ -576,8 +576,8 @@ const views = {
     <header class="animate-fade">
       <h1>Compras e Informes de Gastos</h1>
       <div style="display: flex; gap: 0.5rem">
-        <button onclick="window.runMigration()" style="background: var(--danger); font-size: 0.7rem; padding: 2px 5px">­ƒöº Migrar DB</button>
-        <button onclick="window.exportPurchases()" style="background: var(--accent)">­ƒôè Exportar a Excel</button>
+        <button onclick="window.runMigration()" style="background: var(--danger); font-size: 0.7rem; padding: 2px 5px">🛠️ Migrar DB</button>
+        <button onclick="window.exportPurchases()" style="background: var(--accent)">📊 Exportar a Excel</button>
         <button onclick="window.openPurchaseModal()" style="background: var(--secondary)">+ Registrar Compra / Gasto</button>
       </div>
     </header>
@@ -588,8 +588,8 @@ const views = {
           <label style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; display: block">Tipo de Registro</label>
           <select onchange="window.updatePurchaseFilters('type', this.value)" style="padding: 0.6rem; border-radius: 8px; background: var(--surface-light); border: 1px solid var(--border); color: var(--text); width: 100%">
             <option value="all" ${state.purchaseFilters.type === 'all' ? 'selected' : ''}>­ƒôæ Todos los registros</option>
-            <option value="mp" ${state.purchaseFilters.type === 'mp' ? 'selected' : ''}>­ƒôª Insumos (Inventariable)</option>
-            <option value="expense" ${state.purchaseFilters.type === 'expense' ? 'selected' : ''}>­ƒÆ© Gasto / Caja Chica</option>
+            <option value="mp" ${state.purchaseFilters.type === 'mp' ? 'selected' : ''}>📦 Insumos (Inventariable)</option>
+            <option value="expense" ${state.purchaseFilters.type === 'expense' ? 'selected' : ''}>💸 Gasto / Caja Chica</option>
           </select>
         </div>
         <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 250px">
@@ -623,7 +623,7 @@ const views = {
       <div class="card modal-content modal-wide">
         <header>
           <h3 id="buy-modal-title">Nueva Compra / Gasto</h3>
-          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted)">Ô£ò</button>
+          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted)">✖</button>
         </header>
 
         <input type="hidden" id="pur-edit-mode" value="false">
@@ -639,12 +639,12 @@ const views = {
               </select>
             </div>
             <div class="form-group" style="margin:0">
-              <label style="font-weight: 600; color: var(--text)">Categor├¡a de Compra</label>
+              <label style="font-weight: 600; color: var(--text)">Categoría de Compra</label>
               <select id="pur-category" onchange="window.togglePurCategory()" style="font-size: 1rem">
-                <option value="general">­ƒôª General (sin producci├│n espec├¡fica)</option>
-                <option value="pull" class="pro-only-option">­ƒöä Pull (de cotizaci├│n ganada)</option>
-                <option value="push">­ƒÜÇ Push (para fabricar y vender)</option>
-                <option value="comercializacion">­ƒÅ¬ Comercializaci├│n (reventa)</option>
+                <option value="general">📦 General (sin producción específica)</option>
+                <option value="pull" class="pro-only-option">🔄 Pull (de cotización ganada)</option>
+                <option value="push">🚀 Push (para fabricar y vender)</option>
+                <option value="comercializacion">🏢 Comercialización (reventa)</option>
               </select>
             </div>
           </div>
@@ -666,36 +666,36 @@ const views = {
             <input type="date" id="pur-date" value="${new Date().toISOString().split('T')[0]}" required>
           </div>
           <div class="form-group">
-            <label style="font-weight: 600">N┬░ Documento</label>
+            <label style="font-weight: 600">Nº Documento</label>
             <input type="text" id="pur-doc-number" placeholder="Ej: 12345">
           </div>
           <div class="form-group" id="pur-project-group">
-            <label style="font-weight: 600; color: var(--secondary)">­ƒôü Proyecto Asociado</label>
+            <label style="font-weight: 600; color: var(--secondary)">📁 Proyecto Asociado</label>
             <select id="pur-project" style="border: 1px solid var(--secondary)44">
               <option value="">Gasto General (Sin Proyecto)</option>
-              <optgroup label="Cotizaciones Aprobadas / En Producci├│n">
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">­ƒôï ${q.name || ('Cotizaci├│n #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''}</option>`).join('')}
+              <optgroup label="Cotizaciones Aprobadas / En Producción">
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''}</option>`).join('')}
               </optgroup>
               <optgroup label="Ventas Realizadas">
-                ${state.history.sales.slice(0, 10).map(s => `<option value="S-${s.id}">­ƒÆ░ Venta #${s.id} - ${s.client_name || 'Vta Directa'}</option>`).join('')}
+                ${state.history.sales.slice(0, 10).map(s => `<option value="S-${s.id}">💰 Venta #${s.id} - ${s.client_name || 'Vta Directa'}</option>`).join('')}
               </optgroup>
             </select>
           </div>
         </div>
 
         <div class="form-group" id="pur-desc-group" style="display:none; margin-bottom: 1rem">
-          <label style="font-weight: 600">Descripci├│n / Motivo del Gasto</label>
+          <label style="font-weight: 600">Descripción / Motivo del Gasto</label>
           <input type="text" id="pur-description" placeholder="Ej: Compra de hilos, Almuerzo terreno, etc.">
         </div>
 
         <div style="background: var(--surface-light); padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; border: 1px solid var(--border)">
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; align-items: center">
             <div class="form-group" style="margin:0">
-              <label style="font-weight: 600">M├®todo de Pago Sugerido</label>
+              <label style="font-weight: 600">Método de Pago Sugerido</label>
               <select id="pur-payment-method">
                 <option value="transfer">Transferencia</option>
-                <option value="debit">D├®bito</option>
-                <option value="credit">Cr├®dito (Cuentas por Pagar)</option>
+                <option value="debit">Débito</option>
+                <option value="credit">Crédito (Cuentas por Pagar)</option>
                 <option value="cash">Efectivo / Caja Chica</option>
               </select>
             </div>
@@ -754,7 +754,7 @@ const views = {
            <div class="form-group" style="max-width: 300px; margin: 0 auto">
              <label style="font-size: 1.1rem; text-align: center; display: block">Monto Total del Gasto ($)</label>
              <input type="number" id="pur-expense-total" value="0" style="font-size: 1.5rem; text-align: center; font-weight: 700; color: var(--primary)">
-             <p style="font-size: 0.8rem; opacity: 0.6; text-align: center; margin-top: 0.5rem">Se contabilizar├í como Gasto Operacional neto.</p>
+             <p style="font-size: 0.8rem; opacity: 0.6; text-align: center; margin-top: 0.5rem">Se contabilizará como Gasto Operacional neto.</p>
            </div>
         </div>
 
@@ -781,7 +781,7 @@ const views = {
     <header class="animate-fade">
       <h1>Ventas (Salida PT)</h1>
       <div style="display: flex; gap: 0.5rem">
-        <button onclick="window.exportSales()" style="background: var(--accent)">­ƒôè Exportar a Excel</button>
+        <button onclick="window.exportSales()" style="background: var(--accent)">📊 Exportar a Excel</button>
         <button onclick="window.openSaleModal()" style="background: var(--secondary)">+ Registrar Venta</button>
       </div>
     </header>
@@ -798,7 +798,7 @@ const views = {
       <div class="card modal-content modal-wide">
         <header>
           <h3 id="sale-modal-title">Nueva Venta de Productos</h3>
-          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted)">Ô£ò</button>
+          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted)">✖</button>
         </header>
 
         <input type="hidden" id="sale-edit-mode" value="false">
@@ -817,7 +817,7 @@ const views = {
             <input type="date" id="sale-date" value="${new Date().toISOString().split('T')[0]}">
           </div>
           <div class="form-group">
-            <label>N┬░ Documento</label>
+            <label>Nº Documento</label>
             <input type="text" id="sale-doc-number" placeholder="Ej: 98765">
           </div>
           <div class="form-group">
@@ -830,23 +830,23 @@ const views = {
           </div>
           <div class="form-group">
             <label>Evento/Feria</label>
-            <input type="text" id="sale-event-name" placeholder="Ej: Feria Navide├▒a">
+            <input type="text" id="sale-event-name" placeholder="Ej: Feria Navideña">
           </div>
           <div class="form-group">
-            <label>Categor├¡a (PUSH/PULL)</label>
+            <label>Categoría (PUSH/PULL)</label>
             <select id="sale-category" onchange="window.toggleSaleCategory()">
               <option value="push">PUSH (Venta Directa/Stock)</option>
-              <option value="pull" class="pro-only-option">PULL (Cotizaci├│n/Encargo)</option>
+              <option value="pull" class="pro-only-option">PULL (Cotización/Encargo)</option>
             </select>
           </div>
         </div>
         <div style="margin-bottom: 1.5rem">
           <div class="form-group" id="sale-quotation-group">
-            <label style="font-weight: 600; color: var(--secondary)">­ƒôü Asociar a Proyecto (ABC)</label>
+            <label style="font-weight: 600; color: var(--secondary)">📁 Asociar a Proyecto (ABC)</label>
             <select id="sale-quotation" style="border: 1px solid var(--secondary)">
               <option value="">Sin Proyecto / Venta Directa</option>
-              <optgroup label="Cotizaciones Aprobadas / En Producci├│n">
-                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">­ƒôï ${q.name || ('Cotizaci├│n #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} ÔÇö ­ƒæñ ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
+              <optgroup label="Cotizaciones Aprobadas / En Producción">
+                ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} ÔÇö 👤 ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
               </optgroup>
             </select>
             <small style="font-size: 0.7rem; opacity: 0.7">Vincula esta venta a un proyecto para cerrar el ciclo PULL.</small>
@@ -854,17 +854,17 @@ const views = {
         </div>
         <div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
           <div class="form-group" style="flex: 1">
-            <label>M├®todo de Pago</label>
+            <label>Método de Pago</label>
             <select id="sale-payment-method" onchange="window.updatePaymentFields()">
               <option value="transfer">Transferencia</option>
-              <option value="machine">M├íquina (Tarjeta)</option>
+              <option value="machine">Máquina (Tarjeta)</option>
               <option value="cash">Efectivo</option>
             </select>
           </div>
           <div class="form-group" style="flex: 1" id="machine-selector-group">
-            <label>M├íquina de Pago</label>
+            <label>Máquina de Pago</label>
             <select id="sale-machine">
-              <option value="">Seleccionar m├íquina...</option>
+              <option value="">Seleccionar máquina...</option>
               ${state.paymentMachines?.filter(m => m.active !== false).map(m => `<option value="${m.id}" data-commission="${m.commission_percent}">${m.name} (${m.commission_percent}%)</option>`).join('') || ''}
             </select>
           </div>
@@ -943,7 +943,7 @@ const views = {
               <td style="text-align: right; padding-right: 1rem;"><strong>$ <span id="sale-total-display">0</span></strong></td>
             </tr>
             <tr id="sale-commission-row" style="display: none; color: var(--danger)">
-              <td>Comisi├│n M├íquina</td>
+              <td>Comisión Máquina</td>
               <td style="text-align: right; padding-right: 1rem;">-$ <span id="sale-commission-display">0</span></td>
             </tr>
             <tr id="sale-real-income-row" style="border-top: 1px dashed var(--border); font-weight: 600;">
@@ -972,7 +972,7 @@ const views = {
     <div class="card animate-fade">
       <div class="tabs-header">
         <button class="tab-btn active" data-history="sales">Ventas</button>
-        <button class="tab-btn" data-history="production">Producci├│n</button>
+        <button class="tab-btn" data-history="production">Producción</button>
         <button class="tab-btn" data-history="purchases">Compras</button>
       </div>
       <div id="history-content" style="margin-top: 1.5rem">
@@ -985,7 +985,7 @@ const views = {
   reports: () => `
     <header class="animate-fade">
       <h1>Reportes Avanzados</h1>
-      <div class="date-display">An├ílisis de Ganancias y Rendimiento</div>
+      <div class="date-display">Análisis de Ganancias y Rendimiento</div>
     </header>
 
     <div class="tabs" style="display: flex; gap: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 2rem">
@@ -1001,7 +1001,7 @@ const views = {
           <canvas id="monthlyProfitChart" style="max-height: 400px;"></canvas>
         </div>
         <div class="card">
-          <h2>Evoluci├│n de Ganancia Neta</h2>
+          <h2>Evolución de Ganancia Neta</h2>
           <canvas id="netProfitChart" style="max-height: 400px;"></canvas>
         </div>
       </div>
@@ -1032,8 +1032,8 @@ const views = {
     <div id="report-tab-profitability" class="report-tab animate-fade" style="display:none">
        <div class="card animate-fade">
          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem">
-           <h2>Rentabilidad por Proyecto / Cotizaci├│n</h2>
-           <button class="btn-sm" onclick="window.calculateProfitabilityByProject()" title="Recalcular">­ƒöä</button>
+           <h2>Rentabilidad por Proyecto / Cotización</h2>
+           <button class="btn-sm" onclick="window.calculateProfitabilityByProject()" title="Recalcular">🔄</button>
          </div>
          <p style="font-size: 0.9rem; opacity: 0.8; margin-bottom: 1rem">
            Ingresos (Ventas PULL) menos Costos Directos (Compras MP, Gastos) asociados al proyecto.
@@ -1052,7 +1052,7 @@ const views = {
                </tr>
              </thead>
              <tbody id="profitability-report-body">
-               <tr><td colspan="7" style="text-align:center; padding: 2rem">Cargando an├ílisis...</td></tr>
+               <tr><td colspan="7" style="text-align:center; padding: 2rem">Cargando análisis...</td></tr>
              </tbody>
            </table>
          </div>
@@ -1061,7 +1061,7 @@ const views = {
   `,
 
   clients_management: () => `
-    <header class="animate-fade"><h1>Gesti├│n de Clientes</h1></header>
+    <header class="animate-fade"><h1>Gestión de Clientes</h1></header>
     <div class="card animate-fade">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
         <h2>Listado de Clientes</h2>
@@ -1069,7 +1069,7 @@ const views = {
       </div>
       <div class="table-container">
         <table>
-          <thead><tr><th>RUT</th><th>Nombre</th><th>Direcci├│n</th><th>E-mail</th><th>Tel├®fono</th><th>Observaciones</th></tr></thead>
+          <thead><tr><th>RUT</th><th>Nombre</th><th>Dirección</th><th>E-mail</th><th>Teléfono</th><th>Observaciones</th></tr></thead>
           <tbody>
             ${state.clients.map(c => `
               <tr>
@@ -1082,7 +1082,7 @@ const views = {
                   <div style="display:flex; flex-direction:column; gap:0.3rem">
                     <div style="font-size:0.75rem; font-style:italic; max-width:180px">${c.notes || '-'}</div>
                     <div style="display:flex; gap:0.3rem">
-                      <button class="btn-sm" onclick="window.editClient('${c.id}')">Ô£Å´©Å</button>
+                      <button class="btn-sm" onclick="window.editClient('${c.id}')">📝</button>
                       <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteClient('${c.id}')">­ƒùæ´©Å</button>
                     </div>
                   </div>
@@ -1104,10 +1104,10 @@ const views = {
             <div class="form-group"><label>RUT</label><input type="text" id="cli-rut" placeholder="12.345.678-9"></div>
             <div class="form-group"><label>Nombre</label><input type="text" id="cli-name" required></div>
           </div>
-          <div class="form-group"><label>Direcci├│n</label><input type="text" id="cli-addr"></div>
+          <div class="form-group"><label>Dirección</label><input type="text" id="cli-addr"></div>
           <div class="grid-2">
             <div class="form-group"><label>Email</label><input type="email" id="cli-email"></div>
-            <div class="form-group"><label>Tel├®fono</label><input type="text" id="cli-phone"></div>
+            <div class="form-group"><label>Teléfono</label><input type="text" id="cli-phone"></div>
           </div>
           <div class="form-group"><label>Observaciones</label><textarea id="cli-notes" rows="2" style="width:100%; border: 1px solid var(--border); border-radius:0.5rem; padding:0.5rem"></textarea></div>
           <div class="form-actions">
@@ -1120,7 +1120,7 @@ const views = {
   `,
 
   providers_management: () => `
-    <header class="animate-fade"><h1>Gesti├│n de Proveedores</h1></header>
+    <header class="animate-fade"><h1>Gestión de Proveedores</h1></header>
     <div class="card animate-fade">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
         <h2>Listado de Proveedores</h2>
@@ -1128,7 +1128,7 @@ const views = {
       </div>
       <div class="table-container">
         <table>
-          <thead><tr><th>RUT</th><th>Nombre Empresa</th><th>Direcci├│n</th><th>Persona Contacto</th><th>E-mail</th><th>Tel├®fono</th><th>Observaciones</th></tr></thead>
+          <thead><tr><th>RUT</th><th>Nombre Empresa</th><th>Dirección</th><th>Persona Contacto</th><th>E-mail</th><th>Teléfono</th><th>Observaciones</th></tr></thead>
           <tbody>
             ${state.providers.map(p => `
               <tr>
@@ -1142,7 +1142,7 @@ const views = {
                   <div style="display:flex; flex-direction:column; gap:0.3rem">
                     <div style="font-size:0.75rem; font-style:italic; max-width:180px">${p.notes || '-'}</div>
                     <div style="display:flex; gap:0.3rem">
-                      <button class="btn-sm" onclick="window.editProvider('${p.id}')">Ô£Å´©Å</button>
+                      <button class="btn-sm" onclick="window.editProvider('${p.id}')">📝</button>
                       <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteProvider('${p.id}')">­ƒùæ´©Å</button>
                     </div>
                   </div>
@@ -1156,15 +1156,15 @@ const views = {
   `,
 
   payment_machines: () => `
-    <header class="animate-fade"><h1>M├íquinas de Pago</h1></header>
+    <header class="animate-fade"><h1>Máquinas de Pago</h1></header>
     <div class="card animate-fade">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
         <h2>Dispositivos Configurados</h2>
-        <button onclick="window.openMachineModal()">+ Nueva M├íquina</button>
+        <button onclick="window.openMachineModal()">+ Nueva Máquina</button>
       </div>
       <div class="table-container">
         <table>
-          <thead><tr><th>Nombre</th><th>Proveedor</th><th>Comisi├│n</th><th>Cuenta Asociada</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Proveedor</th><th>Comisión</th><th>Cuenta Asociada</th><th>Estado</th><th>Acciones</th></tr></thead>
           <tbody>
             ${state.paymentMachines.map(m => `
               <tr>
@@ -1174,7 +1174,7 @@ const views = {
                 <td>${state.accounts.find(a => a.id == m.account_id)?.name || 'Sin asignar'}</td>
                 <td><span style="color: ${m.active !== false ? 'var(--success)' : 'var(--danger)'}">${m.active !== false ? 'ÔùÅ Activa' : 'Ôùï Inactiva'}</span></td>
                 <td>
-                  <button class="btn-sm" onclick="window.editMachine('${m.id}')">Ô£Å´©Å</button>
+                  <button class="btn-sm" onclick="window.editMachine('${m.id}')">📝</button>
                   <button class="btn-sm" style="background:var(--danger)" onclick="window.deleteMachine('${m.id}')">­ƒùæ´©Å</button>
                 </td>
               </tr>
@@ -1187,13 +1187,13 @@ const views = {
     <!-- Machine Modal -->
     <div id="machine-modal" class="modal" style="display:none">
       <div class="card modal-content">
-        <h3 id="machine-modal-title">Nueva M├íquina de Pago</h3>
+        <h3 id="machine-modal-title">Nueva Máquina de Pago</h3>
         <form id="machine-form">
           <input type="hidden" id="mach-id">
-          <div class="form-group"><label>Nombre</label><input type="text" id="mach-name" required placeholder="Ej: Transbank D├®bito"></div>
+          <div class="form-group"><label>Nombre</label><input type="text" id="mach-name" required placeholder="Ej: Transbank Débito"></div>
           <div class="grid-2">
             <div class="form-group"><label>Proveedor</label><input type="text" id="mach-provider" placeholder="Transbank, Tenpo, etc."></div>
-            <div class="form-group"><label>Comisi├│n (%)</label><input type="number" id="mach-commission" step="0.01" value="3.45"></div>
+            <div class="form-group"><label>Comisión (%)</label><input type="number" id="mach-commission" step="0.01" value="3.45"></div>
           </div>
           <div class="form-group">
             <label>Cuenta Asociada</label>
@@ -1205,12 +1205,12 @@ const views = {
           <div class="form-group">
             <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
               <input type="checkbox" id="mach-active" checked>
-              <span>M├íquina activa</span>
+              <span>Máquina activa</span>
             </label>
           </div>
           <div class="form-actions">
             <button type="button" onclick="document.getElementById('machine-modal').style.display='none'">Cancelar</button>
-            <button type="submit">Guardar M├íquina</button>
+            <button type="submit">Guardar Máquina</button>
           </div>
         </form>
       </div>
@@ -1222,7 +1222,7 @@ const views = {
     <div class="card animate-fade">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
         <h2>Ventas Pendientes de Transferir</h2>
-        <button onclick="window.openTransferModal()" style="background: var(--success)">­ƒÆ░ Transferir Seleccionadas</button>
+        <button onclick="window.openTransferModal()" style="background: var(--success)">💰 Transferir Seleccionadas</button>
       </div>
       <div class="table-container">
         <table>
@@ -1232,7 +1232,7 @@ const views = {
               <th>Fecha</th>
               <th>Evento</th>
               <th>Tipo Pago</th>
-              <th>M├íquina</th>
+              <th>Máquina</th>
               <th>Total</th>
               <th>IVA</th>
               <th>Exento</th>
@@ -1244,7 +1244,7 @@ const views = {
                 <td><input type="checkbox" class="sale-checkbox" data-id="${s.id}" data-total="${s.total}" data-iva="${s.iva || 0}" data-exempt="${s.is_iva_exempt}" data-machine="${s.payment_machines?.commission_percent || 0}"></td>
                 <td>${s.date}</td>
                 <td>${s.event_name || '-'}</td>
-                <td>${s.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : s.payment_method === 'machine' ? '­ƒÆ│ M├íquina' : '­ƒöä Transf.'}</td>
+                <td>${s.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : s.payment_method === 'machine' ? '­ƒÆ│ Máquina' : '🔄 Transf.'}</td>
                 <td>${s.payment_machines?.name || '-'}</td>
                 <td><strong>$${(s.total || 0).toLocaleString('es-CL')}</strong></td>
                 <td>$${(s.iva || 0).toLocaleString('es-CL')}</td>
@@ -1259,7 +1259,7 @@ const views = {
         <div class="grid-4" style="margin-top: 0.5rem">
           <div><small>Total Bruto</small><br><strong id="sum-gross">$0</strong></div>
           <div><small>IVA a Descontar</small><br><strong id="sum-iva" style="color: var(--danger)">-$0</strong></div>
-          <div><small>Comisi├│n M├íquina</small><br><strong id="sum-commission" style="color: var(--danger)">-$0</strong></div>
+          <div><small>Comisión Máquina</small><br><strong id="sum-commission" style="color: var(--danger)">-$0</strong></div>
           <div><small>Neto a Transferir</small><br><strong id="sum-net" style="color: var(--success); font-size: 1.2rem">$0</strong></div>
         </div>
       </div>
@@ -1288,7 +1288,7 @@ const views = {
   `,
 
   masters: () => `
-    <header class="animate-fade"><h1>Gesti├│n de Datos Insumos y Config.</h1></header>
+    <header class="animate-fade"><h1>Gestión de Datos Insumos y Config.</h1></header>
     <div class="grid-2 animate-fade" style="margin-top: 2rem">
       <div class="card">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
@@ -1297,10 +1297,10 @@ const views = {
         </div>
         <div class="table-container">
           <table>
-            <thead><tr><th>C├│digo</th><th>Insumo</th><th>Unidad</th><th>Costo</th></tr></thead>
+            <thead><tr><th>Código</th><th>Insumo</th><th>Unidad</th><th>Costo</th></tr></thead>
             <tbody>
               ${state.rawMaterials.slice(0, 10).map(m => `<tr><td>${m.code}</td><td>${m.name}</td><td>${m.unit}</td><td>$${m.cost_net.toLocaleString()}</td></tr>`).join('')}
-              ${state.rawMaterials.length > 10 ? `<tr><td colspan="4" style="text-align:center; opacity:0.5">... y ${state.rawMaterials.length - 10} m├ís</td></tr>` : ''}
+              ${state.rawMaterials.length > 10 ? `<tr><td colspan="4" style="text-align:center; opacity:0.5">... y ${state.rawMaterials.length - 10} más</td></tr>` : ''}
             </tbody>
           </table>
         </div>
@@ -1322,17 +1322,17 @@ const views = {
             </div>
             <div style="display: flex; gap: 0.5rem; margin-top: 1rem">
                 <button onclick="window.saveAlertSettings()" style="flex:1">Guardar Config</button>
-                <button onclick="window.testTelegram()" style="background:var(--secondary)">Probar Env├¡o</button>
+                <button onclick="window.testTelegram()" style="background:var(--secondary)">Probar Envío</button>
             </div>
             <p style="font-size: 0.75rem; margin-top: 0.5rem; opacity: 0.6">
                 Consigue estos datos hablando con <b>@BotFather</b> y <b>@userinfobot</b> en Telegram.
             </p>
         </div>
 
-        <h3 style="margin-top: 2rem; margin-bottom: 1rem">L├¡mites de Stock por Insumo</h3>
+        <h3 style="margin-top: 2rem; margin-bottom: 1rem">Límites de Stock por Insumo</h3>
         <div class="table-container" style="max-height: 250px; overflow-y: auto;">
           <table>
-            <thead><tr><th>Insumo</th><th style="width: 100px">M├¡nimo</th><th>Acci├│n</th></tr></thead>
+            <thead><tr><th>Insumo</th><th style="width: 100px">Mínimo</th><th>Acción</th></tr></thead>
             <tbody id="alerts-thresholds-body">
               ${state.rawMaterials.map(m => `
                 <tr>
@@ -1364,7 +1364,7 @@ const views = {
             <input type="text" id="login-user" required placeholder="Tu nombre de usuario" style="padding: 0.8rem">
           </div>
           <div class="form-group">
-            <label>Contrase├▒a</label>
+            <label>Contraseña</label>
             <input type="password" id="login-pass" required placeholder="ÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇó" style="padding: 0.8rem">
           </div>
           <button type="submit" style="width: 100%; padding: 1rem; margin-top: 1rem; font-size: 1rem; background: var(--primary)">Ingresar</button>
@@ -1380,22 +1380,22 @@ const views = {
       <h1>Mi Perfil</h1>
     </header>
     <div class="card animate-fade" style="max-width: 500px">
-      <h2>Cambiar Contrase├▒a</h2>
+      <h2>Cambiar Contraseña</h2>
       <form id="change-pass-form">
         <div class="form-group">
-          <label>Contrase├▒a Actual</label>
+          <label>Contraseña Actual</label>
           <input type="password" id="cp-old" required placeholder="ÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇó">
         </div>
         <div class="form-group">
-          <label>Nueva Contrase├▒a</label>
+          <label>Nueva Contraseña</label>
           <input type="password" id="cp-new" required placeholder="ÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇó">
         </div>
         <div class="form-group">
-          <label>Confirmar Nueva Contrase├▒a</label>
+          <label>Confirmar Nueva Contraseña</label>
           <input type="password" id="cp-confirm" required placeholder="ÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇó">
         </div>
         <div class="form-actions">
-          <button type="submit" style="width: 100%">Actualizar Contrase├▒a</button>
+          <button type="submit" style="width: 100%">Actualizar Contraseña</button>
         </div>
       </form>
     </div>
@@ -1403,7 +1403,7 @@ const views = {
 
   user_management: () => `
     <header class="animate-fade">
-      <h1>Gesti├│n de Usuarios</h1>
+      <h1>Gestión de Usuarios</h1>
       <button onclick="window.openUserModal()">+ Nuevo Usuario</button>
     </header>
 
@@ -1416,7 +1416,7 @@ const views = {
               <th>Usuario</th>
               <th>Rol</th>
               <th>Empresa</th>
-              <th>Acci├│n</th>
+              <th>Acción</th>
             </tr>
           </thead>
           <tbody>
@@ -1427,7 +1427,7 @@ const views = {
                 <td><span class="badge ${u.role === 'admin' ? 'badge-success' : 'badge-info'}">${u.role}</span></td>
                 <td>${u.empresa_nombre || 'Sin empresa'}</td>
                 <td>
-                  <button class="btn-sm" onclick="window.editUser(${u.id})">Ô£Å´©Å</button>
+                  <button class="btn-sm" onclick="window.editUser(${u.id})">📝</button>
                   ${u.username !== currentUser.username ? `<button class="btn-sm" onclick="window.deleteUser(${u.id})" style="background:var(--danger)">­ƒùæ´©Å</button>` : ''}
                 </td>
               </tr>
@@ -1442,7 +1442,7 @@ const views = {
       <div class="card modal-content">
         <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
           <h3><span id="user-modal-title">Nuevo Usuario</span></h3>
-          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted); border:none; font-size: 1.2rem; cursor:pointer">Ô£ò</button>
+          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted); border:none; font-size: 1.2rem; cursor:pointer">✖</button>
         </header>
         <form id="user-form">
           <input type="hidden" id="user-edit-id" value="">
@@ -1451,17 +1451,17 @@ const views = {
             <input type="text" id="user-name" required>
           </div>
           <div class="form-group">
-            <label id="user-pass-label">Contrase├▒a</label>
+            <label id="user-pass-label">Contraseña</label>
             <input type="password" id="user-pass">
             <small id="user-pass-hint" style="display:none; opacity: 0.6">Dejar en blanco para no cambiar</small>
           </div>
           <div class="form-group">
             <label>Rol</label>
             <select id="user-role">
-              <option value="superadmin">Gestor del ERP (M├íximo Nivel)</option>
-              <option value="admin">Administrador (Gesti├│n General)</option>
+              <option value="superadmin">Gestor del ERP (Máximo Nivel)</option>
+              <option value="admin">Administrador (Gestión General)</option>
               <option value="user">Usuario (Operaciones)</option>
-              <option value="viewer">Visor (S├│lo Lectura/Reportes)</option>
+              <option value="viewer">Visor (Sólo Lectura/Reportes)</option>
             </select>
           </div>
           <div class="form-group">
@@ -1481,7 +1481,7 @@ const views = {
     ${currentUser?.role === 'superadmin' ? `
     <!-- ========== GESTI├ôN DE EMPRESAS (Solo Gestor) ========== -->
     <header class="animate-fade" style="margin-top: 2rem">
-      <h1>­ƒÅó Gesti├│n de Empresas</h1>
+      <h1>­ƒÅó Gestión de Empresas</h1>
       <button onclick="window.openEmpresaModal()">+ Nueva Empresa</button>
     </header>
 
@@ -1496,7 +1496,7 @@ const views = {
               <th>Email</th>
               <th>Plan</th>
               <th>Estado</th>
-              <th>Acci├│n</th>
+              <th>Acción</th>
             </tr>
           </thead>
           <tbody id="empresas-tbody">
@@ -1511,7 +1511,7 @@ const views = {
       <div class="card modal-content" style="max-width: 500px">
         <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
           <h3 id="empresa-modal-title">Nueva Empresa</h3>
-          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted); border:none; font-size: 1.2rem; cursor:pointer">Ô£ò</button>
+          <button class="btn-sm" onclick="this.closest('.modal').style.display='none'" style="background:transparent; color:var(--text-muted); border:none; font-size: 1.2rem; cursor:pointer">✖</button>
         </header>
         <form id="empresa-form">
           <input type="hidden" id="empresa-edit-id" value="">
@@ -1525,7 +1525,7 @@ const views = {
               <input type="text" id="empresa-rut" placeholder="12.345.678-9">
             </div>
             <div class="form-group">
-              <label>Tel├®fono</label>
+              <label>Teléfono</label>
               <input type="text" id="empresa-telefono" placeholder="+56 9 1234 5678">
             </div>
           </div>
@@ -1534,18 +1534,18 @@ const views = {
             <input type="email" id="empresa-email" placeholder="contacto@empresa.cl">
           </div>
           <div class="form-group">
-            <label>Plan de Suscripci├│n (SaaS)</label>
+            <label>Plan de Suscripción (SaaS)</label>
             <select id="empresa-plan">
               <option value="completo">Plan Completo (Pro)</option>
-              <option value="basico">Plan B├ísico (Micro/Artesano)</option>
+              <option value="basico">Plan Básico (Micro/Artesano)</option>
             </select>
           </div>
           <div class="form-group">
-            <label>Direcci├│n</label>
+            <label>Dirección</label>
             <input type="text" id="empresa-direccion" placeholder="Calle 123, Ciudad">
           </div>
           <p style="font-size: 0.8rem; opacity: 0.6; margin-top: 0.5rem">
-            Ôä╣´©Å Al crear una nueva empresa, se generar├í autom├íticamente un usuario <strong>admin</strong> con contrase├▒a <strong>admin123</strong>.
+            Ôä╣´©Å Al crear una nueva empresa, se generará automáticamente un usuario <strong>admin</strong> con contraseña <strong>admin123</strong>.
           </p>
           <div class="form-actions">
             <button type="button" onclick="this.closest('.modal').style.display='none'">Cancelar</button>
@@ -1562,35 +1562,35 @@ const views = {
       <h1>Mi Perfil</h1>
     </header>
     <div class="card animate-fade" style="max-width: 500px">
-      <h2>Cambiar Contrase├▒a</h2>
+      <h2>Cambiar Contraseña</h2>
       <form id="change-pass-form">
         <div class="form-group">
-          <label>Contrase├▒a Actual</label>
+          <label>Contraseña Actual</label>
           <input type="password" id="cp-old" required placeholder="ÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇó">
         </div>
         <div class="form-group">
-          <label>Nueva Contrase├▒a</label>
+          <label>Nueva Contraseña</label>
           <input type="password" id="cp-new" required placeholder="ÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇó">
         </div>
         <div class="form-group">
-          <label>Confirmar Nueva Contrase├▒a</label>
+          <label>Confirmar Nueva Contraseña</label>
           <input type="password" id="cp-confirm" required placeholder="ÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇóÔÇó">
         </div>
         <div class="form-actions">
-          <button type="submit" style="width: 100%">Actualizar Contrase├▒a</button>
+          <button type="submit" style="width: 100%">Actualizar Contraseña</button>
         </div>
       </form>
     </div>
     <div class="card animate-fade" style="max-width: 500px; margin-top: 1.5rem; border: 1px solid var(--danger-light); background: rgba(239, 68, 68, 0.05);">
-      <h2 style="color: var(--danger)">Cerrar Sesi├│n</h2>
-      <p style="margin-bottom: 1.5rem; opacity: 0.8">┬┐Deseas salir del sistema? Tendr├ís que ingresar tus credenciales nuevamente.</p>
+      <h2 style="color: var(--danger)">Cerrar Sesión</h2>
+      <p style="margin-bottom: 1.5rem; opacity: 0.8">¿Deseas salir del sistema? Tendrás que ingresar tus credenciales nuevamente.</p>
       <button id="btn-logout-profile" class="btn" style="width: 100%; background: var(--danger); color: white; border: none; padding: 0.8rem; border-radius: 0.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.8rem;">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
           <polyline points="16 17 21 12 16 7"></polyline>
           <line x1="21" y1="12" x2="9" y2="12"></line>
         </svg>
-        Cerrar Sesi├│n Activa
+        Cerrar Sesión Activa
       </button>
     </div>
   `,
@@ -1614,9 +1614,9 @@ const views = {
       <header class="animate-fade">
         <h1>Sistema Contable</h1>
         <div style="display: flex; gap: 0.5rem">
-           <button onclick="window.exportLedger()" style="background: var(--primary)">­ƒôÑ Exportar Excel</button>
-           <button onclick="window.openLedgerTransferModal()" style="background: var(--secondary)">­ƒöä Transferencia</button>
-           <button onclick="window.openLedgerExpenseModal()" style="background: var(--accent)">­ƒÆ© Registrar Gasto</button>
+           <button onclick="window.exportLedger()" style="background: var(--primary)">📥 Exportar Excel</button>
+           <button onclick="window.openLedgerTransferModal()" style="background: var(--secondary)">🔄 Transferencia</button>
+           <button onclick="window.openLedgerExpenseModal()" style="background: var(--accent)">💸 Registrar Gasto</button>
         </div>
       </header>
 
@@ -1645,13 +1645,13 @@ const views = {
                 <option value="compra" ${state.ledgerFilter.type === 'compra' ? 'selected' : ''}>Compras</option>
                 <option value="gasto" ${state.ledgerFilter.type === 'gasto' ? 'selected' : ''}>Gastos</option>
                 <option value="transferencia" ${state.ledgerFilter.type === 'transferencia' ? 'selected' : ''}>Transferencias</option>
-                <option value="consumo" ${state.ledgerFilter.type === 'consumo' ? 'selected' : ''}>Producci├│n</option>
+                <option value="consumo" ${state.ledgerFilter.type === 'consumo' ? 'selected' : ''}>Producción</option>
               </select>
             </div>
             <div class="form-group" style="margin:0">
               <label style="font-size: 0.8rem; opacity: 0.7">Orden</label>
               <select id="ledger-filter-order" onchange="window.updateLedgerFilters()" style="padding: 0.4rem">
-                <option value="asc" ${state.ledgerFilter.order === 'asc' ? 'selected' : ''}>Cronol├│gico (Antiguos primero)</option>
+                <option value="asc" ${state.ledgerFilter.order === 'asc' ? 'selected' : ''}>Cronológico (Antiguos primero)</option>
                 <option value="desc" ${state.ledgerFilter.order === 'desc' ? 'selected' : ''}>Recientes primero</option>
               </select>
             </div>
@@ -1662,7 +1662,7 @@ const views = {
               <thead>
                 <tr>
                   <th style="width: 120px">Fecha</th>
-                  <th style="width: 150px">C├│digo Account</th>
+                  <th style="width: 150px">Código Account</th>
                   <th>Cuenta / Glosa</th>
                   <th style="text-align: right; width: 140px">Debe</th>
                   <th style="text-align: right; width: 140px">Haber</th>
@@ -1715,7 +1715,7 @@ const views = {
             <table>
               <thead>
                 <tr>
-                  <th>C├│digo</th>
+                  <th>Código</th>
                   <th>Cuenta</th>
                   <th style="text-align: right">Total Debe</th>
                   <th style="text-align: right">Total Haber</th>
@@ -1748,10 +1748,10 @@ const views = {
           <h3>Registrar Gasto / Egreso</h3>
           <form id="expense-form">
             <div class="form-group"><label>Fecha</label><input type="date" id="exp-date" required></div>
-            <div class="form-group"><label>Descripci├│n / Glosa</label><input type="text" id="exp-desc" required placeholder="Ej: Pago de luz, Arriendo..."></div>
+            <div class="form-group"><label>Descripción / Glosa</label><input type="text" id="exp-desc" required placeholder="Ej: Pago de luz, Arriendo..."></div>
             <div class="form-group"><label>Monto Total ($)</label><input type="number" id="exp-amount" required></div>
             <div class="form-group">
-              <label>Cuenta de Gasto (Categor├¡a)</label>
+              <label>Cuenta de Gasto (Categoría)</label>
               <select id="exp-category" required>
                 ${state.accountingAccounts.filter(a => a.type === 'Gasto' && a.category !== 'Header').map(a => `<option value="${a.code}">${a.name}</option>`).join('')}
               </select>
@@ -1802,16 +1802,16 @@ const views = {
     const activeTab = window.currentLogisticsTab || 'pending';
     return `
     <header class="animate-fade">
-      <h1>Log├¡stica y Cadena de Valor</h1>
+      <h1>Logística y Cadena de Valor</h1>
       <div style="display: flex; gap: 0.5rem">
-        <button onclick="fetchData()" style="background: var(--surface-light)">­ƒöä Sincronizar</button>
+        <button onclick="fetchData()" style="background: var(--surface-light)">🔄 Sincronizar</button>
       </div>
     </header>
 
     <div class="card animate-fade" style="margin-bottom: 2rem">
       <div class="tabs" style="display: flex; gap: 1rem; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 1.5rem">
         <button class="tab-btn ${activeTab === 'pending' ? 'active' : ''}" onclick="window.setLogisticsTab('pending')">ÔÅ│ Pendientes de Proceso</button>
-        <button class="tab-btn ${activeTab === 'history' ? 'active' : ''}" onclick="window.setLogisticsTab('history')">­ƒô£ Historial Log├¡stico</button>
+        <button class="tab-btn ${activeTab === 'history' ? 'active' : ''}" onclick="window.setLogisticsTab('history')">­ƒô£ Historial Logístico</button>
       </div>
 
       ${activeTab === 'pending' ? `
@@ -1821,9 +1821,9 @@ const views = {
               <tr>
                 <th>Fecha Doc</th>
                 <th>Tipo</th>
-                <th>Transacci├│n</th>
+                <th>Transacción</th>
                 <th>Entidad (Cli/Prov)</th>
-                <th style="text-align: center">Acci├│n F├¡sica</th>
+                <th style="text-align: center">Acción Física</th>
               </tr>
             </thead>
             <tbody>
@@ -1840,12 +1840,12 @@ const views = {
                   <td style="text-align: center">
                     <button class="btn-sm" onclick="window.openLogisticsModal('${p.type}', '${p.id}', '${p.transaction_type}')" 
                       style="background:${p.type === 'inbound' ? 'var(--secondary)' : 'var(--accent)'}">
-                      ­ƒôª Registrar ${p.type === 'inbound' ? 'Recepci├│n' : 'Despacho'}
+                      📦 Registrar ${p.type === 'inbound' ? 'Recepción' : 'Despacho'}
                     </button>
                   </td>
                 </tr>
               `).join('')}
-              ${state.pendingLogistics.length === 0 ? '<tr><td colspan="5" style="text-align:center; opacity:0.5; padding: 2rem">No hay movimientos pendientes. Todo al d├¡a Ô£à</td></tr>' : ''}
+              ${state.pendingLogistics.length === 0 ? '<tr><td colspan="5" style="text-align:center; opacity:0.5; padding: 2rem">No hay movimientos pendientes. Todo al día Ô£à</td></tr>' : ''}
             </tbody>
           </table>
         </div>
@@ -1861,7 +1861,7 @@ const views = {
                 <th>Seguimiento</th>
                 <th style="text-align: right">Costos Log.</th>
                 <th>Estado</th>
-                <th style="text-align: center">Acci├│n</th>
+                <th style="text-align: center">Acción</th>
               </tr>
             </thead>
             <tbody>
@@ -1904,7 +1904,7 @@ const PIPELINE_STAGES = [
   { key: 'draft', label: '­ƒôØ Borrador', color: '#6b7280' },
   { key: 'sent', label: '­ƒôñ Enviada', color: '#3b82f6' },
   { key: 'approved', label: 'Ô£à Aprobada', color: '#10b981' },
-  { key: 'production', label: '­ƒÅ¡ Producci├│n', color: '#f59e0b' },
+  { key: 'production', label: '­ƒÅ¡ Producción', color: '#f59e0b' },
   { key: 'rejected', label: 'ÔØî Rechazada', color: '#ef4444' },
   { key: 'cancelled', label: '­ƒÜ½ Anulada', color: '#991b1b' }
 ];
@@ -1937,8 +1937,8 @@ views.pipeline = () => {
         <line x1="12" y1="4" x2="12" y2="20"></line>
       </svg>
       <div>
-        <h1 style="margin:0">Gesti├│n de Procesos</h1>
-        <div class="date-display" style="font-size:0.8rem; opacity:0.7">Cadena de Valor ÔÇö M├®todo Pull</div>
+        <h1 style="margin:0">Gestión de Procesos</h1>
+        <div class="date-display" style="font-size:0.8rem; opacity:0.7">Cadena de Valor ÔÇö Método Pull</div>
       </div>
     </div>
   </header>
@@ -1966,8 +1966,8 @@ views.pipeline = () => {
   <!-- Flow Diagram -->
   <div class="card animate-fade" style="padding:1rem 1.5rem; margin-bottom:1.5rem">
     <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.8rem">
-      <strong style="color:var(--primary)">­ƒöä Flujo Pull:</strong>
-      <span style="font-size:0.85rem; color:var(--text-muted)">Cotizaci├│n ÔåÆ Enviada ÔåÆ Aprobada ÔåÆ Orden de Producci├│n ÔåÆ Compra MP ÔåÆ Producci├│n ÔåÆ Venta ÔåÆ Entrega ÔåÆ Pago</span>
+      <strong style="color:var(--primary)">🔄 Flujo Pull:</strong>
+      <span style="font-size:0.85rem; color:var(--text-muted)">Cotización ÔåÆ Enviada ÔåÆ Aprobada ÔåÆ Orden de Producción ÔåÆ Compra MP ÔåÆ Producción ÔåÆ Venta ÔåÆ Entrega ÔåÆ Pago</span>
     </div>
     <div style="display:flex; align-items:center; gap:0; overflow-x:auto; padding:0.5rem 0">
       ${activeStages.map((stage, idx) => {
@@ -2040,16 +2040,16 @@ views.acc_plan_cuentas = () => `<header class="animate-fade"><h1>Plan de Cuentas
 views.acc_libro_diario = () => `<header class="animate-fade"><h1>Libro Diario</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_libro_mayor = () => `<header class="animate-fade"><h1>Libro Mayor</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_balance_8 = () => `<header class="animate-fade"><h1>Balance 8 Columnas</h1></header><div id="accounting-container" class="animate-fade"></div>`;
-views.acc_tesoreria = () => `<header class="animate-fade"><h1>Tesorer├¡a y Bancos</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_tesoreria = () => `<header class="animate-fade"><h1>Tesorería y Bancos</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_remuneraciones = () => `<header class="animate-fade"><h1>Remuneraciones</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_compras_libro = () => `<header class="animate-fade"><h1>Libro de Compras</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_ventas_libro = () => `<header class="animate-fade"><h1>Libro de Ventas</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_balance_general = () => `<header class="animate-fade"><h1>Balance General</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_estado_resultados = () => `<header class="animate-fade"><h1>Estado de Resultados</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_honorarios = () => `<header class="animate-fade"><h1>Libro de Honorarios</h1></header><div id="accounting-container" class="animate-fade"></div>`;
-views.acc_tributario = () => `<header class="animate-fade"><h1>Gesti├│n Tributaria (F29)</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_tributario = () => `<header class="animate-fade"><h1>Gestión Tributaria (F29)</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 views.acc_activo_fijo = () => `<header class="animate-fade"><h1>Activo Fijo</h1></header><div id="accounting-container" class="animate-fade"></div>`;
-views.acc_analisis = () => `<header class="animate-fade"><h1>An├ílisis Financiero</h1></header><div id="accounting-container" class="animate-fade"></div>`;
+views.acc_analisis = () => `<header class="animate-fade"><h1>Análisis Financiero</h1></header><div id="accounting-container" class="animate-fade"></div>`;
 function renderHistoryTable(type) {
   const data = state.history[type];
   if (type === 'sales') {
@@ -2064,7 +2064,7 @@ function renderHistoryTable(type) {
           <th>Cliente / Evento</th>
           <th style="width: 120px">Pago</th>
           <th style="width: 130px; text-align: right">Total Bruto</th>
-          <th style="width: 100px; text-align: center">Acci├│n</th>
+          <th style="width: 100px; text-align: center">Acción</th>
         </tr>
       </thead>
       <tbody>
@@ -2084,7 +2084,7 @@ function renderHistoryTable(type) {
                 </td>
                 <td>
                   <span style="font-size:0.8rem">
-                    ${h.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : h.payment_method === 'machine' ? '­ƒÆ│ M├íquina' : '­ƒöä Transferencia'}
+                    ${h.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : h.payment_method === 'machine' ? '­ƒÆ│ Máquina' : '🔄 Transferencia'}
                   </span>
                 </td>
                 <td style="text-align: right; font-weight:700">
@@ -2094,7 +2094,7 @@ function renderHistoryTable(type) {
                   <div style="display: flex; gap: 0.3rem; justify-content: center">
                     <button class="btn-sm" onclick="window.showTransactionDetails('sale', '${h.id}')" title="Ver detalle">­ƒæü´©Å Ver</button>
                     ${currentUser?.role === 'superadmin' || currentUser?.role === 'admin' ? `
-                      <button class="btn-sm" onclick="window.editTransaction('sale', '${h.id}')" style="background:var(--secondary)" title="Editar">Ô£Å´©Å Editar</button>
+                      <button class="btn-sm" onclick="window.editTransaction('sale', '${h.id}')" style="background:var(--secondary)" title="Editar">📝 Editar</button>
                     ` : ''}
                     ${currentUser?.role === 'superadmin' ? `
                       <button class="btn-sm" onclick="window.deleteSale('${h.id}')" style="background:var(--danger)" title="Eliminar">­ƒùæ´©Å Borrar</button>
@@ -2109,7 +2109,7 @@ function renderHistoryTable(type) {
   `;
   }
   if (type === 'production') {
-    const PROD_CAT_LABELS = { push: '­ƒÜÇ Push', pull: '­ƒöä Pull' };
+    const PROD_CAT_LABELS = { push: '🚀 Push', pull: '🔄 Pull' };
     const PROD_CAT_COLORS = { push: '#f59e0b', pull: '#3b82f6' };
 
     return `
@@ -2119,14 +2119,14 @@ function renderHistoryTable(type) {
           <tr>
             <th>ID</th>
             <th>Fecha</th>
-            <th>M├®todo / Proyecto</th>
+            <th>Método / Proyecto</th>
             <th style="text-align: center">Cant.</th>
             <th style="text-align: right">Costo M.O.</th>
             <th style="text-align: right">Insumos</th>
             <th style="text-align: right">Gastos Gral.</th>
             <th style="text-align: right; background: rgba(var(--success-rgb), 0.05)">Costo Total</th>
             <th style="text-align: center">Rentabilidad</th>
-            <th style="text-align: center">Acci├│n</th>
+            <th style="text-align: center">Acción</th>
           </tr>
         </thead>
         <tbody>
@@ -2166,7 +2166,7 @@ function renderHistoryTable(type) {
                   <span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.75rem; font-weight:700; background:${PROD_CAT_COLORS[pcat] || '#6b7280'}22; color:${PROD_CAT_COLORS[pcat] || '#6b7280'}; border:1px solid ${PROD_CAT_COLORS[pcat] || '#6b7280'}44">
                     ${PROD_CAT_LABELS[pcat] || pcat}
                   </span>
-                  ${p.project_name ? '<br><small style="color:var(--text-muted)">­ƒôü ' + p.project_name + '</small>' : ''}
+                  ${p.project_name ? '<br><small style="color:var(--text-muted)">📁 ' + p.project_name + '</small>' : ''}
                 </td>
                 <td style="text-align: center">${(p.items || []).reduce((sum, it) => sum + (it.quantity || 0), 0)}</td>
                 <td style="text-align: right">$${totalMO.toLocaleString()}</td>
@@ -2184,7 +2184,7 @@ function renderHistoryTable(type) {
                 <td style="text-align: center">
                    <div style="display: flex; gap: 0.3rem; justify-content: center">
                      <button class="btn-sm" onclick="window.showTransactionDetails('production', '${p.id}')">­ƒæü´©Å Ver</button>
-                     <button class="btn-sm" onclick="window.editProduction(${p.id})" style="background:var(--secondary)">Ô£Å´©Å Editar</button>
+                     <button class="btn-sm" onclick="window.editProduction(${p.id})" style="background:var(--secondary)">📝 Editar</button>
                      <button class="btn-sm" onclick="window.deleteProduction(${p.id})" style="background:var(--danger)">­ƒùæ´©Å Borrar</button>
                    </div>
                 </td>
@@ -2213,12 +2213,12 @@ function renderHistoryTable(type) {
       );
     }
 
-    const CAT_LABELS = { general: '­ƒôª General', pull: '­ƒöä Pull', push: '­ƒÜÇ Push', comercializacion: '­ƒÅ¬ Comerc.' };
+    const CAT_LABELS = { general: '📦 General', pull: '🔄 Pull', push: '🚀 Push', comercializacion: '🏢 Comerc.' };
     const CAT_COLORS = { general: '#6b7280', pull: '#3b82f6', push: '#f59e0b', comercializacion: '#8b5cf6' };
     return `
   <div class="table-container">
     <table>
-      <thead><tr><th>ID</th><th>Fecha</th><th>Tipo/Proyecto</th><th>Categor├¡a</th><th>Ref / OC</th><th>Doc</th><th>Proveedor/Glosa</th><th>Total</th><th>Acci├│n</th></tr></thead>
+      <thead><tr><th>ID</th><th>Fecha</th><th>Tipo/Proyecto</th><th>Categoría</th><th>Ref / OC</th><th>Doc</th><th>Proveedor/Glosa</th><th>Total</th><th>Acción</th></tr></thead>
       <tbody>
         ${data.map(h => {
       const cat = h.purchase_category || 'general';
@@ -2247,7 +2247,7 @@ function renderHistoryTable(type) {
                   <div style="display: flex; gap: 0.3rem; justify-content: center">
                     <button class="btn-sm" onclick="window.showTransactionDetails('purchase', '${h.id}')" title="Ver detalle">­ƒæü´©Å Ver</button>
                     ${currentUser?.role === 'superadmin' || currentUser?.role === 'admin' ? `
-                      <button class="btn-sm" onclick="window.editTransaction('purchase', '${h.id}')" style="background:var(--secondary)" title="Editar">Ô£Å´©Å Editar</button>
+                      <button class="btn-sm" onclick="window.editTransaction('purchase', '${h.id}')" style="background:var(--secondary)" title="Editar">📝 Editar</button>
                     ` : ''}
                     ${currentUser?.role === 'superadmin' ? `
                       <button class="btn-sm" onclick="window.deletePurchase('${h.id}')" style="background:var(--danger)" title="Eliminar">­ƒùæ´©Å Borrar</button>
@@ -2278,7 +2278,7 @@ window.showTransactionDetails = (type, id) => {
   }
 
   const isProduction = type === 'production';
-  const title = isProduction ? 'Producci├│n' : (type === 'sale' ? 'Venta' : 'Compra');
+  const title = isProduction ? 'Producción' : (type === 'sale' ? 'Venta' : 'Compra');
 
   modal.innerHTML = `
   <div class="card modal-content modal-wide animate-fade">
@@ -2307,8 +2307,8 @@ window.showTransactionDetails = (type, id) => {
             <strong style="color:var(--accent)">${(transaction.document_type || 'N/A').toUpperCase()} #${transaction.document_number || '-'}</strong>
           </div>
           <div>
-            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">M├®todo de Pago</label>
-            <span>${transaction.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : transaction.payment_method === 'machine' ? '­ƒÆ│ M├íquina' : transaction.payment_method === 'credit' ? '­ƒÆ│ Cr├®dito' : '­ƒöä Transferencia'}</span>
+            <label style="font-size: 0.75rem; color: var(--text-muted); display: block">Método de Pago</label>
+            <span>${transaction.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : transaction.payment_method === 'machine' ? '­ƒÆ│ Máquina' : transaction.payment_method === 'credit' ? '­ƒÆ│ Crédito' : '🔄 Transferencia'}</span>
             ${transaction.is_iva_exempt ? ' <small style="color:var(--warning)">(Exento de IVA)</small>' : ''}
           </div>
         </div>
@@ -2318,7 +2318,7 @@ window.showTransactionDetails = (type, id) => {
   <thead>
     <tr>
       <th style="width: 50px">├ìtem</th>
-      <th>C├│digo</th>
+      <th>Código</th>
       <th>Nombre</th>
       <th style="width: 80px; text-align: center">Cant</th>
       <th style="width: 100px; text-align: right">${isProduction ? 'C. M.P. ($)' : 'Precio'}</th>
@@ -2420,7 +2420,7 @@ window.showTransactionDetails = (type, id) => {
           </tr>
           ${transaction.quotation_total > 0 ? `
             <tr style="font-size: 1rem; border-top: 1px dashed var(--border); color: var(--success); margin-top: 10px">
-               <td>Ingreso Proyectado (Cotizaci├│n)</td>
+               <td>Ingreso Proyectado (Cotización)</td>
                <td style="text-align: right"><strong>$${(transaction.quotation_total).toLocaleString()}</strong></td>
             </tr>
             <tr style="font-size: 1.1rem; background: rgba(var(--success-rgb), 0.1)">
@@ -2452,13 +2452,13 @@ window.showTransactionDetails = (type, id) => {
           </tr>
           ${transaction.payment_method === 'machine' ? `
             <tr style="color: var(--danger); font-size: 0.9rem">
-              <td>Comisi├│n M├íquina (3,45%)</td>
+              <td>Comisión Máquina (3,45%)</td>
               <td style="text-align: right">-$${(transaction.commission || Math.round(transaction.total * 0.0345)).toLocaleString()}</td>
             </tr>
           ` : ''}
           ${type === 'sale' ? `
             <tr style="font-size: 1rem; border-top: 2px solid var(--border); background: rgba(var(--success-rgb), 0.1)">
-              <td style="padding: 0.75rem 0.5rem"><strong>Ingreso Real (Monto L├¡quido)</strong></td>
+              <td style="padding: 0.75rem 0.5rem"><strong>Ingreso Real (Monto Líquido)</strong></td>
               <td style="text-align: right; padding: 0.75rem 0.5rem"><strong>$${(transaction.total - (transaction.commission || (transaction.payment_method === 'machine' ? Math.round(transaction.total * 0.0345) : 0))).toLocaleString()}</strong></td>
             </tr>
           ` : ''}
@@ -2467,7 +2467,7 @@ window.showTransactionDetails = (type, id) => {
       `}
       
       <div class="form-actions">
-        ${!isProduction ? `<button style="background: var(--accent)" onclick="window.editTransaction('${type}', '${transaction.id}')">Ô£Å´©Å Editar</button>` : ''}
+        ${!isProduction ? `<button style="background: var(--accent)" onclick="window.editTransaction('${type}', '${transaction.id}')">📝 Editar</button>` : ''}
         <button onclick="document.getElementById('${modalId}').style.display='none'">Cerrar</button>
       </div>
     </div>
@@ -2725,7 +2725,7 @@ window.editItem = (type, code) => {
 };
 
 window.recalculateAllStock = async () => {
-  if (!confirm('Esta operaci├│n auditar├í todo el historial para recalcular los niveles de stock (PT y MP) desde cero. ┬┐Desea continuar?')) return;
+  if (!confirm('Esta operación auditará todo el historial para recalcular los niveles de stock (PT y MP) desde cero. ¿Desea continuar?')) return;
   
   const finishBtn = (btn, originalText) => {
     btn.innerHTML = originalText;
@@ -2743,17 +2743,17 @@ window.recalculateAllStock = async () => {
       alert(res.message);
       fetchData(); // Refrescar stock en UI
     } else {
-      alert('Error: ' + (res?.error || 'No se pudo completar la operaci├│n. Verifique permisos de Admin.'));
+      alert('Error: ' + (res?.error || 'No se pudo completar la operación. Verifique permisos de Admin.'));
     }
   } catch (e) {
-    alert('Error de conexi├│n o permisos insuficiente.');
+    alert('Error de conexión o permisos insuficiente.');
   } finally {
     finishBtn(btn, originalText);
   }
 };
 
 window.recalculateAllCosts = async () => {
-  if (!confirm('┬┐Deseas recalcular los costos de todos los productos basados en sus recetas?')) return;
+  if (!confirm('¿Deseas recalcular los costos de todos los productos basados en sus recetas?')) return;
 
   try {
     const result = await apiFetch('/products/recalculate-all-costs', {
@@ -2770,7 +2770,7 @@ window.recalculateAllCosts = async () => {
   }
 };
 
-// --- Recetas en Producci├│n ---
+// --- Recetas en Producción ---
 window.recipeState = {
   currentPid: null,
   items: []
@@ -2834,12 +2834,12 @@ window.updateRecipeRowData = (index) => {
 };
 
 window.saveRecipeRow = (index) => {
-  // Solo refresca la vista, los datos ya est├ín en window.recipeState.items
+  // Solo refresca la vista, los datos ya están en window.recipeState.items
   window.refreshRecipeView();
 };
 
 window.deleteRecipeRow = (index) => {
-  if (!confirm('┬┐Eliminar este insumo de la receta?')) return;
+  if (!confirm('¿Eliminar este insumo de la receta?')) return;
   window.recipeState.items.splice(index, 1);
   window.refreshRecipeView();
 };
@@ -2869,7 +2869,7 @@ window.showProductionHistory = () => {
 };
 
 window.migrateOtrosToMP = async (itemId, customName, unitPrice) => {
-  if (!confirm(`┬┐Desea registrar "${customName}" como una materia prima permanente?\n\nSe crear├í un c├│digo autom├ítico y quedar├í vinculada en este registro.`)) return;
+  if (!confirm(`¿Desea registrar "${customName}" como una materia prima permanente?\n\nSe creará un código automático y quedará vinculada en este registro.`)) return;
 
   try {
     const res = await fetch(`${API_BASE}/purchase-items/migrate-to-mp`, {
@@ -2961,7 +2961,7 @@ window.editProduction = (id) => {
 
   window.populateProductDropdowns('.prod-item-code');
 
-  document.getElementById('prod-modal-title').textContent = `Editar Producci├│n #${id} `;
+  document.getElementById('prod-modal-title').textContent = `Editar Producción #${id} `;
   document.getElementById('btn-prod-text').textContent = 'Guardar Cambios';
   document.getElementById('prod-edit-mode').value = 'true';
   document.getElementById('prod-edit-id').value = id;
@@ -3102,8 +3102,8 @@ window.updateProdRecipeView = async () => {
         html += `
           <div style="background: var(--bg-secondary); padding: 8px; border-radius: 6px; border: 1px solid var(--border)">
             <div style="font-weight:700; font-size: 0.75rem; color: var(--secondary); margin-bottom: 4px; border-bottom: 1px solid var(--border)">${m.name}</div>
-            <div style="font-size: 0.7rem; opacity: 0.9">­ƒôª Necesario: <b>${m.qty.toFixed(2)}</b></div>
-            <div style="font-size: 0.7rem; color: var(--success)">­ƒÆ░ Costo: <b>$${Math.round(m.cost).toLocaleString()}</b></div>
+            <div style="font-size: 0.7rem; opacity: 0.9">📦 Necesario: <b>${m.qty.toFixed(2)}</b></div>
+            <div style="font-size: 0.7rem; color: var(--success)">💰 Costo: <b>$${Math.round(m.cost).toLocaleString()}</b></div>
           </div>
         `;
       });
@@ -3117,7 +3117,7 @@ window.updateProdRecipeView = async () => {
 };
 
 window.recalculateProductionHistory = async () => {
-    if (!confirm('Esta acci├│n recalcular├í los costos y devolver├í el stock de insumos mal descontado de TODA la historia de producci├│n. ┬┐Est├ís seguro?')) return;
+    if (!confirm('Esta acción recalculará los costos y devolverá el stock de insumos mal descontado de TODA la historia de producción. ¿Estás seguro?')) return;
     
     try {
         const res = await apiFetch('/admin/recalculate-production', { method: 'POST' });
@@ -3147,7 +3147,7 @@ window.updateProdTotals = () => {
       const mo = parseFloat(moInput.value) || 0;
       
       if (qty > 0) {
-        // En Ross ERP, el costo por ├¡tem se ingresa como Unitario. Multiplicamos por cantidad.
+        // En Ross ERP, el costo por ítem se ingresa como Unitario. Multiplicamos por cantidad.
         totalItemsMP += (mp * qty);
         totalItemsMO += (mo * qty);
       }
@@ -3157,14 +3157,14 @@ window.updateProdTotals = () => {
   const costHeaderMP = document.getElementById('prod-material-cost');
   const costHeaderExpenses = document.getElementById('prod-general-expenses');
   
-  // El input 'prod-material-cost' representa el costo TOTAL de materiales de la producci├│n.
+  // El input 'prod-material-cost' representa el costo TOTAL de materiales de la producción.
   if (costHeaderMP) costHeaderMP.value = Math.round(totalItemsMP);
   
-  // Actualizamos el resumen visual en el modal si existe (puedes a├▒adir un label para MO)
+  // Actualizamos el resumen visual en el modal si existe (puedes añadir un label para MO)
 };
 
 window.deleteProduction = async (id) => {
-  if (!confirm(`┬┐Est├í seguro de eliminar la Orden de Producci├│n #${id}?\n\nEsta acci├│n revertir├í el stock de productos y devolver├í las materias primas al inventario.`)) return;
+  if (!confirm(`¿Está seguro de eliminar la Orden de Producción #${id}?\n\nEsta acción revertirá el stock de productos y devolverá las materias primas al inventario.`)) return;
 
   const res = await deleteData(`/production/${id}`);
   if (res) {
@@ -3178,7 +3178,7 @@ window.openUserModal = async () => {
   document.getElementById('user-modal-title').textContent = 'Nuevo Usuario';
   document.getElementById('user-edit-id').value = '';
   document.getElementById('user-form').reset();
-  document.getElementById('user-pass-label').textContent = 'Contrase├▒a';
+  document.getElementById('user-pass-label').textContent = 'Contraseña';
   document.getElementById('user-pass').required = true;
   document.getElementById('user-pass-hint').style.display = 'none';
 
@@ -3208,13 +3208,13 @@ window.editUser = async (id) => {
   document.getElementById('user-name').value = user.username;
   document.getElementById('user-role').value = user.role;
   document.getElementById('user-empresa').value = user.empresa_id || '';
-  document.getElementById('user-pass-label').textContent = 'Nueva Contrase├▒a';
+  document.getElementById('user-pass-label').textContent = 'Nueva Contraseña';
   document.getElementById('user-pass').required = false;
   document.getElementById('user-pass-hint').style.display = 'block';
 };
 
 window.deleteUser = async (id) => {
-  if (!confirm('┬┐Est├í seguro de eliminar este usuario?')) return;
+  if (!confirm('¿Está seguro de eliminar este usuario?')) return;
   const res = await apiFetch(`/ users / ${id} `, { method: 'DELETE' });
   if (res && res.success) {
     alert(res.message);
@@ -3246,7 +3246,7 @@ window.refreshRecipeView = () => {
       <td style="text-align: center; font-weight: 600; color: var(--primary)">${consumption.toFixed(4)} ${r.unit || ''}</td>
       <td style="text-align: right; font-weight: 700">$${Math.round(calculatedUnitCost || 0).toLocaleString()}</td>
       <td style="text-align: center">
-        <button class="btn-sm" onclick="window.editRecipeRow(${i})" title="Modificar">Ô£Å´©Å</button>
+        <button class="btn-sm" onclick="window.editRecipeRow(${i})" title="Modificar">📝</button>
         <button class="btn-sm" onclick="window.deleteRecipeRow(${i})" style="background: var(--danger)" title="Eliminar">­ƒùæ´©Å</button>
       </td>
     </tr>
@@ -3315,7 +3315,7 @@ async function showRecipe(pid) {
     }));
 
     if (items.length === 0) {
-      if (!confirm('La receta est├í vac├¡a. ┬┐Deseas borrar todos los insumos de este producto?')) return;
+      if (!confirm('La receta está vacía. ¿Deseas borrar todos los insumos de este producto?')) return;
     }
 
     const btn = document.getElementById('btn-save-recipe');
@@ -3340,7 +3340,7 @@ async function showRecipe(pid) {
       }
     } catch (err) {
       console.error('Save Recipe Error:', err);
-      alert('ÔØî Error cr├¡tico al guardar la receta');
+      alert('ÔØî Error crítico al guardar la receta');
       btn.textContent = '­ƒÆ¥ Guardar Receta';
       btn.disabled = false;
     }
@@ -3360,22 +3360,22 @@ state.accounts = [];
 
 views.accounts_management = () => `
   <header class="animate-fade">
-    <h1>Gesti├│n de Cuentas (Fondos)</h1>
+    <h1>Gestión de Cuentas (Fondos)</h1>
     <button onclick="window.openAccountModal()">+ Nueva Cuenta</button>
   </header>
   <div class="card animate-fade">
     <div class="table-container">
       <table>
-        <thead><tr><th>Nombre</th><th>Tipo</th><th>Saldo Actual</th><th>Acci├│n</th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Tipo</th><th>Saldo Actual</th><th>Acción</th></tr></thead>
         <tbody>
           ${state.accounts.map(acc => `
             <tr>
               <td><strong>${acc.name}</strong></td>
-              <td>${acc.type === 'debit' ? 'D├®bito / Banco' : (acc.type === 'credit' ? 'Tarjeta Cr├®dito' : 'Efectivo')}</td>
+              <td>${acc.type === 'debit' ? 'Débito / Banco' : (acc.type === 'credit' ? 'Tarjeta Crédito' : 'Efectivo')}</td>
               <td style="color: ${acc.current_balance >= 0 ? 'var(--success)' : 'var(--danger)'}; font-weight: 600">
                 $${(acc.current_balance || 0).toLocaleString()}
               </td>
-              <td><button class="btn-sm" onclick="window.editAccount('${acc.id}')">Ô£Å´©Å</button></td>
+              <td><button class="btn-sm" onclick="window.editAccount('${acc.id}')">📝</button></td>
             </tr>
           `).join('')}
         </tbody>
@@ -3391,8 +3391,8 @@ views.accounts_management = () => `
          <div class="form-group"><label>Nombre</label><input type="text" id="acc-name" required></div>
          <div class="form-group"><label>Tipo</label>
            <select id="acc-type">
-             <option value="debit">Banco / D├®bito</option>
-             <option value="credit">Tarjeta de Cr├®dito</option>
+             <option value="debit">Banco / Débito</option>
+             <option value="credit">Tarjeta de Crédito</option>
              <option value="cash">Efectivo / Caja Chica</option>
            </select>
          </div>
@@ -3460,10 +3460,10 @@ views.quotations = () => {
     </div>
     <div style="display: flex; gap: 0.5rem">
       ${currentUser.role === 'superadmin' ? `
-        <button onclick="window.bulkPromoteQuotes()" style="background: var(--accent); color: white;" title="Sincronizar cotizaciones antiguas a productos">­ƒÜÇ Sincronizaci├│n Hist├│rica</button>
-        <button onclick="window.syncHistoryItems()" style="background: var(--primary); color: white;" title="Vincular ventas y producciones viejas con los nuevos c├│digos">­ƒôª Vincular Historial</button>
+        <button onclick="window.bulkPromoteQuotes()" style="background: var(--accent); color: white;" title="Sincronizar cotizaciones antiguas a productos">🚀 Sincronización Histórica</button>
+        <button onclick="window.syncHistoryItems()" style="background: var(--primary); color: white;" title="Vincular ventas y producciones viejas con los nuevos códigos">📦 Vincular Historial</button>
       ` : ''}
-      <button onclick="window.openQuotationModal()">+ Nueva Cotizaci├│n</button>
+      <button onclick="window.openQuotationModal()">+ Nueva Cotización</button>
     </div>
   </header>
 
@@ -3520,7 +3520,7 @@ views.quotations = () => {
                 <td style="text-align:center">
                   <div style="display:flex; gap:0.3rem; justify-content:center; flex-wrap:wrap">
                     <button class="btn-sm" onclick="window.viewQuotation('${q.id}')">­ƒæü´©Å Ver</button>
-                    ${status !== 'rejected' && status !== 'cancelled' ? `<button class="btn-sm" style="background:var(--accent)" onclick="window.editQuotation('${q.id}')">Ô£Å´©Å</button>` : ''}
+                    ${status !== 'rejected' && status !== 'cancelled' ? `<button class="btn-sm" style="background:var(--accent)" onclick="window.editQuotation('${q.id}')">📝</button>` : ''}
                     ${transitions.length > 0 ? `
                       <select onchange="if(this.value) window.changeQuoteStatus('${q.id}', this.value); this.value='';" style="padding:0.25rem 0.4rem; font-size:0.78rem; border-radius:6px; border:1px solid var(--border); background:var(--surface-light); color:var(--text); cursor:pointer; max-width:120px">
                         <option value="">ÔÜí Estado...</option>
@@ -3541,9 +3541,9 @@ views.quotations = () => {
   <div id="quotation-modal" class="modal" style="display:none">
     <div class="card modal-content modal-wide animate-fade">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem">
-        <h3 id="quote-modal-title">Nueva Cotizaci├│n</h3>
+        <h3 id="quote-modal-title">Nueva Cotización</h3>
         <input type="hidden" id="quote-id">
-        <button class="btn-sm" style="background:none; color:var(--text-muted); font-size:1.5rem" onclick="document.getElementById('quotation-modal').style.display='none'">Ô£ò</button>
+        <button class="btn-sm" style="background:none; color:var(--text-muted); font-size:1.5rem" onclick="document.getElementById('quotation-modal').style.display='none'">✖</button>
       </div>
 
       <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem">
@@ -3559,11 +3559,11 @@ views.quotations = () => {
           <input type="text" id="quote-rut" placeholder="Ej: 76.123.456-7">
         </div>
         <div class="form-group" style="grid-column: span 2">
-          <label>Direcci├│n Cliente</label>
+          <label>Dirección Cliente</label>
           <input type="text" id="quote-address" placeholder="Ej: Av. Vitacura 1234, Oficina 501">
         </div>
         <div class="form-group" style="grid-column: span 1">
-          <label style="color:var(--secondary); font-weight:700">ID Cotizaci├│n</label>
+          <label style="color:var(--secondary); font-weight:700">ID Cotización</label>
           <input type="text" id="quote-external-id" placeholder="Ej: 1216088..." style="border:1px solid var(--secondary)">
         </div>
         <div class="form-group" style="grid-column: span 1">
@@ -3571,19 +3571,19 @@ views.quotations = () => {
           <input type="text" id="quote-purchase-order" placeholder="Ej: 1216088..." style="border:1px solid var(--secondary)">
         </div>
         <div class="form-group" style="grid-column: span 4">
-          <label>Descripci├│n de la Propuesta (Aparece en PDF)</label>
+          <label>Descripción de la Propuesta (Aparece en PDF)</label>
           <textarea id="quote-description-proposal" rows="2" style="width:100%; padding:0.5rem; border:1px solid var(--border); border-radius:8px" placeholder="Ej: PROPUESTA PARA ADQUISICI├ôN DE 22 MANTELES..."></textarea>
         </div>
         
         <div class="form-group" style="grid-column: span 4; margin-bottom: 1rem">
-          <label>­ƒû╝´©Å Referencias Fotogr├íficas (Arrastra im├ígenes aqu├¡)</label>
+          <label>­ƒû╝´©Å Referencias Fotográficas (Arrastra imágenes aquí)</label>
           <div id="quote-dropzone" 
             style="border: 2px dashed var(--border); border-radius: 12px; padding: 1.5rem; text-align: center; background: rgba(255,255,255,0.02); cursor: pointer; transition: all 0.3s"
             onclick="document.getElementById('quote-file-input').click()"
             ondragover="event.preventDefault(); this.style.borderColor='var(--primary)'; this.style.background='rgba(59, 130, 246, 0.05)'"
             ondragleave="this.style.borderColor='var(--border)'; this.style.background='rgba(255,255,255,0.02)'"
             ondrop="window.handleQuoteDrop(event)">
-            <p id="dropzone-text" style="margin:0; opacity:0.6">­ƒô© Haz clic o arrastra fotos aqu├¡ (M├íx. 4 fotos, tama├▒o peque├▒o)</p>
+            <p id="dropzone-text" style="margin:0; opacity:0.6">­ƒô© Haz clic o arrastra fotos aquí (Máx. 4 fotos, tamaño pequeño)</p>
             <input type="file" id="quote-file-input" multiple accept="image/*" style="display:none" onchange="window.handleQuoteFiles(this.files)">
             <div id="quote-images-preview" style="display: flex; gap: 0.8rem; flex-wrap: wrap; margin-top: 1rem; justify-content: center"></div>
           </div>
@@ -3593,12 +3593,12 @@ views.quotations = () => {
           <input type="text" id="quote-name" placeholder="Ej: Evento Municipalidad">
         </div>
         <div class="form-group">
-          <label>Fecha Emisi├│n</label>
+          <label>Fecha Emisión</label>
           <input type="date" id="quote-date">
         </div>
         <div class="form-group">
           <label>Plazo Entrega</label>
-          <input type="text" id="quote-delivery-time" placeholder="Ej: 8 d├¡as corridos">
+          <input type="text" id="quote-delivery-time" placeholder="Ej: 8 días corridos">
         </div>
         <div class="form-group">
           <label>% Utilidad</label>
@@ -3619,11 +3619,11 @@ views.quotations = () => {
         </div>
       </div>
 
-      <!-- Nueva Secci├│n de Productos -->
+      <!-- Nueva Sección de Productos -->
       <div style="margin-top: 1.5rem; background: rgba(59, 130, 246, 0.05); padding: 1.2rem; border-radius: 12px; border: 1px dashed var(--primary)">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem">
-          <h4 style="margin:0; color:var(--primary)">­ƒôª 1. Definir Productos a Vender</h4>
-          <button class="btn-sm btn-primary" onclick="window.addQuotationProduct()">+ A├▒adir Producto</button>
+          <h4 style="margin:0; color:var(--primary)">📦 1. Definir Productos a Vender</h4>
+          <button class="btn-sm btn-primary" onclick="window.addQuotationProduct()">+ Añadir Producto</button>
         </div>
         <div id="quote-products-list" style="display:flex; flex-direction:column; gap:0.5rem"></div>
       </div>
@@ -3642,8 +3642,8 @@ views.quotations = () => {
               <tr>
                 <th style="width:110px">Vincular a</th>
                 <th style="width:110px">Tipo</th>
-                <th style="width:90px">C├ílculo</th>
-                <th>Descripci├│n / Insumo</th>
+                <th style="width:90px">Cálculo</th>
+                <th>Descripción / Insumo</th>
                 <th style="width:100px">Doc.</th>
                 <th style="width:140px">Costo Neto</th>
                 <th style="width:80px">Cant</th>
@@ -3696,7 +3696,7 @@ views.quotations = () => {
 `;
 }
 
-// Funci├│n auxiliar para calcular el impacto total de una fila de costo en el proyecto
+// Función auxiliar para calcular el impacto total de una fila de costo en el proyecto
 window.getItemProjectTotal = (item) => {
   const lineQty = parseFloat(item.quantity) || 0;
   const unitNet = parseFloat(item.unit_value_net) || 0;
@@ -3737,9 +3737,9 @@ window.saveQuotation = async () => {
   let endpoint = quoteId ? `/quotations/${quoteId}` : '/quotations';
   let finalExternalId = externalQuoteId;
 
-  // L├│gica de Versionado para Super Admin (Sincronizado con m├│dulo)
+  // Lógica de Versionado para Super Admin (Sincronizado con módulo)
   if (quoteId && currentUser.role === 'superadmin' && (window.currentQuotationStatus === 'sent' || window.currentQuotationStatus === 'production')) {
-      const createNewVersion = confirm(`Esta cotizaci├│n ya tiene estado "${QUOTE_STATUS_LABELS[window.currentQuotationStatus]}". \n\n┬┐Deseas guardarla como una NUEVA VERSI├ôN para no sobreescribir la original?`);
+      const createNewVersion = confirm(`Esta cotización ya tiene estado "${QUOTE_STATUS_LABELS[window.currentQuotationStatus]}". \n\n¿Deseas guardarla como una NUEVA VERSI├ôN para no sobreescribir la original?`);
       
       if (createNewVersion) {
           method = 'POST'; 
@@ -3755,7 +3755,7 @@ window.saveQuotation = async () => {
               });
           const nextVer = Math.max(...versions, 1) + 1;
           finalExternalId = `${baseId}V${nextVer}`;
-          alert(`Se crear├í la versi├│n: ${finalExternalId}`);
+          alert(`Se creará la versión: ${finalExternalId}`);
       }
   }
 
@@ -3804,19 +3804,19 @@ window.saveQuotation = async () => {
     const res = await apiFetch(endpoint, { method, body: JSON.stringify(body) });
 
     if (res && res.success) {
-      alert(res.message || 'Cotizaci├│n guardada correctamente');
+      alert(res.message || 'Cotización guardada correctamente');
       document.getElementById('quotation-modal').style.display = 'none';
       fetchData();
     } else {
       btn.disabled = false;
-      btn.textContent = '­ƒÆ¥ Guardar Cotizaci├│n';
-      alert('Error: No se pudo guardar la cotizaci├│n. Podr├¡a ser que las im├ígenes son muy pesadas o hay un problema de conexi├│n.');
+      btn.textContent = '­ƒÆ¥ Guardar Cotización';
+      alert('Error: No se pudo guardar la cotización. Podría ser que las imágenes son muy pesadas o hay un problema de conexión.');
     }
   } catch (err) {
     console.error('Save error:', err);
     btn.disabled = false;
-    btn.textContent = '­ƒÆ¥ Guardar Cotizaci├│n';
-    alert('Error al guardar la cotizaci├│n');
+    btn.textContent = '­ƒÆ¥ Guardar Cotización';
+    alert('Error al guardar la cotización');
   }
 };
 
@@ -3830,7 +3830,7 @@ window.handleQuoteDrop = (e) => {
 };
 
 window.handleQuoteFiles = async (files) => {
-  if (window.quotationImages.length >= 4) return alert('M├íximo 4 im├ígenes por cotizaci├│n');
+  if (window.quotationImages.length >= 4) return alert('Máximo 4 imágenes por cotización');
 
   for (const file of files) {
     if (!file.type.startsWith('image/')) continue;
@@ -3869,7 +3869,7 @@ window.processQuoteImage = (file) => {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compresi├│n para peso peque├▒o
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); // Compresión para peso pequeño
       };
       img.src = e.target.result;
     };
@@ -3886,7 +3886,7 @@ window.renderQuoteImagePreviews = () => {
     <div style="position:relative; width:80px; height:80px; border-radius:8px; overflow:hidden; border:1px solid var(--border)">
       <img src="${src}" style="width:100%; height:100%; object-fit:cover">
       <button onclick="event.stopPropagation(); window.removeQuoteImage(${idx})" 
-        style="position:absolute; top:2px; right:2px; background:rgba(239, 68, 68, 0.8); color:white; border:none; border-radius:50%; width:18px; height:18px; font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center">Ô£ò</button>
+        style="position:absolute; top:2px; right:2px; background:rgba(239, 68, 68, 0.8); color:white; border:none; border-radius:50%; width:18px; height:18px; font-size:10px; cursor:pointer; display:flex; align-items:center; justify-content:center">✖</button>
     </div>
   `).join('');
 
@@ -3923,7 +3923,7 @@ window.viewQuotation = async (id) => {
               <th>Item</th>
               <th>Vincular a</th>
               <th>Tipo</th>
-              <th>Descripci├│n</th>
+              <th>Descripción</th>
               <th style="text-align:right">Subtotal Proyecto</th>
             </tr>
           </thead>
@@ -3967,7 +3967,7 @@ window.viewQuotation = async (id) => {
       const totalNetSales = (q.related_sales || []).reduce((sum, s) => sum + (s.net || 0), 0);
       const totalNetCostPurchases = (q.related_purchases || []).reduce((sum, p) => {
         // Si es boleta, el costo real para el negocio es el TOTAL (no recupera IVA)
-        // Si es factura, el costo real es el NETO (el IVA es cr├®dito fiscal)
+        // Si es factura, el costo real es el NETO (el IVA es crédito fiscal)
         return (p.document_type === 'boleta') ? sum + (p.total || 0) : sum + (p.net || 0);
       }, 0);
       
@@ -3993,7 +3993,7 @@ window.viewQuotation = async (id) => {
 
           <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem">
             <div>
-              <h4 style="margin-bottom:0.8rem">­ƒôª Compras Asociadas</h4>
+              <h4 style="margin-bottom:0.8rem">📦 Compras Asociadas</h4>
               ${(q.related_purchases || []).length === 0 ? '<p style="opacity:0.5; font-size:0.9rem">No hay compras vinculadas.</p>' : `
                 <table style="font-size:0.85rem">
                   <thead><tr><th>ID</th><th>Fecha</th><th>Proveedor</th><th style="text-align:right">Total</th></tr></thead>
@@ -4017,7 +4017,7 @@ window.viewQuotation = async (id) => {
               `}
             </div>
             <div>
-              <h4 style="margin-bottom:0.8rem">­ƒÅ¡ Control de Producci├│n</h4>
+              <h4 style="margin-bottom:0.8rem">­ƒÅ¡ Control de Producción</h4>
               <table style="font-size:0.85rem">
                 <thead><tr><th>Producto</th><th style="text-align:center">Pedido</th><th style="text-align:center">Fabricado</th><th style="text-align:center">Estado</th></tr></thead>
                 <tbody>
@@ -4045,7 +4045,7 @@ window.viewQuotation = async (id) => {
               ` : ''}
             </div>
             <div>
-              <h4 style="margin-bottom:0.8rem">­ƒÆ░ Ventas Realizadas</h4>
+              <h4 style="margin-bottom:0.8rem">💰 Ventas Realizadas</h4>
               ${(q.related_sales || []).length === 0 ? '<p style="opacity:0.5; font-size:0.9rem">No hay ventas vinculadas.</p>' : `
                 <table style="font-size:0.85rem">
                   <thead><tr><th>ID</th><th>Fecha</th><th>Cliente</th><th style="text-align:right">Total</th></tr></thead>
@@ -4199,7 +4199,7 @@ window.viewQuotation = async (id) => {
           </div>
         </div>
         <p style="margin-top:2rem; font-size:0.9rem; opacity:0.7; border-top: 1px solid var(--border); padding-top: 1rem">
-          Nota: Cotizaci├│n sujeta a factibilidad t├®cnica y disponibilidad de stock. Valores expresados en Pesos Chilenos ($).
+          Nota: Cotización sujeta a factibilidad técnica y disponibilidad de stock. Valores expresados en Pesos Chilenos ($).
         </p>
       `;
     }
@@ -4207,11 +4207,11 @@ window.viewQuotation = async (id) => {
     modal.innerHTML = `
       <div class="card modal-content modal-wide animate-fade">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem">
-          <h3>Cotizaci├│n #${String(q.id).split('-')[0]} - ${q.name}</h3>
+          <h3>Cotización #${String(q.id).split('-')[0]} - ${q.name}</h3>
           <div class="tab-group">
             <button class="tab-btn ${viewType === 'internal' ? 'active' : ''}" onclick="window.updateViewQuoteType('internal')">Vista Interna</button>
             <button class="tab-btn ${viewType === 'client' ? 'active' : ''}" onclick="window.updateViewQuoteType('client')">Vista Cliente (PVP)</button>
-            <button class="tab-btn ${viewType === 'circuit' ? 'active' : ''}" onclick="window.updateViewQuoteType('circuit')" style="border-color: var(--secondary); color: var(--secondary)">­ƒôè Monitor├®o de Circuito</button>
+            <button class="tab-btn ${viewType === 'circuit' ? 'active' : ''}" onclick="window.updateViewQuoteType('circuit')" style="border-color: var(--secondary); color: var(--secondary)">📊 Monitoréo de Circuito</button>
           </div>
         </div>
 
@@ -4222,11 +4222,11 @@ window.viewQuotation = async (id) => {
         const displayAddress = q.address || clientInfo.address || '-';
         return `
               <div><p><strong>Cliente:</strong> ${clientInfo.name || q.name || 'Varios'}</p></div>
-              <div><p><strong>ID Cotizaci├│n:</strong> <span style="color:var(--secondary); font-weight:700">${q.external_quote_id || '-'}</span></p></div>
+              <div><p><strong>ID Cotización:</strong> <span style="color:var(--secondary); font-weight:700">${q.external_quote_id || '-'}</span></p></div>
               <div><p><strong>RUT:</strong> ${displayRut}</p></div>
               <div><p><strong>Orden Compra (OC):</strong> ${q.purchase_order_id || '-'}</p></div>
-              <div><p><strong>Direcci├│n:</strong> ${displayAddress}</p></div>
-              <div><p><strong>Fecha Emisi├│n:</strong> ${q.quote_date ? new Date(q.quote_date).toLocaleDateString('es-CL') : '-'}</p></div>
+              <div><p><strong>Dirección:</strong> ${displayAddress}</p></div>
+              <div><p><strong>Fecha Emisión:</strong> ${q.quote_date ? new Date(q.quote_date).toLocaleDateString('es-CL') : '-'}</p></div>
               <div style="grid-column: span 2; background: rgba(var(--primary-rgb), 0.1); padding: 0.5rem; border-radius: 4px; border: 1px dashed var(--primary)">
                 <p><strong>­ƒÜÜ Plazo de Entrega:</strong> <span style="font-size: 1.1rem; color: var(--primary); font-weight: 700">${q.delivery_time || 'No especificado'}</span></p>
               </div>
@@ -4238,7 +4238,7 @@ window.viewQuotation = async (id) => {
 
         ${q.images && q.images.length > 0 ? `
           <div style="margin-top: 1.5rem">
-            <h4 style="margin-bottom: 0.8rem; color: var(--primary)">­ƒû╝´©Å Im├ígenes de Referencia</h4>
+            <h4 style="margin-bottom: 0.8rem; color: var(--primary)">­ƒû╝´©Å Imágenes de Referencia</h4>
             <div style="display: flex; gap: 1rem; flex-wrap: wrap">
               ${q.images.map(img => `<img src="${img}" style="width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border); background: #000">`).join('')}
             </div>
@@ -4262,7 +4262,7 @@ window.viewQuotation = async (id) => {
 // --- Print Quotation Function ---
 window.printQuotation = () => {
   const q = window.currentViewedQuote;
-  if (!q) return alert('No hay cotizaci├│n cargada');
+  if (!q) return alert('No hay cotización cargada');
 
   const printWindow = window.open('', '_blank', 'width=900,height=900');
   if (!printWindow) return alert('Por favor, desactive el bloqueador de ventanas emergentes.');
@@ -4307,7 +4307,7 @@ window.printQuotation = () => {
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>Cotizaci├│n Ross Confecciones - ${q.id}</title>
+      <title>Cotización Ross Confecciones - ${q.id}</title>
       <style>
         @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
         * { margin:0; padding:0; box-sizing:border-box; }
@@ -4375,7 +4375,7 @@ window.printQuotation = () => {
           <p>COTIZACI├ôN: ${q.external_quote_id || quoteDisplayId}</p>
           ${q.purchase_order_id ? `<p>ORDEN DE COMPRA: ${q.purchase_order_id}</p>` : ''}
           <p>Fecha documento: ${q.quote_date ? q.quote_date.split('-').reverse().join('-') : today}</p>
-          <p>P├ígina 1 de 3</p>
+          <p>Página 1 de 3</p>
         </div>
       </div>
 
@@ -4384,19 +4384,19 @@ window.printQuotation = () => {
       <h1 class="main-title">COTIZACI├ôN</h1>
 
       <div class="client-info-grid">
-        <div class="info-row"><span class="info-label">Se├▒ores:</span><span class="info-value">${displayClientName}</span></div>
+        <div class="info-row"><span class="info-label">Señores:</span><span class="info-value">${displayClientName}</span></div>
         <div class="info-row">
           <span class="info-label">RUT:</span><span class="info-value" style="width:200px">${displayRut}</span>
-          <span class="info-label">Estado Cotizaci├│n:</span><span class="info-value">VIGENTE</span>
+          <span class="info-label">Estado Cotización:</span><span class="info-value">VIGENTE</span>
         </div>
-        <div class="info-row"><span class="info-label">Direcci├│n:</span><span class="info-value">${displayAddress}</span></div>
+        <div class="info-row"><span class="info-label">Dirección:</span><span class="info-value">${displayAddress}</span></div>
         <div class="info-row"><span class="info-label">Orden de Compra:</span><span class="info-value"><strong>${q.purchase_order_id || '-'}</strong></span></div>
-        <div class="info-row"><span class="info-label">Descripci├│n:</span><span class="info-value">${q.description_proposal || '-'}</span></div>
+        <div class="info-row"><span class="info-label">Descripción:</span><span class="info-value">${q.description_proposal || '-'}</span></div>
       </div>
 
       <h2 class="presente">PRESENTE</h2>
       
-      <p class="intro-text">De nuestra consideraci├│n:<br>Por la presente, tenemos el agrado de Cotizar nuestros productos que detallamos a continuaci├│n:</p>
+      <p class="intro-text">De nuestra consideración:<br>Por la presente, tenemos el agrado de Cotizar nuestros productos que detallamos a continuación:</p>
 
       <table>
         <thead>
@@ -4447,7 +4447,7 @@ window.printQuotation = () => {
           <p>COTIZACI├ôN: ${q.external_quote_id || quoteDisplayId}</p>
           ${q.purchase_order_id ? `<p>ORDEN DE COMPRA: ${q.purchase_order_id}</p>` : ''}
           <p>Fecha documento: ${q.quote_date ? q.quote_date.split('-').reverse().join('-') : today}</p>
-          <p>P├ígina 2 de 3</p>
+          <p>Página 2 de 3</p>
         </div>
       </div>
       <div class="line-divider"></div>
@@ -4455,7 +4455,7 @@ window.printQuotation = () => {
       <h2 class="section-title">SERVICIOS INCLUIDOS:</h2>
       <ul style="list-style: none; font-size:14px; margin-left: 20px">
         <li>ÔÇó Materiales e insumos de alta calidad.</li>
-        <li>ÔÇó Confecci├│n completa y terminaciones profesionales.</li>
+        <li>ÔÇó Confección completa y terminaciones profesionales.</li>
         <li>ÔÇó Control de calidad unitario.</li>
         <li>ÔÇó Embalaje y despacho incluido.</li>
       </ul>
@@ -4468,10 +4468,10 @@ window.printQuotation = () => {
       ` : ''}
 
       <h2 class="section-title">PLAZO DE ENTREGA:</h2>
-      <p style="font-size:14px; margin-left: 20px"><strong>${q.delivery_time || 'Por confirmar'}</strong> a contar de la confirmaci├│n de la O.C. y especificaciones.</p>
+      <p style="font-size:14px; margin-left: 20px"><strong>${q.delivery_time || 'Por confirmar'}</strong> a contar de la confirmación de la O.C. y especificaciones.</p>
 
       <h2 class="section-title">PLAZO DE VALIDEZ DE LA COTIZACI├ôN:</h2>
-      <p style="font-size:14px; margin-left: 20px">Cotizaci├│n v├ílida por 30 d├¡as.</p>
+      <p style="font-size:14px; margin-left: 20px">Cotización válida por 30 días.</p>
 
       </div> <!-- End Hoja 2 -->
       <div class="page-break"></div>
@@ -4491,26 +4491,26 @@ window.printQuotation = () => {
           <p>COTIZACI├ôN: ${q.external_quote_id || quoteDisplayId}</p>
           ${q.purchase_order_id ? `<p>ORDEN DE COMPRA: ${q.purchase_order_id}</p>` : ''}
           <p>Fecha documento: ${q.quote_date ? q.quote_date.split('-').reverse().join('-') : today}</p>
-          <p>P├ígina 3 de 3</p>
+          <p>Página 3 de 3</p>
         </div>
       </div>
       <div class="line-divider"></div>
 
       <h2 class="section-title">DATOS BANCARIOS PARA TRANSFERENCIA:</h2>
       <div class="bank-details">
-        <p><strong>Nombre:</strong> Rosa Ang├®lica Huentemil Contreras</p>
+        <p><strong>Nombre:</strong> Rosa Angélica Huentemil Contreras</p>
         <p><strong>RUT:</strong> 13.267.639-9</p>
         <p><strong>Banco:</strong> Banco Estado</p>
         <p><strong>Tipo Cuenta:</strong> Cuenta Rut</p>
-        <p><strong>N┬░ Cuenta:</strong> 13267639</p>
+        <p><strong>Nº Cuenta:</strong> 13267639</p>
         <p><strong>E-mail:</strong> ross.confecciones@gmail.com</p>
       </div>
 
       <h2 class="section-title">GARANT├ìA Y POST-VENTA:</h2>
       <p style="font-size:14px; margin-left: 20px">
-        ÔÇó <strong>Plazo:</strong> 90 d├¡as desde la entrega del producto.<br>
-        ÔÇó <strong>Cobertura:</strong> Defectos de confecci├│n, fallas de material o medidas fuera de especificaci├│n.<br>
-        ÔÇó <strong>Condici├│n:</strong> El producto debe devolverse limpio y sin signos de mal uso.
+        ÔÇó <strong>Plazo:</strong> 90 días desde la entrega del producto.<br>
+        ÔÇó <strong>Cobertura:</strong> Defectos de confección, fallas de material o medidas fuera de especificación.<br>
+        ÔÇó <strong>Condición:</strong> El producto debe devolverse limpio y sin signos de mal uso.
       </p>
 
       <div style="margin-top: 80px; text-align: center; font-size: 13px; color: #666">
@@ -4546,7 +4546,7 @@ async function postData(endpoint, body, refresh = true) {
     });
     const result = await response.json();
     if (result.success) {
-      alert(result.message || 'Operaci├│n exitosa');
+      alert(result.message || 'Operación exitosa');
       if (refresh) fetchData(); // Sincronizar stock si se solicita
       return result;
     } else {
@@ -4554,7 +4554,7 @@ async function postData(endpoint, body, refresh = true) {
       return null;
     }
   } catch (e) {
-    alert('Error de conexi├│n');
+    alert('Error de conexión');
     return null;
   }
 }
@@ -4582,12 +4582,12 @@ function renderView(viewName) {
     mainContent.style.flex = '1';
     mainContent.style.width = 'auto';
     mainContent.style.maxWidth = 'none';
-    mainContent.style.marginLeft = '0'; // Usamos Flexbox, no m├írgenes manuales
+    mainContent.style.marginLeft = '0'; // Usamos Flexbox, no márgenes manuales
 
     // --- SISTEMA DE PERMISOS POR ROL ---
     const userRole = currentUser?.role || 'user';
 
-    // Definimos qu├® puede ver cada uno
+    // Definimos qué puede ver cada uno
     const permissions = {
       superadmin: ['dashboard', 'inventory_products', 'inventory_rm', 'inventory_taking', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'user_management', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'],
       admin: ['dashboard', 'inventory_products', 'inventory_rm', 'inventory_taking', 'design', 'production', 'sales', 'purchases', 'logistics', 'history', 'reports', 'masters', 'quotations', 'pipeline', 'accounts_management', 'clients_management', 'providers_management', 'payment_machines', 'direct_sales', 'accounting_ledger', 'profile', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'],
@@ -4597,7 +4597,7 @@ function renderView(viewName) {
 
     let allowedViews = permissions[userRole] || permissions['user'];
 
-    // Remover vistas restringidas para el plan b├ísico
+    // Remover vistas restringidas para el plan básico
     if (currentUser?.plan_categoria === 'basico') {
       const restrictedViews = ['production', 'quotations', 'reports', 'logistics', 'pipeline', 'acc_plan_cuentas', 'acc_libro_diario', 'acc_libro_mayor', 'acc_balance_8', 'acc_remuneraciones', 'acc_tesoreria', 'acc_honorarios', 'acc_tributario', 'acc_activo_fijo', 'acc_analisis', 'acc_compras_libro', 'acc_ventas_libro', 'acc_balance_general', 'acc_estado_resultados'];
       allowedViews = allowedViews.filter(v => !restrictedViews.includes(v));
@@ -4645,7 +4645,7 @@ function renderView(viewName) {
     window.applyPlanRestrictions();
   }
 
-  // --- Branding Din├ímico v2.2 ---
+  // --- Branding Dinámico v2.2 ---
   function forceBranding() {
     if (viewName === 'login') return;
 
@@ -4682,7 +4682,7 @@ function renderView(viewName) {
 
   if (viewName !== 'login') {
     forceBranding();
-    // Bucle de persistencia para asegurar que cargue tras el rendering de m├│dulos
+    // Bucle de persistencia para asegurar que cargue tras el rendering de módulos
     const brandingInterval = setInterval(forceBranding, 1000);
     setTimeout(() => clearInterval(brandingInterval), 10000);
   }
@@ -4691,7 +4691,7 @@ function renderView(viewName) {
     console.log('--- LOGIN VIEW INIT ---');
     const select = document.getElementById('login-empresa');
 
-    // Funci├│n de fallback seguro
+    // Función de fallback seguro
     const setFallback = () => {
       console.warn('ÔÜá´©Å Usando fallback de empresa por defecto');
       const s = document.getElementById('login-empresa');
@@ -4702,7 +4702,7 @@ function renderView(viewName) {
     const timeoutId = setTimeout(() => {
       const s = document.getElementById('login-empresa');
       if (s && s.value === "") {
-        console.warn('ÔÅ▒´©Å Fetch de empresas excedi├│ el tiempo l├¡mite, activando fallback.');
+        console.warn('ÔÅ▒´©Å Fetch de empresas excedió el tiempo límite, activando fallback.');
         setFallback();
       }
     }, 5000);
@@ -4710,7 +4710,7 @@ function renderView(viewName) {
     console.log(`­ƒôí Solicitando empresas a: ${API_BASE}/empresas`);
     fetch(`${API_BASE}/empresas`)
       .then(r => {
-        console.log(`­ƒôÑ Respuesta recibida de empresas: status ${r.status}`);
+        console.log(`📥 Respuesta recibida de empresas: status ${r.status}`);
         if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`);
         return r.json();
       })
@@ -4759,7 +4759,7 @@ function renderView(viewName) {
           errorEl.style.display = 'block';
         }
       } catch (err) {
-        errorEl.textContent = 'Error de conexi├│n';
+        errorEl.textContent = 'Error de conexión';
         errorEl.style.display = 'block';
       }
     });
@@ -4773,7 +4773,7 @@ function renderView(viewName) {
     window.apiSyncOperations = async () => {
       try {
         const count = await sincronizarOperacionesERP(state.history.sales, state.history.purchases);
-        alert(`Sincronizaci├│n exitosa: ${count} nuevos registros contabilizados.`);
+        alert(`Sincronización exitosa: ${count} nuevos registros contabilizados.`);
         await fetchData();
       } catch (e) {
         console.error(e);
@@ -4787,7 +4787,7 @@ function renderView(viewName) {
     // Initialization for quotations view
   }
 
-  // Inicializaci├│n de M├│dulos de Contabilidad (Administraci├│n y Finanzas)
+  // Inicialización de Módulos de Contabilidad (Administración y Finanzas)
   if (viewName === 'acc_plan_cuentas') renderPlanCuentas(document.getElementById('accounting-container'));
   if (viewName === 'acc_libro_diario') renderLibroDiario(document.getElementById('accounting-container'));
   if (viewName === 'acc_libro_mayor') renderLibroMayor(document.getElementById('accounting-container'));
@@ -4931,10 +4931,10 @@ function renderView(viewName) {
     };
 
     window.runMigration = async function () {
-      if (!confirm('┬┐Ejecutar actualizaci├│n de base de datos?')) return;
+      if (!confirm('¿Ejecutar actualización de base de datos?')) return;
       try {
         const res = await apiFetch('/admin/migrate-purchases');
-        alert(res?.message || 'Migraci├│n exitosa');
+        alert(res?.message || 'Migración exitosa');
       } catch (e) {
         alert('Error: ' + e.message);
       }
@@ -4945,7 +4945,7 @@ function renderView(viewName) {
       const btn = e.currentTarget;
       const originalText = btn.textContent;
 
-      console.log('[PURCHASE] Bot├│n de guardar presionado');
+      console.log('[PURCHASE] Botón de guardar presionado');
       try {
         const isEditMode = document.getElementById('pur-edit-mode')?.value === 'true';
         const editId = document.getElementById('pur-edit-id')?.value;
@@ -4986,7 +4986,7 @@ function renderView(viewName) {
           const isSameProjectRef = (last.project_ref == body.project_ref);
 
           if (isSameDate && isSameTotal && isSameProvider && isSameType && isSameQuotation && isSameProjectRef) {
-            if (!confirm('ÔÜá´©Å ALERTA DE DUPLICADO: Se detect├│ una compra id├®ntica registrada recientemente (mismo proveedor, fecha, monto y proyecto). ┬┐Desea registrarla de todos modos?')) {
+            if (!confirm('ÔÜá´©Å ALERTA DE DUPLICADO: Se detectó una compra idéntica registrada recientemente (mismo proveedor, fecha, monto y proyecto). ¿Desea registrarla de todos modos?')) {
               btn.disabled = false;
               btn.textContent = originalText;
               return;
@@ -5005,9 +5005,9 @@ function renderView(viewName) {
             btn.disabled = false;
             btn.textContent = originalText;
             if (body.total > 0 && isEditMode) {
-              console.warn('[PURCHASE] Editando compra antigua sin ├¡tems.');
+              console.warn('[PURCHASE] Editando compra antigua sin ítems.');
             } else {
-              return alert('Debe agregar al menos un ├¡tem con cantidad v├ílida');
+              return alert('Debe agregar al menos un ítem con cantidad válida');
             }
           }
         } else {
@@ -5020,7 +5020,7 @@ function renderView(viewName) {
           if (!body.description) {
             btn.disabled = false;
             btn.textContent = originalText;
-            return alert('Debe ingresar una descripci├│n para el gasto');
+            return alert('Debe ingresar una descripción para el gasto');
           }
           if (body.total <= 0) {
             btn.disabled = false;
@@ -5039,7 +5039,7 @@ function renderView(viewName) {
         }
 
         if (res && res.success) {
-          alert(res.message || 'Compra registrada con ├®xito');
+          alert(res.message || 'Compra registrada con éxito');
           const modal = document.getElementById('buy-modal');
           if (modal) modal.style.display = 'none';
           fetchData();
@@ -5057,7 +5057,7 @@ function renderView(viewName) {
     });
 
     window.deletePurchase = async function (id) {
-      if (!confirm('┬┐Seguro que desea eliminar esta compra? Esta acci├│n revertir├í el stock de los insumos asociados y eliminar├í el asiento contable. Esta es una acci├│n permanente.')) return;
+      if (!confirm('¿Seguro que desea eliminar esta compra? Esta acción revertirá el stock de los insumos asociados y eliminará el asiento contable. Esta es una acción permanente.')) return;
       try {
         const res = await apiFetch(`/purchases/${id}`, { method: 'DELETE' });
         if (res && res.success) {
@@ -5185,8 +5185,8 @@ function renderView(viewName) {
       };
 
       console.log('[DEBUG] Enviando Venta:', body);
-      if (!body.date) return alert('Por favor, ingrese una fecha v├ílida.');
-      if (body.items.length === 0) return alert('Debe agregar al menos un ├¡tem');
+      if (!body.date) return alert('Por favor, ingrese una fecha válida.');
+      if (body.items.length === 0) return alert('Debe agregar al menos un ítem');
 
       // --- STOCK VALIDATION BLOCK ---
       const isSuperAdmin = currentUser?.role === 'superadmin';
@@ -5205,10 +5205,10 @@ function renderView(viewName) {
             const currentStock = parseFloat(product.stock) || 0;
             const requestedQty = parseFloat(item.quantity) || 0;
             if (currentStock < requestedQty) {
-              return alert(`ÔØî Stock insuficiente para "${product.name}" (${product.code}). \n\nDisponible: ${currentStock} \nSolicitado: ${requestedQty} \n\nDebe producir o comprar m├ís antes de vender.`);
+              return alert(`ÔØî Stock insuficiente para "${product.name}" (${product.code}). \n\nDisponible: ${currentStock} \nSolicitado: ${requestedQty} \n\nDebe producir o comprar más antes de vender.`);
             }
           } else {
-            return alert(`ÔØî El c├│digo de producto "${productCode}" no existe en el maestro o no tiene stock registrado.`);
+            return alert(`ÔØî El código de producto "${productCode}" no existe en el maestro o no tiene stock registrado.`);
           }
         }
       }
@@ -5241,7 +5241,7 @@ function renderView(viewName) {
       }
     });
     window.deleteSale = async function (id) {
-      if (!confirm('┬┐Seguro que desea eliminar esta venta? Esta acci├│n revertir├í el stock de los productos asociados y eliminar├í el asiento contable de ingreso. Esta es una acci├│n permanente.')) return;
+      if (!confirm('¿Seguro que desea eliminar esta venta? Esta acción revertirá el stock de los productos asociados y eliminará el asiento contable de ingreso. Esta es una acción permanente.')) return;
       try {
         const res = await apiFetch(`/sales/${id}`, { method: 'DELETE' });
         if (res && res.success) {
@@ -5265,7 +5265,7 @@ function renderView(viewName) {
       let neto, iva, total;
 
       if (incluyeIva) {
-        // El precio ingresado YA incluye IVA, calcular hacia atr├ís
+        // El precio ingresado YA incluye IVA, calcular hacia atrás
         total = Math.round(input);
         neto = Math.round(input / 1.19);
         iva = total - neto;
@@ -5466,7 +5466,7 @@ function renderView(viewName) {
           .forEach(it => {
             const val = it.item_code || it.description;
             if (val) {
-              quoteOptions.push(`<option value="${val}">­ƒôï AN├üLISIS: ${val} | ${it.description || ''}</option>`);
+              quoteOptions.push(`<option value="${val}">📋 AN├üLISIS: ${val} | ${it.description || ''}</option>`);
             }
           });
       }
@@ -5527,7 +5527,7 @@ function renderView(viewName) {
                     codeInput.value = item.item_code || item.description || '';
                     qtyInput.value = item.quantity || 1;
                     
-                    // B├║squeda inteligente de costos (Cotizaci├│n o Maestro)
+                    // Búsqueda inteligente de costos (Cotización o Maestro)
                     const masterProd = state.products.find(p => p.code === (item.item_code || item.description));
                     const unit_cost = item.unit_cost || item.cost_unit || masterProd?.cost_unit || 0;
                     const labor_cost = item.labor_cost || item.mo_cost || masterProd?.labor_cost || 0;
@@ -5582,7 +5582,7 @@ function renderView(viewName) {
             if (!exists && !isFromQuote) {
               btn.disabled = false;
               btn.innerHTML = originalText;
-              return alert(`El producto "${productCode}" no existe en el maestro. \n\nPor favor elija un producto existente o use uno de la cotizaci├│n asociada.`);
+              return alert(`El producto "${productCode}" no existe en el maestro. \n\nPor favor elija un producto existente o use uno de la cotización asociada.`);
             }
 
             // Automatic registration if not in master but in quote
@@ -5615,7 +5615,7 @@ function renderView(viewName) {
         if (items.length === 0) {
           btn.disabled = false;
           btn.innerHTML = originalText;
-          return alert('Debe agregar al menos un ├¡tem');
+          return alert('Debe agregar al menos un ítem');
         }
 
         const body = {
@@ -5645,10 +5645,10 @@ function renderView(viewName) {
           if (editIdInput) editIdInput.value = '';
 
           const titleEl = document.getElementById('prod-modal-title');
-          if (titleEl) titleEl.textContent = 'Nueva Orden de Producci├│n';
+          if (titleEl) titleEl.textContent = 'Nueva Orden de Producción';
 
           const btnTextEl = document.getElementById('btn-prod-text');
-          if (btnTextEl) btnTextEl.textContent = 'Iniciar Producci├│n';
+          if (btnTextEl) btnTextEl.textContent = 'Iniciar Producción';
 
           const catSel = document.getElementById('prod-category');
           if (catSel) catSel.value = 'push';
@@ -5660,7 +5660,7 @@ function renderView(viewName) {
         }
       } catch (err) {
         console.error('Error saving production:', err);
-        alert('Error al guardar la producci├│n: ' + err.message);
+        alert('Error al guardar la producción: ' + err.message);
       } finally {
         const btnFinal = document.getElementById('btn-submit-production');
         if (btnFinal) {
@@ -5679,7 +5679,7 @@ function renderView(viewName) {
       const confirm = document.getElementById('cp-confirm').value;
 
       if (newPassword !== confirm) {
-        return alert('Las contrase├▒as nuevas no coinciden');
+        return alert('Las contraseñas nuevas no coinciden');
       }
 
       const res = await apiFetch('/auth/change-password', {
@@ -5715,7 +5715,7 @@ function renderView(viewName) {
       if (id) {
         result = await apiFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify(body) });
       } else {
-        if (!body.password) return alert('La contrase├▒a es requerida para nuevos usuarios');
+        if (!body.password) return alert('La contraseña es requerida para nuevos usuarios');
         result = await apiFetch('/users', { method: 'POST', body: JSON.stringify(body) });
       }
 
@@ -5741,10 +5741,10 @@ function renderView(viewName) {
             <td><strong>${e.nombre}</strong></td>
             <td>${e.rut || '-'}</td>
             <td>${e.email || '-'}</td>
-            <td><span class="badge ${e.plan_categoria === 'basico' ? 'badge-warning' : 'badge-primary'}" style="background:${e.plan_categoria === 'basico' ? '#f59e0b' : '#3b82f6'}; color:#fff">${e.plan_categoria === 'basico' ? 'B├ísico' : 'Pro'}</span></td>
+            <td><span class="badge ${e.plan_categoria === 'basico' ? 'badge-warning' : 'badge-primary'}" style="background:${e.plan_categoria === 'basico' ? '#f59e0b' : '#3b82f6'}; color:#fff">${e.plan_categoria === 'basico' ? 'Básico' : 'Pro'}</span></td>
             <td><span class="badge ${e.activa ? 'badge-success' : 'badge-danger'}">${e.activa ? 'Activa' : 'Inactiva'}</span></td>
             <td>
-              <button class="btn-sm" onclick="window.editEmpresa(${e.id})">Ô£Å´©Å</button>
+              <button class="btn-sm" onclick="window.editEmpresa(${e.id})">📝</button>
               <button class="btn-sm" onclick="window.toggleEmpresa(${e.id}, ${e.activa})" style="background:${e.activa ? 'var(--danger)' : 'var(--success)'}">
                 ${e.activa ? 'ÔÅ©´©Å' : 'ÔûÂ´©Å'}
               </button>
@@ -5785,7 +5785,7 @@ function renderView(viewName) {
 
       window.toggleEmpresa = async function (id, currentlyActive) {
         const action = currentlyActive ? 'desactivar' : 'reactivar';
-        if (!confirm(`┬┐Seguro que deseas ${action} esta empresa?`)) return;
+        if (!confirm(`¿Seguro que deseas ${action} esta empresa?`)) return;
 
         if (currentlyActive) {
           await apiFetch(`/empresas/${id}`, { method: 'DELETE' });
@@ -5835,7 +5835,7 @@ function renderView(viewName) {
       document.getElementById('mach-commission').value = '3.45';
       document.getElementById('mach-account').value = '';
       document.getElementById('mach-active').checked = true;
-      document.getElementById('machine-modal-title').textContent = 'Nueva M├íquina de Pago';
+      document.getElementById('machine-modal-title').textContent = 'Nueva Máquina de Pago';
       document.getElementById('machine-modal').style.display = 'flex';
     };
 
@@ -5848,12 +5848,12 @@ function renderView(viewName) {
       document.getElementById('mach-commission').value = m.commission_percent || 0;
       document.getElementById('mach-account').value = m.account_id || '';
       document.getElementById('mach-active').checked = m.active !== false;
-      document.getElementById('machine-modal-title').textContent = 'Editar M├íquina';
+      document.getElementById('machine-modal-title').textContent = 'Editar Máquina';
       document.getElementById('machine-modal').style.display = 'flex';
     };
 
     window.deleteMachine = async function (id) {
-      if (!confirm('┬┐Eliminar esta m├íquina de pago?')) return;
+      if (!confirm('¿Eliminar esta máquina de pago?')) return;
       await apiFetch(`/payment-machines/${id}`, { method: 'DELETE' });
       fetchData();
     };
@@ -5892,7 +5892,7 @@ function renderView(viewName) {
             <td><input type="checkbox" class="sale-checkbox" data-id="${s.id}" data-total="${s.total}" data-iva="${s.iva || 0}" data-exempt="${s.is_iva_exempt}" data-machine="${s.payment_machines?.commission_percent || 0}"></td>
             <td>${s.date}</td>
             <td>${s.event_name || '-'}</td>
-            <td>${s.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : s.payment_method === 'machine' ? '­ƒÆ│ M├íquina' : '­ƒöä Transf.'}</td>
+            <td>${s.payment_method === 'cash' ? '­ƒÆÁ Efectivo' : s.payment_method === 'machine' ? '­ƒÆ│ Máquina' : '🔄 Transf.'}</td>
             <td>${s.payment_machines?.name || '-'}</td>
             <td><strong>$${(s.total || 0).toLocaleString('es-CL')}</strong></td>
             <td>$${(s.iva || 0).toLocaleString('es-CL')}</td>
@@ -6061,7 +6061,7 @@ window.editClient = (id) => {
 };
 
 window.deleteClient = async (id) => {
-  if (!confirm('┬┐Seguro que desea eliminar este cliente?')) return;
+  if (!confirm('¿Seguro que desea eliminar este cliente?')) return;
   await deleteData(`/clients/${id}`);
   fetchData();
 };
@@ -6096,7 +6096,7 @@ window.editProvider = (id) => {
 };
 
 window.deleteProvider = async (id) => {
-  if (!confirm('┬┐Seguro que desea eliminar este proveedor?')) return;
+  if (!confirm('¿Seguro que desea eliminar este proveedor?')) return;
   await deleteData(`/providers/${id}`);
   fetchData();
 };
@@ -6116,8 +6116,8 @@ window.saveAlertSettings = async () => {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ key: 'telegram_chat_id', value: cid })
     });
-    alert('Configuraci├│n de Telegram guardada.');
-  } catch (e) { alert('Error al guardar configuraci├│n'); }
+    alert('Configuración de Telegram guardada.');
+  } catch (e) { alert('Error al guardar configuración'); }
 };
 
 window.testTelegram = async () => {
@@ -6142,7 +6142,7 @@ window.saveThreshold = async (code, btn) => {
   if (res.success) {
     btn.textContent = 'Ô£à';
     setTimeout(() => btn.textContent = 'Set', 2000);
-  } else alert('Error al guardar l├¡mite');
+  } else alert('Error al guardar límite');
 };
 
 // --- Report Helpers ---
@@ -6173,7 +6173,7 @@ window.calculateProfitabilityByProject = function () {
     // Consider a project if it has status that implies activity
     projects[q.id] = {
       id: q.id,
-      name: q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotizaci├│n #${q.id}`),
+      name: q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotización #${q.id}`),
       client: q.clients ? q.clients.name : 'Desconocido',
       status: q.status,
       income: 0,
@@ -6230,7 +6230,7 @@ window.calculateProfitabilityByProject = function () {
       'draft': 'Borrador',
       'sent': 'Enviada',
       'approved': 'Aprobada',
-      'production': 'En Producci├│n',
+      'production': 'En Producción',
       'ready': 'Lista',
       'delivered': 'Entregada',
       'rejected': 'Rechazada'
@@ -6538,7 +6538,7 @@ function calculateTotals(prefix) {
 function getTableItems(prefix) {
   const body = document.getElementById(`${prefix}-items-body`);
   if (!body) {
-    console.error(`[getTableItems] No se encontr├│ el elemento: ${prefix}-items-body`);
+    console.error(`[getTableItems] No se encontró el elemento: ${prefix}-items-body`);
     return [];
   }
   const rows = body.querySelectorAll('.item-row');
@@ -6678,9 +6678,9 @@ window.exportLedger = function () {
       if (sale && sale.quotation_id) {
         const q = state.quotations.find(q => q.id == sale.quotation_id);
         if (q) {
-          projName = q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotizaci├│n #${q.id}`);
+          projName = q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotización #${q.id}`);
         } else {
-          projName = `Cotizaci├│n #${sale.quotation_id}`;
+          projName = `Cotización #${sale.quotation_id}`;
         }
       }
     } else if (e.entry_type.startsWith('compra')) {
@@ -6694,7 +6694,7 @@ window.exportLedger = function () {
           if (relatedSale && relatedSale.quotation_id) {
             const q = state.quotations.find(q => q.id == relatedSale.quotation_id);
             if (q) {
-              projName = q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotizaci├│n #${q.id}`);
+              projName = q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotización #${q.id}`);
             } else {
               projName = `Venta #${saleId}`;
             }
@@ -6704,9 +6704,9 @@ window.exportLedger = function () {
         } else if (pur.quotation_id) {
           const q = state.quotations.find(q => q.id == pur.quotation_id);
           if (q) {
-            projName = q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotizaci├│n #${q.id}`);
+            projName = q.purchase_order_id ? `OC: ${q.purchase_order_id}` : (q.name || `Cotización #${q.id}`);
           } else {
-            projName = `Cotizaci├│n #${pur.quotation_id}`;
+            projName = `Cotización #${pur.quotation_id}`;
           }
         }
       }
@@ -6722,8 +6722,8 @@ window.exportLedger = function () {
 
 window.exportProduction = function () {
   const formatted = formatProductionForExport(state.history.production);
-  exportToExcel(formatted, 'Historial_Produccion', 'Producci├│n');
-  alert('Ô£à Producci├│n exportada a Excel exitosamente');
+  exportToExcel(formatted, 'Historial_Produccion', 'Producción');
+  alert('Ô£à Producción exportada a Excel exitosamente');
 };
 
 navItems.forEach(item => item.addEventListener('click', () => {
@@ -6859,9 +6859,9 @@ window.openLogisticsModal = async (type, id, transaction_type) => {
   const itemsBody = document.getElementById('log-items-body');
   const submitBtn = document.getElementById('btn-submit-logistics');
 
-  title.innerText = type === 'inbound' ? 'Ô¼ç´©Å Registrar Recepci├│n de Mercaderia' : 'Ô¼å´©Å Registrar Despacho a Cliente';
+  title.innerText = type === 'inbound' ? 'Ô¼ç´©Å Registrar Recepción de Mercaderia' : 'Ô¼å´©Å Registrar Despacho a Cliente';
   entityLabel.innerText = type === 'inbound' ? 'Proveedor' : 'Cliente';
-  submitBtn.innerText = type === 'inbound' ? '­ƒôî Confirmar Recepci├│n' : '­ƒôî Confirmar Despacho';
+  submitBtn.innerText = type === 'inbound' ? '­ƒôî Confirmar Recepción' : '­ƒôî Confirmar Despacho';
 
   // Clear modal attributes
   modal.dataset.type = type;
@@ -6876,7 +6876,7 @@ window.openLogisticsModal = async (type, id, transaction_type) => {
   document.getElementById('log-cost-handling').value = '0';
   document.getElementById('log-obs').value = '';
 
-  itemsBody.innerHTML = '<tr><td colspan="4" style="text-align:center">Cargando ├¡tems...</td></tr>';
+  itemsBody.innerHTML = '<tr><td colspan="4" style="text-align:center">Cargando ítems...</td></tr>';
   modal.style.display = 'flex';
 
   // Get transaction details for items and entity
@@ -6987,9 +6987,9 @@ document.addEventListener('submit', async (e) => {
     }
   }
 });
-// Borrar si exist├¡a (limpieza de turnos previos si fall├│)
+// Borrar si existía (limpieza de turnos previos si falló)
 window.bulkPromoteQuotes = async () => {
-    if (!confirm('┬┐Est├ís seguro de sincronizar todas las cotizaciones hist├│ricas? \n\nEsta acci├│n buscar├í todas las cotizaciones en "Producci├│n" que no han sido promocionadas y crear├í autom├íticamente sus productos, insumos y recetas en el cat├ílogo.')) return;
+    if (!confirm('¿Estás seguro de sincronizar todas las cotizaciones históricas? \n\nEsta acción buscará todas las cotizaciones en "Producción" que no han sido promocionadas y creará automáticamente sus productos, insumos y recetas en el catálogo.')) return;
 
     const btn = event.target;
     const originalText = btn.textContent;
@@ -7002,22 +7002,22 @@ window.bulkPromoteQuotes = async () => {
             alert(data.message);
             window.filterQuoteStatus('production'); // Refrescar vista
         } else if (data) {
-            alert('Error: ' + (data.error || 'Operaci├│n fallida'));
+            alert('Error: ' + (data.error || 'Operación fallida'));
         } else {
-            alert('Sesi├│n expirada o error de red. Por favor inicia sesi├│n de nuevo.');
+            alert('Sesión expirada o error de red. Por favor inicia sesión de nuevo.');
         }
     } catch (e) {
         console.error('Bulk Promote Error:', e);
-        alert('Error de conexi├│n');
+        alert('Error de conexión');
     } finally {
         btn.disabled = false;
         btn.textContent = originalText;
     }
 };
 
-// Fase 2: Vincular Ventas y Producciones antiguas con los nuevos c├│digos CO
+// Fase 2: Vincular Ventas y Producciones antiguas con los nuevos códigos CO
 window.syncHistoryItems = async () => {
-    if (!confirm('┬┐Deseas vincular las Ventas y Producciones antiguas con los nuevos c├│digos CO?\n\nEsto permitir├í que al "Recalcular Stock" el inventario se actualice correctamente para esos productos.')) return;
+    if (!confirm('¿Deseas vincular las Ventas y Producciones antiguas con los nuevos códigos CO?\n\nEsto permitirá que al "Recalcular Stock" el inventario se actualice correctamente para esos productos.')) return;
 
     const btn = event.target;
     const originalText = btn.textContent;
@@ -7027,20 +7027,20 @@ window.syncHistoryItems = async () => {
     try {
         const data = await apiFetch('/admin/sync-history-items-to-master', { method: 'POST' });
         if (data && data.success) {
-            alert(data.message + '\\n\\nIMPORTANTE: Ahora ve a Productos o Insumos y corre el bot├│n "Recalcular Stock" para finalizar la auditor├¡a.');
+            alert(data.message + '\\n\\nIMPORTANTE: Ahora ve a Productos o Insumos y corre el botón "Recalcular Stock" para finalizar la auditoría.');
         } else if (data) {
-            alert('Error: ' + (data.error || 'Operaci├│n fallida'));
+            alert('Error: ' + (data.error || 'Operación fallida'));
         }
     } catch (e) {
         console.error('Sync History Items Error:', e);
-        alert('Error de conexi├│n');
+        alert('Error de conexión');
     } finally {
         btn.disabled = false;
         btn.textContent = originalText;
     }
 };
 
-// Exponer funciones y estado al ├ímbito global para compatibilidad con m├│dulos legacy
+// Exponer funciones y estado al ámbito global para compatibilidad con módulos legacy
 window.apiFetch = apiFetch;
 window.fetchData = fetchData;
 window.renderView = renderView;
