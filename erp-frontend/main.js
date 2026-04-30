@@ -527,7 +527,11 @@ const views = {
               <label style="font-weight: 600; color: var(--primary)">🧵 Mano de Obra / Confecc. ($)</label>
               <input type="number" id="prod-labor-cost" value="0" style="border-color: var(--primary)44" oninput="document.getElementById('mo-details-group').style.display = (parseFloat(this.value) > 0 ? 'block' : 'none')">
             </div>
+            <div class="form-group" style="margin:0">
+              <label style="font-weight: 600; color: var(--warning)">⚙️ Gastos Grales. / Varios ($)</label>
+              <input type="number" id="prod-general-expenses" value="0" style="border-color: var(--warning)44">
             </div>
+
             <div id="mo-details-group" style="grid-column: span 3; display: none; background: rgba(var(--primary-rgb), 0.03); padding: 0.8rem; border-radius: 8px; border: 1px solid rgba(var(--primary-rgb), 0.1); margin-top: 0.5rem">
               <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem">
                 <div class="form-group" style="margin:0">
@@ -554,10 +558,7 @@ const views = {
                 </div>
               </div>
             </div>
-            <div class="form-group" style="margin:0">
-              <label style="font-weight: 600; color: var(--warning)">⚙️ Gastos Generales / Varios ($)</label>
-              <input type="number" id="prod-general-expenses" value="0" style="border-color: var(--warning)44">
-            </div>
+          </div>
           </div>
         </div>
 
