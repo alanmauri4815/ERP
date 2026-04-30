@@ -1,4 +1,4 @@
-﻿console.log('ERP Universal v1.2.3 [PIPELINE-RENAME-FIX]');
+console.log('ERP Universal v1.2.3 [PIPELINE-RENAME-FIX]');
 import './style.css'
 import './accounting.css'
 import Chart from 'chart.js/auto'
@@ -2119,7 +2119,7 @@ function renderHistoryTable(type) {
           <tr>
             <th>ID</th>
             <th>Fecha</th>
-            <th>Método / Proyecto</th>
+            <th>Método / Proyecto / Cliente</th>
             <th style="text-align: center">Cant.</th>
             <th style="text-align: right">Costo M.O.</th>
             <th style="text-align: right">Insumos</th>
@@ -2167,6 +2167,7 @@ function renderHistoryTable(type) {
                     ${PROD_CAT_LABELS[pcat] || pcat}
                   </span>
                   ${p.project_name ? '<br><small style="color:var(--text-muted)">📁 ' + p.project_name + '</small>' : ''}
+                  ${p.client_name ? '<br><small style="color:var(--secondary); font-weight:600">👤 ' + p.client_name + '</small>' : ''}
                 </td>
                 <td style="text-align: center">${(p.items || []).reduce((sum, it) => sum + (it.quantity || 0), 0)}</td>
                 <td style="text-align: right">$${totalMO.toLocaleString()}</td>

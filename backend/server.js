@@ -957,9 +957,14 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
     if (error) return res.status(500).json({ error: error.message });
 
     // Build quotation lookup for project names and totals
-    const { data: quotes } = await supabase.from(T.QUOTATIONS).select('id, name, purchase_order_id, total_price_gross').eq('empresa_id', req.empresa_id).limit(1000);
+    const { data: quotes } = await supabase.from(T.QUOTATIONS).select('id, name, purchase_order_id, total_price_gross, client_name, clients(name)').eq('empresa_id', req.empresa_id).limit(1000);
     const quoteMap = {};
-    quotes?.forEach(q => quoteMap[q.id] = { name: q.name, oc: q.purchase_order_id, total: q.total_price_gross });
+    quotes?.forEach(q => quoteMap[q.id] = { 
+        name: q.name, 
+        oc: q.purchase_order_id, 
+        total: q.total_price_gross, 
+        client: q.clients?.name || q.client_name 
+    });
 
     const fullHistory = [];
     for (const p of history) {
@@ -971,6 +976,7 @@ app.get(['/api/history/production', '/api/production'], authenticateToken, async
         fullHistory.push({
             ...p,
             project_name: quoteMap[p.quotation_id]?.name || null,
+            client_name: quoteMap[p.quotation_id]?.client || null,
             purchase_order_id: quoteMap[p.quotation_id]?.oc || null,
             quotation_total: quoteMap[p.quotation_id]?.total || 0,
             items: items.map(i => ({
