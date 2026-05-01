@@ -2134,14 +2134,16 @@ function renderHistoryTable(type) {
       const pcat = p.production_category || 'push';
       const itList = p.items || [];
       const totalMO = itList.reduce((sum, it) => {
-        const pm = state.products.find(prod => prod.code === it.product_code);
-        const rm = state.rawMaterials.find(m => m.code === it.product_code);
-        let cost = it.mo_cost || 0;
+        let cost = parseFloat(it.mo_cost) || 0;
         if (cost === 0) {
+          const pm = state.products.find(prod => prod.code === it.product_code || prod.name === it.product_code);
           if (pm) cost = pm.labor_cost || 0;
-          else if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
+          else {
+            const rm = state.rawMaterials.find(m => m.code === it.product_code || m.name === it.product_code);
+            if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
+          }
         }
-        return sum + (cost * (it.quantity || 0));
+        return sum + (cost * (parseFloat(it.quantity) || 0));
       }, 0);
       const totalMP = itList.reduce((sum, it) => {
         const pm = state.products.find(prod => prod.code === it.product_code);
@@ -2381,43 +2383,48 @@ window.showTransactionDetails = (type, id) => {
       <div class="summary-section">
         <table class="summary-table">
           <tr><td>Costo Mano de Obra (M.O.)</td><td style="text-align: right">$${(transaction.items.reduce((sum, it) => {
-    const pm = state.products.find(p => p.code === it.product_code);
-    const rm = state.rawMaterials.find(m => m.code === it.product_code);
-    let cost = it.mo_cost || 0;
+    let cost = parseFloat(it.mo_cost) || 0;
     if (cost === 0) {
+      const pm = state.products.find(p => p.code === it.product_code || p.name === it.product_code);
       if (pm) cost = pm.labor_cost || 0;
-      else if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
+      else {
+        const rm = state.rawMaterials.find(m => m.code === it.product_code || m.name === it.product_code);
+        if (rm && (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio')) cost = rm.cost_net || 0;
+      }
     }
-    return sum + (cost * (it.quantity || 0));
+    return sum + (cost * (parseFloat(it.quantity) || 0));
   }, 0)).toLocaleString()}</td></tr>
           <tr><td>Costo Materiales / Insumos</td><td style="text-align: right">$${(transaction.items.reduce((sum, it) => {
-    const pm = state.products.find(p => p.code === it.product_code);
-    const rm = state.rawMaterials.find(m => m.code === it.product_code);
-    let cost = it.material_cost || 0;
+    let cost = parseFloat(it.material_cost) || 0;
     if (cost === 0) {
+      const pm = state.products.find(p => p.code === it.product_code || p.name === it.product_code);
       if (pm) cost = pm.cost_unit || 0;
-      else if (rm && rm.type !== 'MO' && rm.type !== 'Mano de Obra' && rm.type !== 'Servicio') cost = rm.cost_net || 0;
+      else {
+        const rm = state.rawMaterials.find(m => m.code === it.product_code || m.name === it.product_code);
+        if (rm && rm.type !== 'MO' && rm.type !== 'Mano de Obra' && rm.type !== 'Servicio') cost = rm.cost_net || 0;
+      }
     }
-    return sum + (cost * (it.quantity || 0));
-  }, 0) + (transaction.material_cost || 0)).toLocaleString()}</td></tr>
+    return sum + (cost * (parseFloat(it.quantity) || 0));
+  }, 0) + (parseFloat(transaction.material_cost) || 0)).toLocaleString()}</td></tr>
           <tr><td>Gastos Generales / Varios</td><td style="text-align: right">$${(transaction.general_expenses || 0).toLocaleString()}</td></tr>
           <tr style="font-size: 1.1rem; border-top: 2px solid var(--border); color: var(--danger)">
              <td>COSTO TOTAL ESTIMADO</td>
               <td style="text-align: right"><strong>$${((transaction.items.reduce((sum, it) => {
-    const pm = state.products.find(p => p.code === it.product_code);
-    const rm = state.rawMaterials.find(m => m.code === it.product_code);
-
-    let costMP = it.material_cost || 0;
-    let costMO = it.mo_cost || 0;
+    let costMP = parseFloat(it.material_cost) || 0;
+    let costMO = parseFloat(it.mo_cost) || 0;
     if (costMP === 0 && costMO === 0) {
+      const pm = state.products.find(p => p.code === it.product_code || p.name === it.product_code);
       if (pm) { costMP = pm.cost_unit || 0; costMO = pm.labor_cost || 0; }
-      else if (rm) {
-        if (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio') costMO = rm.cost_net || 0;
-        else costMP = rm.cost_net || 0;
+      else {
+        const rm = state.rawMaterials.find(m => m.code === it.product_code || m.name === it.product_code);
+        if (rm) {
+          if (rm.type === 'MO' || rm.type === 'Mano de Obra' || rm.type === 'Servicio') costMO = rm.cost_net || 0;
+          else costMP = rm.cost_net || 0;
+        }
       }
     }
-    return sum + ((costMP + costMO) * (it.quantity || 0));
-  }, 0)) + (transaction.material_cost || 0) + (transaction.general_expenses || 0)).toLocaleString()}</strong></td>
+    return sum + ((costMP + costMO) * (parseFloat(it.quantity) || 0));
+  }, 0)) + (parseFloat(transaction.material_cost) || 0) + (parseFloat(transaction.general_expenses) || 0)).toLocaleString()}</strong></td>
           </tr>
           ${transaction.quotation_total > 0 ? `
             <tr style="font-size: 1rem; border-top: 1px dashed var(--border); color: var(--success); margin-top: 10px">
