@@ -1996,11 +1996,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
         if (production_category) insertData.production_category = production_category;
         if (quotation_id && !isNaN(quotation_id)) insertData.quotation_id = parseInt(quotation_id);
         insertData.material_cost = material_cost || 0;
-        insertData.labor_cost = labor_cost || 0;
         insertData.general_expenses = general_expenses || 0;
-        if (mo_subcontracted) insertData.mo_subcontracted = mo_subcontracted;
-        if (mo_doc_type) insertData.mo_doc_type = mo_doc_type;
-        if (mo_status) insertData.mo_status = mo_status;
         if (mo_subcontracted) insertData.mo_subcontracted = mo_subcontracted;
         if (mo_doc_type) insertData.mo_doc_type = mo_doc_type;
         if (mo_status) insertData.mo_status = mo_status;
@@ -2205,7 +2201,7 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
         await supabase.from(T.PRODUCTION_ITEMS).delete().eq('production_id', prodId);
 
         // 3. UPDATE PRODUCTION HEADER
-        const updateData = { date: productionDate, material_cost: material_cost || 0, labor_cost: labor_cost || 0, general_expenses: general_expenses || 0, mo_subcontracted: mo_subcontracted || 'direct', mo_doc_type: mo_doc_type || 'none', mo_status: mo_status || 'paid' };
+        const updateData = { date: productionDate, material_cost: material_cost || 0, general_expenses: general_expenses || 0, mo_subcontracted: mo_subcontracted || 'direct', mo_doc_type: mo_doc_type || 'none', mo_status: mo_status || 'paid' };
         if (production_category) updateData.production_category = production_category;
         if (quotation_id && !isNaN(quotation_id)) updateData.quotation_id = parseInt(quotation_id);
 
