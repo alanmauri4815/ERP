@@ -2200,8 +2200,16 @@ function renderHistoryTable(type) {
                   <span style="display:inline-block; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.75rem; font-weight:700; background:${PROD_CAT_COLORS[pcat] || '#6b7280'}22; color:${PROD_CAT_COLORS[pcat] || '#6b7280'}; border:1px solid ${PROD_CAT_COLORS[pcat] || '#6b7280'}44">
                     ${PROD_CAT_LABELS[pcat] || pcat}
                   </span>
-                  ${p.project_name ? '<br><small style="color:var(--text-muted)">📁 ' + p.project_name + '</small>' : ''}
-                  ${p.client_name ? '<br><small style="color:var(--secondary); font-weight:600">👤 ' + p.client_name + '</small>' : ''}
+                  ${p.project_name ? `
+                    <div style="margin-top:0.4rem; font-size:0.85rem; color:var(--text); font-weight:600; display:flex; align-items:center; gap:4px">
+                      <span style="opacity:0.6">📁</span> ${p.project_name}
+                    </div>
+                  ` : ''}
+                  ${p.client_name ? `
+                    <div style="font-size:0.8rem; color:var(--secondary); font-weight:700; display:flex; align-items:center; gap:4px">
+                      <span style="opacity:0.6">👤</span> ${p.client_name}
+                    </div>
+                  ` : ''}
                 </td>
                 <td style="text-align: center">${(p.items || []).reduce((sum, it) => sum + (it.quantity || 0), 0)}</td>
                 <td style="text-align: right">$${totalMO.toLocaleString()}</td>
