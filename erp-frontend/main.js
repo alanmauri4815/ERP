@@ -5696,6 +5696,8 @@ function renderView(viewName) {
                   r.querySelector('.prod-item-mo').value = '0';
                 });
 
+                // Update datalist for this quote
+                if (window.updateProductionDatalist) window.updateProductionDatalist(quote);
 
 
                 const quoteProductsList = quote.products_list || [];
@@ -5738,19 +5740,7 @@ function renderView(viewName) {
                       if (match) productCode = match.code;
                     }
                     
-                    // Check if product exists in dropdown options
-                    const existsInDropdown = Array.from(codeSelect.options).some(opt => opt.value === productCode);
-                    
-                    if (existsInDropdown) {
-                      codeSelect.value = productCode;
-                    } else if (productCode) {
-                      // Add as temporary option so user can see it
-                      const opt = document.createElement('option');
-                      opt.value = productCode;
-                      opt.textContent = `⚠️ ${productCode} | ${item.name || item.description || ''} (no inventariado)`;
-                      codeSelect.appendChild(opt);
-                      codeSelect.value = productCode;
-                    }
+                    codeSelect.value = productCode;
 
                     qtyInput.value = item.quantity || 1;
 
