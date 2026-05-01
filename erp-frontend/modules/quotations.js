@@ -289,6 +289,16 @@ window.saveQuotation = async () => {
         ...window.currentQuoteCalcs,
         items: window.quotationItems
             .filter(it => it.quantity > 0)
+            // Prevent duplicates (same description, qty, cost, type, linked)
+            .filter((it, idx, self) => 
+                idx === self.findIndex(t => (
+                    t.description === it.description && 
+                    t.quantity === it.quantity && 
+                    t.unit_value_net === it.unit_value_net &&
+                    t.type === it.type &&
+                    t.linked_to === it.linked_to
+                ))
+            )
             .map(it => {
                 const projectTotal = window.getItemProjectTotal(it);
                 return {
