@@ -3011,12 +3011,27 @@ window.editProduction = async (id) => {
   // 2. Fill from saved production items
   production.items.forEach((item, i) => {
     if (rows[i]) {
-      rows[i].querySelector('.prod-item-code').value = item.product_code;
+      const select = rows[i].querySelector('.prod-item-code');
+      const val = item.product_code || '';
+      
+      // Check if product exists in dropdown
+      const exists = Array.from(select.options).some(opt => opt.value === val);
+      if (!exists && val) {
+        const opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = `⚠️ ${val} (No en maestro)`;
+        select.appendChild(opt);
+      }
+      
+      select.value = val;
       rows[i].querySelector('.prod-item-qty').value = item.quantity;
       rows[i].querySelector('.prod-item-mp').value = item.material_cost || 0;
       rows[i].querySelector('.prod-item-mo').value = item.mo_cost || 0;
     }
   });
+
+  // Ensure validation passes for existing production items even if not in master
+  window.currentProductionItems = production.items.map(it => ({ item_code: it.product_code, description: it.product_code }));
 
   // 3. For PULL: fetch the quotation to supplement missing costs
   if (production.production_category === 'pull' && production.quotation_id) {
