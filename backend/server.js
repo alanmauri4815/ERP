@@ -1988,7 +1988,7 @@ app.get('/api/accounting-entries', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/production', authenticateToken, async (req, res) => {
-    const { items, date, production_category, quotation_id, material_cost, labor_cost, general_expenses, mo_subcontracted, mo_doc_type, mo_status } = req.body;
+    const { items, date, production_category, quotation_id, material_cost, general_expenses } = req.body;
     const productionDate = date || new Date().toISOString();
 
     try {
@@ -1997,9 +1997,6 @@ app.post('/api/production', authenticateToken, async (req, res) => {
         if (quotation_id && !isNaN(quotation_id)) insertData.quotation_id = parseInt(quotation_id);
         insertData.material_cost = material_cost || 0;
         insertData.general_expenses = general_expenses || 0;
-        if (mo_subcontracted) insertData.mo_subcontracted = mo_subcontracted;
-        if (mo_doc_type) insertData.mo_doc_type = mo_doc_type;
-        if (mo_status) insertData.mo_status = mo_status;
 
         let result = await supabase
             .from(T.PRODUCTION)
@@ -2130,7 +2127,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
 
 app.put('/api/production/:id', authenticateToken, async (req, res) => {
     const prodId = req.params.id;
-    const { items, date, production_category, quotation_id, material_cost, labor_cost, general_expenses, mo_subcontracted, mo_doc_type, mo_status } = req.body;
+    const { items, date, production_category, quotation_id, material_cost, general_expenses } = req.body;
     const productionDate = date || new Date().toISOString();
 
     try {
@@ -2201,7 +2198,7 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
         await supabase.from(T.PRODUCTION_ITEMS).delete().eq('production_id', prodId);
 
         // 3. UPDATE PRODUCTION HEADER
-        const updateData = { date: productionDate, material_cost: material_cost || 0, general_expenses: general_expenses || 0, mo_subcontracted: mo_subcontracted || 'direct', mo_doc_type: mo_doc_type || 'none', mo_status: mo_status || 'paid' };
+        const updateData = { date: productionDate, material_cost: material_cost || 0, general_expenses: general_expenses || 0 };
         if (production_category) updateData.production_category = production_category;
         if (quotation_id && !isNaN(quotation_id)) updateData.quotation_id = parseInt(quotation_id);
 

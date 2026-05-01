@@ -3012,7 +3012,13 @@ window.editProduction = async (id) => {
   production.items.forEach((item, i) => {
     if (rows[i]) {
       const select = rows[i].querySelector('.prod-item-code');
-      const val = item.product_code || '';
+      let val = item.product_code || '';
+      
+      // Smart search: if val doesn't match a code, try finding by name
+      if (val && !state.products.find(p => p.code === val)) {
+        const match = state.products.find(p => p.name && p.name.toLowerCase().trim() === val.toLowerCase().trim());
+        if (match) val = match.code;
+      }
       
       // Check if product exists in dropdown
       const exists = Array.from(select.options).some(opt => opt.value === val);
@@ -5677,7 +5683,16 @@ function renderView(viewName) {
                     const moInput = rows[idx].querySelector('.prod-item-mo');
 
                     // Use code if available (new flow), fallback to item_code/name
-                    const productCode = item.code || item.item_code || item.description || '';
+                    let productCode = item.code || item.item_code || item.description || '';
+                    
+                    // Smart search: if productCode doesn't match a code, try finding by name
+                    if (productCode && !state.products.find(p => p.code === productCode)) {
+                      const match = state.products.find(p => 
+                        (p.name && p.name.toLowerCase().trim() === productCode.toLowerCase().trim()) ||
+                        (p.name && item.description && p.name.toLowerCase().trim() === item.description.toLowerCase().trim())
+                      );
+                      if (match) productCode = match.code;
+                    }
                     
                     // Check if product exists in dropdown options
                     const existsInDropdown = Array.from(codeSelect.options).some(opt => opt.value === productCode);
@@ -5753,9 +5768,15 @@ function renderView(viewName) {
           const mo_cost = parseFloat(row.querySelector('.prod-item-mo').value) || 0;
 
           if (productCode && quantity > 0) {
-            // Check if product exists in master
-            const exists = state.products.find(p => p.code && p.code.toLowerCase().trim() === productCode.toLowerCase());
-            const isFromQuote = window.currentProductionItems && window.currentProductionItems.some(it => (it.item_code === productCode || it.description === productCode));
+            // Check if product exists in master (by code or by name)
+            const exists = state.products.find(p => 
+              (p.code && p.code.toLowerCase().trim() === productCode.toLowerCase()) ||
+              (p.name && p.name.toLowerCase().trim() === productCode.toLowerCase())
+            );
+            const isFromQuote = window.currentProductionItems && window.currentProductionItems.some(it => 
+              (it.item_code && it.item_code.toLowerCase().trim() === productCode.toLowerCase()) || 
+              (it.description && it.description.toLowerCase().trim() === productCode.toLowerCase())
+            );
 
             if (!exists && !isFromQuote) {
               btn.disabled = false;
