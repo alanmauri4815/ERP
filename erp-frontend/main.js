@@ -3032,6 +3032,24 @@ window.editProduction = async (id) => {
     catSelect.value = production.production_category || 'push';
   }
 
+  // --- NEW: Load MO payment details from associated purchase ---
+  const moPurchase = state.history.purchases.find(p => 
+    p.description && p.description.includes(`Pago MO Producción #${id}`)
+  );
+  if (moPurchase) {
+    const desc = moPurchase.description;
+    const isSub = desc.includes('Subcontratada');
+    const isPaid = moPurchase.payment_status === 'pagado';
+    let docType = 'none';
+    if (desc.includes('Boleta')) docType = 'boleta';
+    else if (desc.includes('Factura')) docType = 'factura';
+    else if (desc.includes('Sueldo')) docType = 'sueldo';
+
+    if (document.getElementById('prod-mo-subcontracted')) document.getElementById('prod-mo-subcontracted').value = isSub ? 'subcontracted' : 'direct';
+    if (document.getElementById('prod-mo-doc-type')) document.getElementById('prod-mo-doc-type').value = docType;
+    if (document.getElementById('prod-mo-paid')) document.getElementById('prod-mo-paid').checked = isPaid;
+  }
+
   // Show/hide the project group UI without triggering onchange
   const quoteSelect = document.getElementById('prod-quotation');
   if (production.production_category === 'pull') {
@@ -3062,15 +3080,6 @@ window.editProduction = async (id) => {
       if (val && !state.products.find(p => p.code === val)) {
         const match = state.products.find(p => p.name && p.name.toLowerCase().trim() === val.toLowerCase().trim());
         if (match) val = match.code;
-      }
-      
-      // Check if product exists in dropdown
-      const exists = Array.from(select.options).some(opt => opt.value === val);
-      if (!exists && val) {
-        const opt = document.createElement('option');
-        opt.value = val;
-        opt.textContent = `⚠️ ${val} (No en maestro)`;
-        select.appendChild(opt);
       }
       
       select.value = val;
