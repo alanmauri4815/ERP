@@ -524,8 +524,40 @@ const views = {
               <input type="number" id="prod-material-cost" value="0" style="border-color: var(--accent)44">
             </div>
             <div class="form-group" style="margin:0">
-              <label style="font-weight: 600; color: var(--warning)">ÔÜÖ´©Å Gastos Generales / Varios ($)</label>
+              <label style="font-weight: 600; color: var(--warning)">⚠️ Gastos Generales / Varios ($)</label>
               <input type="number" id="prod-general-expenses" value="0" style="border-color: var(--warning)44">
+            </div>
+          </div>
+
+          <!-- Gestión de Mano de Obra (M.O.) -->
+          <div id="prod-labor-details" style="margin-top: 1rem; padding: 1rem; background: rgba(var(--warning-rgb), 0.05); border: 1px solid rgba(var(--warning-rgb), 0.2); border-radius: 0.5rem">
+            <h4 style="margin:0 0 1rem 0; font-size: 0.9rem; color: var(--warning); display: flex; align-items: center; gap: 0.5rem">
+              🔨 Gestión de Pago de Mano de Obra
+            </h4>
+            <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem">
+              <div class="form-group" style="margin:0">
+                <label style="font-size: 0.8rem">Modalidad</label>
+                <select id="prod-mo-subcontracted" style="font-size: 0.9rem; padding: 0.3rem">
+                  <option value="direct">Trabajo Directo (Interno)</option>
+                  <option value="subcontracted">Subcontratado (Externo)</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0">
+                <label style="font-size: 0.8rem">Documento de Respaldo</label>
+                <select id="prod-mo-doc-type" style="font-size: 0.9rem; padding: 0.3rem">
+                  <option value="none">Sin Documento (Informal)</option>
+                  <option value="boleta">Boleta de Honorarios</option>
+                  <option value="factura">Factura de Servicios</option>
+                  <option value="sueldo">Liquidación de Sueldo</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0; display:flex; flex-direction:column; justify-content:center">
+                <label style="font-size: 0.8rem; display:flex; align-items:center; gap:0.5rem; cursor:pointer; font-weight:600">
+                  <input type="checkbox" id="prod-mo-paid" checked>
+                  ¿M.O. Pagada?
+                </label>
+                <small style="opacity:0.7; font-size:0.7rem">Si se desmarca, genera deuda.</small>
+              </div>
             </div>
           </div>
         </div>
@@ -2965,6 +2997,11 @@ window.openProductionModal = (code) => {
 
   if (document.getElementById('prod-material-cost')) document.getElementById('prod-material-cost').value = '0';
   if (document.getElementById('prod-general-expenses')) document.getElementById('prod-general-expenses').value = '0';
+  
+  // Reset Labor Management Fields
+  if (document.getElementById('prod-mo-subcontracted')) document.getElementById('prod-mo-subcontracted').value = 'direct';
+  if (document.getElementById('prod-mo-doc-type')) document.getElementById('prod-mo-doc-type').value = 'none';
+  if (document.getElementById('prod-mo-paid')) document.getElementById('prod-mo-paid').checked = true;
 
   if (code) {
     selects[0].value = code;
@@ -5830,7 +5867,11 @@ function renderView(viewName) {
           production_category: document.getElementById('prod-category')?.value || 'push',
           quotation_id: document.getElementById('prod-quotation')?.value || null,
           material_cost: parseFloat(document.getElementById('prod-material-cost')?.value || 0),
-          general_expenses: parseFloat(document.getElementById('prod-general-expenses')?.value || 0)
+          general_expenses: parseFloat(document.getElementById('prod-general-expenses')?.value || 0),
+          // Labor Management Metadata
+          mo_subcontracted: document.getElementById('prod-mo-subcontracted')?.value || 'direct',
+          mo_doc_type: document.getElementById('prod-mo-doc-type')?.value || 'none',
+          mo_paid: document.getElementById('prod-mo-paid')?.checked || false
         };
 
         let res;

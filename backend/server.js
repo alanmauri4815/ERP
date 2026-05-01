@@ -2119,6 +2119,35 @@ app.post('/api/production', authenticateToken, async (req, res) => {
             });
         }
 
+        // --- NEW: Register Labor Cost (MO) in Purchases for Financial Traceability ---
+        const totalMO = items.reduce((sum, it) => sum + ((parseFloat(it.mo_cost) || 0) * (parseFloat(it.quantity) || 0)), 0);
+        const { mo_subcontracted, mo_doc_type, mo_paid } = req.body;
+
+        if (totalMO > 0) {
+            const moLabel = mo_subcontracted === 'direct' ? 'Directa' : 'Subcontratada';
+            const docLabel = mo_doc_type === 'none' ? 'Sin Doc' : (mo_doc_type === 'boleta' ? 'Boleta' : (mo_doc_type === 'factura' ? 'Factura' : 'Sueldo'));
+            const moDescription = `[MO ${moLabel} - ${docLabel}] Pago MO Producción #${prod.id}`;
+            
+            const purchaseData = {
+                date: productionDate,
+                total: totalMO,
+                net: totalMO,
+                iva: 0,
+                payment_status: mo_paid ? 'pagado' : 'pendiente',
+                paid_amount: mo_paid ? totalMO : 0,
+                type: 'servicios',
+                purchase_category: 'mano_de_obra',
+                description: moDescription,
+                quotation_id: quotation_id || null,
+                empresa_id: req.empresa_id
+            };
+            
+            // Link to same quotation if available
+            if (quotation_id) purchaseData.quotation_id = parseInt(quotation_id);
+
+            await supabase.from(T.PURCHASES).insert(purchaseData);
+        }
+
         res.json({ success: true, message: 'Producción registrada exitosamente.' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
@@ -2307,7 +2336,38 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
             });
         }
 
-        res.json({ success: true, message: 'Producción actualizada con éxito (Stock Re-calculado)' });
+        // --- NEW: Sync Labor Cost (MO) in Purchases ---
+        const totalMO = items.reduce((sum, it) => sum + ((parseFloat(it.mo_cost) || 0) * (parseFloat(it.quantity) || 0)), 0);
+        const { mo_subcontracted, mo_doc_type, mo_paid } = req.body;
+
+        // Clean up old MO Purchase
+        await supabase.from(T.PURCHASES).delete()
+            .eq('empresa_id', req.empresa_id)
+            .ilike('description', `%Pago MO Producción #${prodId}%`);
+
+        if (totalMO > 0) {
+            const moLabel = mo_subcontracted === 'direct' ? 'Directa' : 'Subcontratada';
+            const docLabel = mo_doc_type === 'none' ? 'Sin Doc' : (mo_doc_type === 'boleta' ? 'Boleta' : (mo_doc_type === 'factura' ? 'Factura' : 'Sueldo'));
+            const moDescription = `[MO ${moLabel} - ${docLabel}] Pago MO Producción #${prodId}`;
+            
+            const purchaseData = {
+                date: productionDate,
+                total: totalMO,
+                net: totalMO,
+                iva: 0,
+                payment_status: mo_paid ? 'pagado' : 'pendiente',
+                paid_amount: mo_paid ? totalMO : 0,
+                type: 'servicios',
+                purchase_category: 'mano_de_obra',
+                description: moDescription,
+                quotation_id: quotation_id || null,
+                empresa_id: req.empresa_id
+            };
+            if (quotation_id) purchaseData.quotation_id = parseInt(quotation_id);
+            await supabase.from(T.PURCHASES).insert(purchaseData);
+        }
+
+        res.json({ success: true, message: 'Producción actualizada con éxito (Stock y MO Sincronizados)' });
     } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
