@@ -477,7 +477,7 @@ const views = {
     </header>
 
     <div class="card animate-fade">
-      <h2>Historial Detallado de Producción</h2>
+      <h2 id="ver-prod-v2">Historial Detallado de Producción [V2.1]</h2>
       <div id="production-history-content">
         ${renderHistoryTable('production')}
       </div>
