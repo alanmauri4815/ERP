@@ -194,6 +194,7 @@ checkHealth();
 // --- CORS: Only allow known origins ---
 const allowedOrigins = [
     process.env.FRONTEND_URL || 'http://localhost:5173',
+    'http://127.0.0.1:5173',
     'https://erp-universal.vercel.app',
     'https://erp-rho-nine.vercel.app',
     'https://erp-git-main-alanmauri4815s-proyectos.vercel.app',
@@ -203,7 +204,12 @@ const allowedOrigins = [
     'http://localhost:5175',
     'http://localhost:5176',
     'http://localhost:5177',
-    'http://localhost:5178'
+    'http://localhost:5178',
+    'http://127.0.0.1:5174',
+    'http://127.0.0.1:5175',
+    'http://127.0.0.1:5176',
+    'http://127.0.0.1:5177',
+    'http://127.0.0.1:5178'
 ];
 app.use(cors({
     origin: (origin, callback) => {
@@ -515,7 +521,29 @@ app.get('/api/raw-materials', authenticateToken, async (req, res) => {
 });
 
 app.post('/api/raw-materials', authenticateToken, async (req, res) => {
-    const { code, name, unit, cost_net, iva, total, color, size, parent_code, type, batch_size } = req.body;
+    let { code, name, unit, cost_net, iva, total, color, size, parent_code, type, batch_size } = req.body;
+    code = String(code || '').trim();
+    if (!code) return res.status(400).json({ error: 'Debe ingresar un codigo de insumo.' });
+
+    const { data: existingMp, error: existingError } = await supabase
+        .from(T.MP)
+        .select('code, name')
+        .eq('code', code)
+        .maybeSingle();
+    if (existingError) return res.status(500).json({ error: existingError.message });
+    if (existingMp) {
+        return res.status(409).json({ error: `Ya existe un insumo con el codigo ${code}: ${existingMp.name || 'sin nombre'}. Use otro codigo o edite el insumo existente.` });
+    }
+    const { data: existingProductCode, error: existingProductCodeError } = await supabase
+        .from(T.PRODUCTS)
+        .select('code, name')
+        .eq('code', code)
+        .maybeSingle();
+    if (existingProductCodeError) return res.status(500).json({ error: existingProductCodeError.message });
+    if (existingProductCode) {
+        return res.status(409).json({ error: `Ya existe un producto con el codigo ${code}: ${existingProductCode.name || 'sin nombre'}. Use otro codigo para el insumo.` });
+    }
+
     const { data, error } = await supabase.from(T.MP).insert({
         code, name, unit, cost_net, iva, total, color, size, parent_code, type: type || 'MP',
         batch_size: batch_size || 1, empresa_id: req.empresa_id
@@ -525,12 +553,22 @@ app.post('/api/raw-materials', authenticateToken, async (req, res) => {
 });
 
 app.put('/api/raw-materials/:code', authenticateToken, async (req, res) => {
-    const { name, unit, cost_net, iva, total, color, size, parent_code, batch_size } = req.body;
-    const { error } = await supabase.from(T.MP).update({
+    const { code, name, unit, cost_net, iva, total, color, size, parent_code, batch_size } = req.body;
+    const originalCode = String(req.params.code || '').trim();
+    const requestedCode = String(code || originalCode).trim();
+
+    if (requestedCode && requestedCode !== originalCode) {
+        return res.status(400).json({
+            error: 'No se puede cambiar el codigo de un insumo desde esta pantalla porque esta vinculado a compras, recetas, produccion e inventario.'
+        });
+    }
+
+    const { data, error } = await supabase.from(T.MP).update({
         name, unit, cost_net, iva, total, color, size, parent_code,
         batch_size: batch_size || 1
-    }).eq('code', req.params.code).eq('empresa_id', req.empresa_id);
+    }).eq('code', originalCode).eq('empresa_id', req.empresa_id).select('code').maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: `No se encontro el insumo ${originalCode} para esta empresa.` });
     res.json({ success: true });
 });
 
@@ -1762,22 +1800,45 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
 
         if (updateError) throw updateError;
 
-        // 3. REVERSE OLD STOCK IMPACT + Delete existing sale items
+        // 3. Adjust stock by delta between old and new items
         const { data: oldItems } = await supabase.from(T.SALE_ITEMS).select('*').eq('sale_id', saleId);
-        if (oldItems) {
-            for (const it of oldItems) {
-                if (it.product_code) {
-                    const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', it.product_code).single();
-                    if (p) {
-                        const oldQty = Number(it.quantity) || 0;
-                        await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) + oldQty }).eq('code', it.product_code);
-                    }
-                }
-            }
+        const oldQuantities = {};
+        (oldItems || []).forEach((item) => {
+            if (!item.product_code) return;
+            oldQuantities[item.product_code] = (oldQuantities[item.product_code] || 0) + (Number(item.quantity) || 0);
+        });
+
+        const newQuantities = {};
+        (items || []).forEach((item) => {
+            if (!item.productCode) return;
+            newQuantities[item.productCode] = (newQuantities[item.productCode] || 0) + (Number(item.quantity) || 0);
+        });
+
+        const allCodes = new Set([...Object.keys(oldQuantities), ...Object.keys(newQuantities)]);
+        for (const code of allCodes) {
+            const oldQty = oldQuantities[code] || 0;
+            const newQty = newQuantities[code] || 0;
+            const deltaQty = newQty - oldQty;
+            if (deltaQty === 0) continue;
+
+            const { data: p } = await supabase
+                .from(T.PRODUCTS)
+                .select('stock')
+                .eq('code', code)
+                .eq('empresa_id', req.empresa_id)
+                .maybeSingle();
+            if (!p) continue;
+
+            await supabase
+                .from(T.PRODUCTS)
+                .update({ stock: (parseFloat(p.stock) || 0) - deltaQty })
+                .eq('code', code)
+                .eq('empresa_id', req.empresa_id);
         }
+
         await supabase.from(T.SALE_ITEMS).delete().eq('sale_id', saleId);
 
-        // 4. Insert NEW items and apply NEW stock impact AND calculate COGS
+        // 4. Insert NEW items and calculate COGS
         let totalCogsUpdate = 0;
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
@@ -1793,9 +1854,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
 
                 const { data: p } = await supabase.from(T.PRODUCTS).select('stock, cost_unit').eq('code', item.productCode).eq('empresa_id', req.empresa_id).maybeSingle();
                 if (p) {
-                    const newQty = Number(item.quantity) || 0;
-                    await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) - newQty }).eq('code', item.productCode).eq('empresa_id', req.empresa_id);
-                    totalCogsUpdate += (parseFloat(p.cost_unit) || 0) * newQty;
+                    totalCogsUpdate += (parseFloat(p.cost_unit) || 0) * (Number(item.quantity) || 0);
                 }
             }
         }
@@ -2660,6 +2719,27 @@ app.get('/api/logistics/pending', authenticateToken, async (req, res) => {
 // Adding some key ones
 app.post('/api/products', authenticateToken, async (req, res) => {
     let { code, name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total } = req.body;
+    code = String(code || '').trim();
+    if (!code) return res.status(400).json({ error: 'Debe ingresar un codigo de producto.' });
+
+    const { data: existingProduct, error: existingError } = await supabase
+        .from(T.PRODUCTS)
+        .select('code, name')
+        .eq('code', code)
+        .maybeSingle();
+    if (existingError) return res.status(500).json({ error: existingError.message });
+    if (existingProduct) {
+        return res.status(409).json({ error: `Ya existe un producto con el codigo ${code}: ${existingProduct.name || 'sin nombre'}. Use otro codigo o edite el producto existente.` });
+    }
+    const { data: existingRawCode, error: existingRawCodeError } = await supabase
+        .from(T.MP)
+        .select('code, name')
+        .eq('code', code)
+        .maybeSingle();
+    if (existingRawCodeError) return res.status(500).json({ error: existingRawCodeError.message });
+    if (existingRawCode) {
+        return res.status(409).json({ error: `Ya existe un insumo con el codigo ${code}: ${existingRawCode.name || 'sin nombre'}. Use otro codigo para el producto.` });
+    }
 
     // Auto-calculate tax if not provided
     if (price_sale && (!iva || !total)) {
@@ -2674,7 +2754,15 @@ app.post('/api/products', authenticateToken, async (req, res) => {
 });
 
 app.put('/api/products/:code', authenticateToken, async (req, res) => {
-    let { name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total } = req.body;
+    let { code, name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total } = req.body;
+    const originalCode = String(req.params.code || '').trim();
+    const requestedCode = String(code || originalCode).trim();
+
+    if (requestedCode && requestedCode !== originalCode) {
+        return res.status(400).json({
+            error: 'No se puede cambiar el codigo de un producto desde esta pantalla porque esta vinculado a ventas, produccion, recetas y cotizaciones.'
+        });
+    }
 
     // Auto-calculate tax if not provided but price changed
     if (price_sale && (!iva || !total)) {
@@ -2683,8 +2771,15 @@ app.put('/api/products/:code', authenticateToken, async (req, res) => {
         total = tax.total;
     }
 
-    const { error } = await supabase.from(T.PRODUCTS).update({ name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total }).eq('code', req.params.code).eq('empresa_id', req.empresa_id);
+    const { data, error } = await supabase
+        .from(T.PRODUCTS)
+        .update({ name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total })
+        .eq('code', originalCode)
+        .eq('empresa_id', req.empresa_id)
+        .select('code')
+        .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
+    if (!data) return res.status(404).json({ error: `No se encontro el producto ${originalCode} para esta empresa.` });
     res.json({ success: true, message: 'Producto actualizado.' });
 });
 
