@@ -5681,7 +5681,10 @@ function renderView(viewName) {
 
       setVal('pur-edit-mode', 'false');
       setVal('pur-edit-id', '');
-      setVal('pur-type', 'mp');
+      const preferredType = ['merchandise', 'mp', 'expense'].includes(state.purchaseFilters.type)
+        ? state.purchaseFilters.type
+        : 'mp';
+      setVal('pur-type', preferredType);
       setVal('pur-category', 'general');
       setVal('pur-description', '');
       setVal('pur-project', '');
@@ -7311,6 +7314,29 @@ function setupItemTable(prefix) {
       const option = codeSelect.selectedOptions[0];
       const customNameInput = row.querySelector('.item-custom-name');
 
+      if (prefix === 'pur' && option?.dataset.purchaseType) {
+        const selectedPurchaseType = option.dataset.purchaseType;
+        const typeSelect = document.getElementById('pur-type');
+        const otherSelectedRows = Array.from(body.querySelectorAll('.item-row')).some(otherRow =>
+          otherRow !== row && Boolean(otherRow.querySelector('.item-code')?.value)
+        );
+
+        if (typeSelect && selectedPurchaseType !== typeSelect.value) {
+          if (otherSelectedRows) {
+            codeSelect.value = '';
+            priceInput.value = 0;
+            qtyInput.value = 0;
+            delete row.dataset.realPrice;
+            alert('Una compra no puede mezclar mercaderias e insumos. Registre cada tipo en una compra separada.');
+            calculateRow();
+            return;
+          }
+
+          typeSelect.value = selectedPurchaseType;
+          window.togglePurType?.();
+        }
+      }
+
       if (codeSelect.value === '__otros__') {
         // Show custom name input for "Otros"
         if (customNameInput) {
@@ -7346,17 +7372,19 @@ function setupItemTable(prefix) {
 }
 
 window.populatePurchaseItemOptions = function () {
-  const type = document.getElementById('pur-type')?.value || 'mp';
   const merchandise = getMerchandiseProducts().slice().sort((a, b) => (a.code || '').localeCompare(b.code || ''));
   const rawMaterials = state.rawMaterials.slice().sort((a, b) => (a.code || '').localeCompare(b.code || ''));
 
-  const options = type === 'merchandise'
-    ? merchandise.map(product => `
-        <option value="${product.code}" data-price="${product.cost_unit || 0}">${product.code} | ${product.name || ''}</option>
-      `).join('')
-    : rawMaterials.map(material => `
-        <option value="${material.code}" data-price="${(material.cost_net || 0) / (material.batch_size || 1)}">${material.code} | ${material.name || ''}</option>
-      `).join('');
+  const merchandiseOptions = merchandise.map(product => `
+    <option value="${product.code}" data-price="${product.cost_unit || 0}" data-purchase-type="merchandise">${product.code} | ${product.name || ''}</option>
+  `).join('');
+  const rawMaterialOptions = rawMaterials.map(material => `
+    <option value="${material.code}" data-price="${(material.cost_net || 0) / (material.batch_size || 1)}" data-purchase-type="mp">${material.code} | ${material.name || ''}</option>
+  `).join('');
+  const options = `
+    <optgroup label="Mercaderias (reventa)">${merchandiseOptions}</optgroup>
+    <optgroup label="Insumos y materias primas">${rawMaterialOptions}</optgroup>
+  `;
 
   document.querySelectorAll('#pur-items-body .item-row').forEach(row => {
     const select = row.querySelector('.item-code');
@@ -7365,7 +7393,7 @@ window.populatePurchaseItemOptions = function () {
     select.innerHTML = `
       <option value="">Seleccione...</option>
       ${options}
-      ${type === 'mp' ? '<option value="__otros__">+ Otros (escribir nombre)</option>' : ''}
+      <option value="__otros__" data-purchase-type="mp">+ Otros (escribir nombre)</option>
     `;
     select.value = previousValue;
     if (previousValue && !select.value) {
