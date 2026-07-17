@@ -147,7 +147,27 @@ let state = {
   logistics: [],
   pendingLogistics: [],
   costCenters: [],
+  settings: {},
+  productCatalogFilter: 'finished',
   hideProjectProducts: localStorage.getItem('erp_hide_projects') === 'true'
+};
+
+function isMerchandiseProduct(product) {
+  const normalized = String(product?.type || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  return normalized === 'merchandise' || normalized === 'mercaderia';
+}
+
+function getFinishedProducts() {
+  return state.products.filter(product => !isMerchandiseProduct(product));
+}
+
+function getMerchandiseProducts() {
+  return state.products.filter(isMerchandiseProduct);
+}
+
+window.setProductCatalogFilter = (filter) => {
+  state.productCatalogFilter = filter === 'merchandise' ? 'merchandise' : 'finished';
+  renderView('inventory_products');
 };
 
 window.applyPlanRestrictions = function () {
@@ -251,7 +271,7 @@ async function fetchData() {
     const [
       prods, rms, provs, hSales, hPurch, hProd, st, usrs,
       recipes, accs, quotes, clis, pmachines, aAccounts,
-      aLedger, logHistory, pendingLog, cCenters,
+      aLedger, logHistory, pendingLog, cCenters, appSettings,
       // Nuevas tablas profesionalizadas
       proPlanCuentas, proAsientos, proMovimientos
     ] = await Promise.all([
@@ -273,6 +293,7 @@ async function fetchData() {
       apiFetch('/logistics'),
       apiFetch('/logistics/pending'),
       apiFetch('/cost-centers'),
+      apiFetch('/settings'),
       // Consultas directas a las tablas nuevas via Datastore (con fallback)
       db.getAll('plan_cuentas').catch(e => { console.error(e); return []; }),
       db.getAll('asientos').catch(e => { console.error(e); return []; }),
@@ -296,6 +317,11 @@ async function fetchData() {
     state.logistics = Array.isArray(logHistory) ? logHistory : [];
     state.pendingLogistics = Array.isArray(pendingLog) ? pendingLog : [];
     state.costCenters = Array.isArray(cCenters) ? cCenters : [];
+    state.settings = appSettings || {};
+    window.erpSettings = state.settings;
+    if (state.settings.ppm_percentage !== undefined) {
+      localStorage.setItem('erp_ppm_percentage', String(state.settings.ppm_percentage));
+    }
 
     // Asignaciones de Contabilidad Profesional (Sincronizadas con Supabase)
     state.accounting = {
@@ -333,7 +359,7 @@ const views = {
 
   inventory_products: () => `
     <header class="animate-fade">
-      <h1>Inventario de Productos</h1>
+      <h1>${state.productCatalogFilter === 'merchandise' ? 'Inventario de Mercaderías' : 'Inventario de Productos Terminados'}</h1>
       <div style="display: flex; gap: 0.5rem; align-items: center">
         <label style="display: flex; align-items: center; gap: 0.5rem; background: var(--surface-light); padding: 0.5rem 0.8rem; border-radius: 8px; cursor: pointer; border: 1px solid var(--border); font-size: 0.9rem">
           <input type="checkbox" ${state.hideProjectProducts ? 'checked' : ''} onchange="window.toggleHideProjects(this.checked)">
@@ -347,6 +373,15 @@ const views = {
         <button onclick="window.openNewProductModal()">+ Nuevo</button>
       </div>
     </header>
+
+    <div style="display:flex; gap:0.5rem; margin-bottom:1rem;" role="tablist" aria-label="Tipo de inventario">
+      <button type="button" onclick="window.setProductCatalogFilter('finished')" aria-selected="${state.productCatalogFilter === 'finished'}" style="background:${state.productCatalogFilter === 'finished' ? 'var(--primary)' : 'var(--surface-light)'}; color:${state.productCatalogFilter === 'finished' ? 'white' : 'var(--text)'};">
+        Productos terminados (${getFinishedProducts().length})
+      </button>
+      <button type="button" onclick="window.setProductCatalogFilter('merchandise')" aria-selected="${state.productCatalogFilter === 'merchandise'}" style="background:${state.productCatalogFilter === 'merchandise' ? 'var(--secondary)' : 'var(--surface-light)'}; color:${state.productCatalogFilter === 'merchandise' ? 'white' : 'var(--text)'};">
+        Mercaderías (${getMerchandiseProducts().length})
+      </button>
+    </div>
 
     <div class="card animate-fade">
       <div class="table-container">
@@ -367,6 +402,7 @@ const views = {
           </thead>
           <tbody>
             ${state.products
+      .filter(p => state.productCatalogFilter === 'merchandise' ? isMerchandiseProduct(p) : !isMerchandiseProduct(p))
       .filter(p => !state.hideProjectProducts || !p.code?.startsWith('[P-'))
       .map(p => `
               <tr>
@@ -451,7 +487,7 @@ const views = {
           <h2>Productos</h2>
         </div>
         <div class="nav-links" style="max-height: 500px; overflow-y: auto;">
-          ${state.products.map(p => `
+          ${getFinishedProducts().map(p => `
             <div class="nav-item recipe-item" data-pid="${p.code}" style="border: 1px solid var(--border); margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 1rem;">
               <div>
                 <strong>${p.name}</strong><br>
@@ -619,6 +655,7 @@ const views = {
         <div class="form-group" style="margin-bottom: 0; min-width: 200px">
           <label style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.5rem; display: block">Tipo de Registro</label>
           <select onchange="window.updatePurchaseFilters('type', this.value)" style="padding: 0.6rem; border-radius: 8px; background: var(--surface-light); border: 1px solid var(--border); color: var(--text); width: 100%">
+            <option value="merchandise" ${state.purchaseFilters.type === 'merchandise' ? 'selected' : ''}>Mercadería (Reventa)</option>
             <option value="all" ${state.purchaseFilters.type === 'all' ? 'selected' : ''}>📦 Todos los registros</option>
             <option value="mp" ${state.purchaseFilters.type === 'mp' ? 'selected' : ''}>📦 Insumos (Inventariable)</option>
             <option value="expense" ${state.purchaseFilters.type === 'expense' ? 'selected' : ''}>💸 Gasto / Caja Chica</option>
@@ -666,6 +703,7 @@ const views = {
             <div class="form-group" style="margin:0">
               <label style="font-weight: 600; color: var(--text)">Tipo de Registro</label>
               <select id="pur-type" onchange="window.togglePurType()" style="font-size: 1rem">
+                <option value="merchandise">Compra de Mercadería (Reventa)</option>
                 <option value="mp">Compra de Insumos (Inventariable)</option>
                 <option value="expense">Informe de Gasto / Caja Chica (Gasto Operacional)</option>
               </select>
@@ -753,7 +791,7 @@ const views = {
             <thead>
               <tr>
                 <th style="width: 50px">Item</th>
-                <th>Insumo</th>
+                <th id="pur-item-name-header">Insumo</th>
                 <th style="width: 130px">Neto Unitario</th>
                 <th style="width: 100px">Cant</th>
                 <th style="width: 150px">Sub Tot</th>
@@ -936,10 +974,18 @@ const views = {
                 <td>
                   <select class="item-code" data-index="${i}">
                     <option value="">Seleccione...</option>
-                    ${state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
+                    <optgroup label="Productos terminados">
+                    ${getFinishedProducts().slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
                       <option value="${p.code}" data-price="${p.price_net || 0}">
                         ${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}
                       </option>`).join('')}
+                    </optgroup>
+                    <optgroup label="Mercaderías">
+                    ${getMerchandiseProducts().slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
+                      <option value="${p.code}" data-price="${p.price_net || 0}">
+                        ${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}
+                      </option>`).join('')}
+                    </optgroup>
                   </select>
                 </td>
                 <td><input type="number" class="item-price" step="0.01" value="0"></td>
@@ -1339,6 +1385,18 @@ const views = {
       </div>
 
       <div class="card" id="alerts-config-section">
+        <h2>Configuración Tributaria</h2>
+        <div style="margin-top: 1rem; padding: 1rem; background: rgba(245, 158, 11, 0.10); border-radius: 0.5rem; border: 1px solid var(--accent)">
+            <p style="font-size: 0.85rem; margin-bottom: 1rem; color: var(--text-muted)">
+                Porcentaje de PPM usado como gasto tributario en las cotizaciones.
+            </p>
+            <div class="form-group">
+                <label>PPM a pagar (%)</label>
+                <input type="number" id="ppm-percentage" min="0" max="100" step="0.01" value="${parseFloat(state.settings?.ppm_percentage ?? 1.25)}" placeholder="Ej: 1.25">
+            </div>
+            <button onclick="window.saveTaxSettings()" style="background:var(--accent)">Guardar PPM</button>
+        </div>
+
         <h2>Alertas al Celular (Telegram)</h2>
         <div style="margin-top: 1rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border-radius: 0.5rem; border: 1px solid var(--primary)">
             <p style="font-size: 0.85rem; margin-bottom: 1rem; color: var(--text-muted)">
@@ -1932,35 +1990,238 @@ const views = {
 };
 
 // ========== PIPELINE VIEW ==========
-const PIPELINE_STAGES = [
-  { key: 'draft', label: 'Borrador', color: '#6b7280' },
-  { key: 'sent', label: 'Enviada', color: '#3b82f6' },
-  { key: 'approved', label: 'Aprobada', color: '#10b981' },
-  { key: 'production', label: 'Produccion', color: '#f59e0b' },
-  { key: 'rejected', label: 'Rechazada', color: '#ef4444' },
-  { key: 'cancelled', label: 'Anulada', color: '#991b1b' }
-];
+window.pipelineActiveTab = window.pipelineActiveTab || 'draft';
+window.setPipelineTab = (tab) => { window.pipelineActiveTab = tab; renderView('pipeline'); };
 
 views.pipeline = () => {
-  // Group quotations by status
-  const groups = {};
-  PIPELINE_STAGES.forEach(s => groups[s.key] = []);
-  state.quotations.forEach(q => {
-    const s = q.status || 'draft';
-    if (groups[s]) groups[s].push(q);
+  const purchases = state.history?.purchases || [];
+  const sales = state.history?.sales || [];
+  const production = state.history?.production || [];
+  const logistics = state.logistics || [];
+  const quotations = state.quotations || [];
+
+  // ── Build lookup maps ──
+  const purchasesByQid = {};
+  purchases.forEach(p => { if (p.quotation_id) { if (!purchasesByQid[p.quotation_id]) purchasesByQid[p.quotation_id] = []; purchasesByQid[p.quotation_id].push(p); } });
+
+  const productionByQid = {};
+  production.forEach(p => { if (p.quotation_id) { if (!productionByQid[p.quotation_id]) productionByQid[p.quotation_id] = []; productionByQid[p.quotation_id].push(p); } });
+
+  const salesByQid = {};
+  sales.forEach(s => { if (s.quotation_id) { if (!salesByQid[s.quotation_id]) salesByQid[s.quotation_id] = []; salesByQid[s.quotation_id].push(s); } });
+
+  // Build logistics lookup: sale_id -> logistics records (outbound + venta)
+  const logisticsBySaleId = {};
+  logistics.forEach(l => {
+    if (l.type === 'outbound' && l.transaction_type === 'venta' && l.transaction_id) {
+      if (!logisticsBySaleId[l.transaction_id]) logisticsBySaleId[l.transaction_id] = [];
+      logisticsBySaleId[l.transaction_id].push(l);
+    }
   });
 
-  // Active pipeline (non-terminal) for the flow visualization
-  const activeStages = PIPELINE_STAGES.filter(s => !['rejected', 'cancelled'].includes(s.key));
-  const terminalStages = PIPELINE_STAGES.filter(s => ['rejected', 'cancelled'].includes(s.key));
+  // ── Classify each quotation into process stages ──
+  const stageGroups = { draft: [], sent: [], approved: [], compras: [], produccion: [], despacho: [], facturacion: [], pago: [], rejected: [], cancelled: [] };
 
-  // KPIs
-  const totalQuotes = state.quotations.length;
-  const activeQuotes = state.quotations.filter(q => !['rejected', 'cancelled'].includes(q.status || 'draft')).length;
-  const totalValue = state.quotations.reduce((sum, q) => sum + (q.total_price_gross || 0), 0);
-  const approvedValue = state.quotations.filter(q => q.status === 'approved' || q.status === 'production').reduce((sum, q) => sum + (q.total_price_gross || 0), 0);
+  quotations.forEach(q => {
+    const st = q.status || 'draft';
+    const qid = q.id;
+
+    if (st === 'rejected') { stageGroups.rejected.push(q); return; }
+    if (st === 'cancelled') { stageGroups.cancelled.push(q); return; }
+
+    // Check process milestones
+    const hasPurchases = !!purchasesByQid[qid];
+    const hasProduction = !!productionByQid[qid];
+    const hasSales = !!salesByQid[qid];
+    const qSales = salesByQid[qid] || [];
+    const hasDispatch = qSales.some(s => !!logisticsBySaleId[s.id]);
+    const allPaid = hasSales && qSales.length > 0 && qSales.every(s => s.payment_status === 'pagado');
+
+    // Place in the HIGHEST reached stage
+    if (allPaid) stageGroups.pago.push(q);
+    else if (hasSales) stageGroups.facturacion.push(q);
+    else if (hasDispatch) stageGroups.despacho.push(q);
+    else if (hasProduction) stageGroups.produccion.push(q);
+    else if (hasPurchases) stageGroups.compras.push(q);
+    else if (st === 'approved' || st === 'production') stageGroups.approved.push(q);
+    else if (st === 'sent') stageGroups.sent.push(q);
+    else stageGroups.draft.push(q);
+  });
+
+  // ── Stage definitions ──
+  const STAGES = [
+    { key: 'draft',       label: 'Borrador',     icon: '📝', color: '#6b7280', gradient: 'linear-gradient(135deg, #6b7280, #9ca3af)' },
+    { key: 'sent',        label: 'Enviada',       icon: '📤', color: '#3b82f6', gradient: 'linear-gradient(135deg, #3b82f6, #60a5fa)' },
+    { key: 'approved',    label: 'Aprobada',      icon: '✅', color: '#10b981', gradient: 'linear-gradient(135deg, #10b981, #34d399)' },
+    { key: 'compras',     label: 'Compras',       icon: '🛒', color: '#8b5cf6', gradient: 'linear-gradient(135deg, #8b5cf6, #a78bfa)' },
+    { key: 'produccion',  label: 'Producción',    icon: '🏭', color: '#f59e0b', gradient: 'linear-gradient(135deg, #f59e0b, #fbbf24)' },
+    { key: 'despacho',    label: 'Despacho',      icon: '🚚', color: '#06b6d4', gradient: 'linear-gradient(135deg, #06b6d4, #22d3ee)' },
+    { key: 'facturacion', label: 'Facturación',   icon: '🧾', color: '#ec4899', gradient: 'linear-gradient(135deg, #ec4899, #f472b6)' },
+    { key: 'pago',        label: 'Pago',          icon: '💰', color: '#22c55e', gradient: 'linear-gradient(135deg, #22c55e, #4ade80)' },
+  ];
+
+  const activeTab = window.pipelineActiveTab || 'draft';
+
+  // ── KPIs ──
+  const totalQuotes = quotations.length;
+  const activeQuotes = quotations.filter(q => !['rejected', 'cancelled'].includes(q.status || 'draft')).length;
+  const totalValue = quotations.reduce((sum, q) => sum + (q.total_price_gross || 0), 0);
+  const paidValue = stageGroups.pago.reduce((sum, q) => sum + (q.total_price_gross || 0), 0);
+
+  // ── Helper: render progress bar ──
+  const renderProgressBar = (pct, color) => {
+    const clamped = Math.min(100, Math.max(0, pct));
+    const barColor = clamped >= 100 ? '#22c55e' : (clamped >= 50 ? color : '#f59e0b');
+    return `<div style="width:100%; background:rgba(255,255,255,0.08); border-radius:6px; height:22px; overflow:hidden; position:relative">
+      <div style="width:${clamped}%; height:100%; background:linear-gradient(90deg, ${barColor}, ${barColor}cc); border-radius:6px; transition:width 0.5s ease"></div>
+      <span style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:0.7rem; font-weight:700; color:white; text-shadow:0 1px 2px rgba(0,0,0,0.5)">${Math.round(clamped)}%</span>
+    </div>`;
+  };
+
+  // ── Detail table renderers per stage ──
+  const renderDetailTable = (stageKey) => {
+    const items = stageGroups[stageKey] || [];
+    if (items.length === 0) return `<div style="text-align:center; padding:3rem; opacity:0.4; font-size:0.9rem">No hay cotizaciones en esta etapa</div>`;
+
+    const formatDate = (d) => d ? (d.split ? d.split('T')[0] : new Date(d).toISOString().split('T')[0]) : '-';
+
+    if (['draft', 'sent', 'approved'].includes(stageKey)) {
+      return `<div class="table-container"><table>
+        <thead><tr>
+          <th>Cotización</th><th>Cliente</th><th>Fecha</th><th style="text-align:right">Valor Bruto</th><th style="text-align:center">Acción</th>
+        </tr></thead>
+        <tbody>${items.map(q => `<tr>
+          <td><strong>${q.name || 'Sin nombre'}</strong></td>
+          <td>${q.clients?.name || 'Varios'}</td>
+          <td><small>${formatDate(q.created_at)}</small></td>
+          <td style="text-align:right; font-weight:700; color:var(--primary)">$${Math.round(q.total_price_gross || 0).toLocaleString()}</td>
+          <td style="text-align:center"><button class="btn-sm" onclick="window.viewQuotation('${q.id}')">👁️ Ver</button></td>
+        </tr>`).join('')}</tbody></table></div>`;
+    }
+
+    if (stageKey === 'compras') {
+      return `<div class="table-container"><table>
+        <thead><tr>
+          <th>Cotización</th><th>Cliente</th><th style="text-align:right">Costo Neto</th><th style="text-align:right">Comprado</th><th style="min-width:140px">Progreso Compras</th><th>Ítems Comprados</th>
+        </tr></thead>
+        <tbody>${items.map(q => {
+          const qPurchases = purchasesByQid[q.id] || [];
+          const totalPurchased = qPurchases.reduce((s, p) => s + (p.total || 0), 0);
+          const netCost = q.total_net_cost || 1;
+          const pct = netCost > 0 ? (totalPurchased / netCost * 100) : 0;
+          const purchasedItems = qPurchases.flatMap(p => (p.items || []).map(i => i.product_name || i.product_code || '?'));
+          const uniqueItems = [...new Set(purchasedItems)];
+          return `<tr>
+            <td><strong>${q.name || 'Sin nombre'}</strong></td>
+            <td>${q.clients?.name || 'Varios'}</td>
+            <td style="text-align:right">$${Math.round(netCost).toLocaleString()}</td>
+            <td style="text-align:right; font-weight:700; color:#8b5cf6">$${Math.round(totalPurchased).toLocaleString()}</td>
+            <td>${renderProgressBar(pct, '#8b5cf6')}</td>
+            <td><small style="color:var(--text-muted)">${uniqueItems.length > 0 ? uniqueItems.slice(0, 3).join(', ') + (uniqueItems.length > 3 ? '...' : '') : 'Sin datos'}</small></td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`;
+    }
+
+    if (stageKey === 'produccion') {
+      return `<div class="table-container"><table>
+        <thead><tr>
+          <th>Cotización</th><th>Cliente</th><th>Fecha Producción</th><th>Ítems Producidos</th><th style="text-align:center">Acción</th>
+        </tr></thead>
+        <tbody>${items.map(q => {
+          const qProds = productionByQid[q.id] || [];
+          const latestDate = qProds.length > 0 ? formatDate(qProds[qProds.length - 1].date) : '-';
+          const prodItems = qProds.flatMap(p => (p.items || []).map(i => `${i.product_name || i.product_code || '?'} x${i.quantity || 1}`));
+          return `<tr>
+            <td><strong>${q.name || 'Sin nombre'}</strong></td>
+            <td>${q.clients?.name || 'Varios'}</td>
+            <td>${latestDate}</td>
+            <td><small style="color:var(--text-muted)">${prodItems.length > 0 ? prodItems.slice(0, 3).join(', ') + (prodItems.length > 3 ? '...' : '') : 'Sin datos'}</small></td>
+            <td style="text-align:center"><button class="btn-sm" onclick="window.viewQuotation('${q.id}')">👁️ Ver</button></td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`;
+    }
+
+    if (stageKey === 'despacho') {
+      return `<div class="table-container"><table>
+        <thead><tr>
+          <th>Cotización</th><th>Cliente</th><th>Transportista</th><th>Seguimiento</th><th>Estado</th>
+        </tr></thead>
+        <tbody>${items.map(q => {
+          const qSales = salesByQid[q.id] || [];
+          const qLogistics = qSales.flatMap(s => logisticsBySaleId[s.id] || []);
+          const latest = qLogistics.length > 0 ? qLogistics[qLogistics.length - 1] : {};
+          return `<tr>
+            <td><strong>${q.name || 'Sin nombre'}</strong></td>
+            <td>${q.clients?.name || 'Varios'}</td>
+            <td>${latest.carrier_name || '-'}</td>
+            <td><code style="font-size:0.8rem">${latest.tracking_id || '-'}</code></td>
+            <td><span style="font-size:0.75rem; font-weight:700; color:var(--primary); text-transform:uppercase">${latest.status || '-'}</span></td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`;
+    }
+
+    if (stageKey === 'facturacion') {
+      return `<div class="table-container"><table>
+        <thead><tr>
+          <th>Cotización</th><th>Cliente</th><th>Tipo Doc</th><th>Nº Doc</th><th style="text-align:right">Total Facturado</th>
+        </tr></thead>
+        <tbody>${items.map(q => {
+          const qSalesArr = salesByQid[q.id] || [];
+          const totalInvoiced = qSalesArr.reduce((s, sl) => s + (sl.total || 0), 0);
+          const docTypes = [...new Set(qSalesArr.map(s => (s.document_type || 'boleta').toUpperCase()))].join(', ');
+          const docNums = qSalesArr.map(s => s.document_number || '-').join(', ');
+          return `<tr>
+            <td><strong>${q.name || 'Sin nombre'}</strong></td>
+            <td>${q.clients?.name || 'Varios'}</td>
+            <td><span class="badge" style="background:var(--surface-light); font-size:0.7rem; border:1px solid var(--border)">${docTypes || '-'}</span></td>
+            <td><small style="font-weight:700; color:var(--primary)">${docNums}</small></td>
+            <td style="text-align:right; font-weight:700; color:#ec4899">$${Math.round(totalInvoiced).toLocaleString()}</td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`;
+    }
+
+    if (stageKey === 'pago') {
+      return `<div class="table-container"><table>
+        <thead><tr>
+          <th>Cotización</th><th>Cliente</th><th style="text-align:right">Total Venta</th><th style="text-align:right">Pagado</th><th style="min-width:140px">Progreso Pago</th>
+        </tr></thead>
+        <tbody>${items.map(q => {
+          const qSalesArr = salesByQid[q.id] || [];
+          const totalSale = qSalesArr.reduce((s, sl) => s + (sl.total || 0), 0);
+          const totalPaid = qSalesArr.reduce((s, sl) => s + (sl.paid_amount || sl.total || 0), 0);
+          const pct = totalSale > 0 ? (totalPaid / totalSale * 100) : 100;
+          return `<tr>
+            <td><strong>${q.name || 'Sin nombre'}</strong></td>
+            <td>${q.clients?.name || 'Varios'}</td>
+            <td style="text-align:right">$${Math.round(totalSale).toLocaleString()}</td>
+            <td style="text-align:right; font-weight:700; color:#22c55e">$${Math.round(totalPaid).toLocaleString()}</td>
+            <td>${renderProgressBar(pct, '#22c55e')}</td>
+          </tr>`;
+        }).join('')}</tbody></table></div>`;
+    }
+
+    return '';
+  };
+
+  // ── Find first stage with data for default tab ──
+  const firstWithData = STAGES.find(s => (stageGroups[s.key] || []).length > 0);
+  if (firstWithData && !STAGES.find(s => s.key === activeTab && (stageGroups[s.key] || []).length > 0)) {
+    // If active tab is empty and there's another with data, keep activeTab anyway (user chose it)
+  }
+
+  const activeStageObj = STAGES.find(s => s.key === activeTab) || STAGES[0];
 
   return `
+  <style>
+    .pipeline-tab { padding:0.5rem 1rem; border-radius:20px; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer; font-size:0.8rem; font-weight:600; transition:all 0.25s ease; white-space:nowrap; display:inline-flex; align-items:center; gap:0.4rem; }
+    .pipeline-tab:hover { transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.2); }
+    .pipeline-tab.active { color:white; border-color:transparent; box-shadow:0 4px 15px rgba(0,0,0,0.3); transform:translateY(-1px); }
+    .pipeline-funnel-box { text-align:center; padding:0.6rem 0.5rem; border-radius:10px; min-width:90px; flex:1; cursor:pointer; transition:all 0.25s ease; position:relative; }
+    .pipeline-funnel-box:hover { transform:translateY(-3px); box-shadow:0 6px 20px rgba(0,0,0,0.25); }
+    .pipeline-arrow { color:var(--text-muted); font-size:1.4rem; padding:0 0.15rem; display:flex; align-items:center; opacity:0.5; }
+    .pipeline-detail-card tr:hover { background:rgba(255,255,255,0.03); }
+  </style>
+
   <header class="animate-fade">
     <div style="display:flex; align-items:center; gap:1rem">
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1970,7 +2231,7 @@ views.pipeline = () => {
       </svg>
       <div>
         <h1 style="margin:0">Gestión de Procesos</h1>
-        <div class="date-display" style="font-size:0.8rem; opacity:0.7">Cadena de Valor - Metodo Pull</div>
+        <div class="date-display" style="font-size:0.8rem; opacity:0.7">Pipeline Completo — Cadena de Valor Pull</div>
       </div>
     </div>
   </header>
@@ -1986,69 +2247,71 @@ views.pipeline = () => {
       <div style="font-size:1.8rem; font-weight:700; color:#10b981">${activeQuotes}</div>
     </div>
     <div class="card" style="text-align:center; padding:1rem">
-      <div style="font-size:0.8rem; color:var(--text-muted)">Valor Total Procesos</div>
+      <div style="font-size:0.8rem; color:var(--text-muted)">Valor Total Pipeline</div>
       <div style="font-size:1.5rem; font-weight:700; color:var(--primary)">$${Math.round(totalValue).toLocaleString()}</div>
     </div>
     <div class="card" style="text-align:center; padding:1rem">
-      <div style="font-size:0.8rem; color:var(--text-muted)">Valor Ganado (Aprobadas+Prod)</div>
-      <div style="font-size:1.5rem; font-weight:700; color:#10b981">$${Math.round(approvedValue).toLocaleString()}</div>
+      <div style="font-size:0.8rem; color:var(--text-muted)">Cobrado (Pagos Completos)</div>
+      <div style="font-size:1.5rem; font-weight:700; color:#22c55e">$${Math.round(paidValue).toLocaleString()}</div>
     </div>
   </div>
 
-  <!-- Flow Diagram -->
-  <div class="card animate-fade" style="padding:1rem 1.5rem; margin-bottom:1.5rem">
-    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.8rem">
-      <strong style="color:var(--primary)">🔄 Flujo Pull:</strong>
-      <span style="font-size:0.85rem; color:var(--text-muted)">Cotizacion -> Enviada -> Aprobada -> Orden de Produccion -> Compra MP -> Produccion -> Venta -> Entrega -> Pago</span>
+  <!-- Funnel Diagram -->
+  <div class="card animate-fade" style="padding:1.2rem 1.5rem; margin-bottom:1.5rem">
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:1rem">
+      <strong style="color:var(--primary)">🔄 Pipeline de Procesos</strong>
+      <span style="font-size:0.8rem; color:var(--text-muted)">— Click en una etapa para ver el detalle</span>
     </div>
-    <div style="display:flex; align-items:center; gap:0; overflow-x:auto; padding:0.5rem 0">
-      ${activeStages.map((stage, idx) => {
-    const count = groups[stage.key].length;
-    const value = groups[stage.key].reduce((s, q) => s + (q.total_price_gross || 0), 0);
+    <div style="display:flex; align-items:stretch; gap:0; overflow-x:auto; padding:0.5rem 0">
+      ${STAGES.map((stage, idx) => {
+    const count = (stageGroups[stage.key] || []).length;
+    const value = (stageGroups[stage.key] || []).reduce((s, q) => s + (q.total_price_gross || 0), 0);
+    const isActive = stage.key === activeTab;
     return `
-          ${idx > 0 ? '<div style="color:var(--text-muted); font-size:1.2rem; padding:0 0.3rem">-&gt;</div>' : ''}
-          <div style="text-align:center; padding:0.5rem 0.8rem; border-radius:8px; background:${stage.color}15; border:1px solid ${stage.color}33; min-width:100px; flex-shrink:0">
-            <div style="font-size:0.75rem; font-weight:700; color:${stage.color}">${stage.label}</div>
-            <div style="font-size:1.3rem; font-weight:800; color:${stage.color}">${count}</div>
-            <div style="font-size:0.7rem; color:var(--text-muted)">$${Math.round(value).toLocaleString()}</div>
+          ${idx > 0 ? '<div class="pipeline-arrow">›</div>' : ''}
+          <div class="pipeline-funnel-box" onclick="window.setPipelineTab('${stage.key}')"
+            style="background:${isActive ? stage.gradient : stage.color + '12'}; border:2px solid ${isActive ? stage.color : stage.color + '33'}; ${isActive ? 'box-shadow:0 4px 20px ' + stage.color + '44;' : ''}">
+            <div style="font-size:1rem; margin-bottom:0.15rem">${stage.icon}</div>
+            <div style="font-size:0.7rem; font-weight:700; color:${isActive ? 'white' : stage.color}; text-transform:uppercase; letter-spacing:0.03em">${stage.label}</div>
+            <div style="font-size:1.4rem; font-weight:800; color:${isActive ? 'white' : stage.color}; line-height:1.2">${count}</div>
+            <div style="font-size:0.65rem; color:${isActive ? 'rgba(255,255,255,0.8)' : 'var(--text-muted)'}">$${Math.round(value).toLocaleString()}</div>
           </div>
         `;
   }).join('')}
     </div>
   </div>
 
-  <!-- Kanban Board -->
-  <div class="animate-fade" style="display:grid; grid-template-columns: repeat(${activeStages.length}, 1fr); gap:0.8rem; overflow-x:auto; min-height:300px">
-    ${activeStages.map(stage => {
-    const items = groups[stage.key];
-    return `
-        <div style="background:var(--surface); border-radius:12px; border-top:3px solid ${stage.color}; padding:0.8rem; display:flex; flex-direction:column; gap:0.6rem; min-width:180px">
-          <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:0.5rem; border-bottom:1px solid var(--border)">
-            <span style="font-size:0.82rem; font-weight:700; color:${stage.color}">${stage.label}</span>
-            <span style="background:${stage.color}22; color:${stage.color}; padding:0.15rem 0.5rem; border-radius:10px; font-size:0.75rem; font-weight:700">${items.length}</span>
-          </div>
-          ${items.length === 0 ? '<div style="text-align:center; padding:2rem 0.5rem; opacity:0.3; font-size:0.8rem">Sin cotizaciones</div>' :
-        items.map(q => `
-            <div onclick="window.viewQuotation('${q.id}')" style="background:var(--surface-light); border-radius:8px; padding:0.7rem; cursor:pointer; border:1px solid var(--border); transition:all 0.2s; border-left:3px solid ${stage.color}"
-              onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'"
-              onmouseout="this.style.transform=''; this.style.boxShadow=''">
-              <div style="font-weight:600; font-size:0.82rem; margin-bottom:0.3rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${q.name || 'Sin nombre'}</div>
-              <div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:0.3rem">${q.clients?.name || 'Varios'}</div>
-              <div style="font-size:0.85rem; font-weight:700; color:var(--primary)">$${Math.round(q.total_price_gross || 0).toLocaleString()}</div>
-            </div>
-          `).join('')}
-        </div>
-      `;
+  <!-- Detail Carousel: Tab Buttons -->
+  <div class="card animate-fade pipeline-detail-card" style="padding:1.2rem 1.5rem">
+    <div style="display:flex; gap:0.5rem; overflow-x:auto; padding-bottom:1rem; margin-bottom:1rem; border-bottom:1px solid var(--border)">
+      ${STAGES.map(stage => {
+    const count = (stageGroups[stage.key] || []).length;
+    const isActive = stage.key === activeTab;
+    return `<button class="pipeline-tab ${isActive ? 'active' : ''}" onclick="window.setPipelineTab('${stage.key}')"
+      style="${isActive ? 'background:' + stage.gradient + ';' : ''}">${stage.icon} ${stage.label} <span style="background:${isActive ? 'rgba(255,255,255,0.25)' : 'var(--surface-light)'}; padding:0.1rem 0.45rem; border-radius:10px; font-size:0.7rem; font-weight:800">${count}</span></button>`;
   }).join('')}
+    </div>
+
+    <!-- Active Tab Header -->
+    <div style="display:flex; align-items:center; gap:0.8rem; margin-bottom:1rem">
+      <div style="width:36px; height:36px; border-radius:10px; background:${activeStageObj.gradient}; display:flex; align-items:center; justify-content:center; font-size:1.2rem">${activeStageObj.icon}</div>
+      <div>
+        <div style="font-weight:700; font-size:1rem">${activeStageObj.label}</div>
+        <div style="font-size:0.78rem; color:var(--text-muted)">${(stageGroups[activeTab] || []).length} cotizaciones en esta etapa</div>
+      </div>
+    </div>
+
+    <!-- Active Tab Content -->
+    ${renderDetailTable(activeTab)}
   </div>
 
   <!-- Terminal States (collapsed) -->
-  ${(groups.rejected.length + groups.cancelled.length) > 0 ? `
+  ${(stageGroups.rejected.length + stageGroups.cancelled.length) > 0 ? `
     <div class="card animate-fade" style="margin-top:1.5rem; opacity:0.7">
-      <h3 style="margin:0 0 0.8rem">Cotizaciones Cerradas</h3>
+      <h3 style="margin:0 0 0.8rem">🚫 Cotizaciones Cerradas</h3>
       <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem">
-        ${terminalStages.map(stage => {
-    const items = groups[stage.key];
+        ${[{ key: 'rejected', label: 'Rechazada', color: '#ef4444' }, { key: 'cancelled', label: 'Anulada', color: '#991b1b' }].map(stage => {
+    const items = stageGroups[stage.key];
     if (items.length === 0) return '';
     return `
             <div>
@@ -2271,7 +2534,7 @@ function renderHistoryTable(type) {
                 <td>${h.date ? h.date.split('T')[0] : '-'}</td>
                 <td>
                   <span class="badge ${h.type === 'expense' ? 'badge-warning' : 'badge-info'}" style="font-size: 0.7rem">
-                    ${h.type === 'expense' ? 'GASTO' : 'INSUMO'}
+                    ${h.type === 'expense' ? 'GASTO' : h.type === 'merchandise' ? 'MERCADERÍA' : 'INSUMO'}
                   </span><br>
                   <small>${h.project_name ? '🏷️ ' + h.project_name : 'General'}</small>
                 </td>
@@ -2662,7 +2925,7 @@ window.editTransaction = (type, id) => {
           const subInp = row.querySelector('.item-subtotal');
 
           if (codeSel) {
-            codeSel.value = type === 'sale' ? item.product_code : item.mp_code;
+            codeSel.value = type === 'sale' ? item.product_code : (item.product_code || item.mp_code);
             if (codeSel.value === '__otros__' || (!codeSel.value && item.custom_name)) {
               codeSel.value = '__otros__';
               const customNameInput = row.querySelector('.item-custom-name');
@@ -2726,7 +2989,8 @@ window.editItem = (type, code) => {
     document.getElementById('np-code').readOnly = true;
     document.getElementById('np-code').title = 'El codigo es una clave usada por ventas, produccion, recetas y cotizaciones.';
     document.getElementById('np-name').value = p.name;
-    document.getElementById('np-type').value = p.type || '';
+    document.getElementById('np-type').value = isMerchandiseProduct(p) ? 'merchandise' : 'finished';
+    window.toggleProductTypeFields();
 
     // UI Loading for pricing
     document.getElementById('np-precio-input').value = p.price_sale;
@@ -2822,7 +3086,8 @@ window.openNewProductModal = () => {
   form.reset();
   document.getElementById('np-edit-mode').value = 'false';
   document.getElementById('np-original-code').value = '';
-  document.getElementById('prod-modal-title').textContent = 'Nuevo Producto Terminado';
+  document.getElementById('np-type').value = state.productCatalogFilter === 'merchandise' ? 'merchandise' : 'finished';
+  window.toggleProductTypeFields();
   document.getElementById('np-code').readOnly = false;
   document.getElementById('np-code').title = '';
   document.getElementById('np-code').style.borderColor = '';
@@ -2834,6 +3099,19 @@ window.openNewProductModal = () => {
   document.getElementById('np-iva-display').textContent = '$0';
   document.getElementById('np-total-display').textContent = '$0';
   modal.style.display = 'flex';
+};
+
+window.toggleProductTypeFields = () => {
+  const isMerchandise = document.getElementById('np-type')?.value === 'merchandise';
+  const isEditing = document.getElementById('np-edit-mode')?.value === 'true';
+  const title = document.getElementById('prod-modal-title');
+  const costLabel = document.getElementById('np-cost-label');
+  if (title) {
+    title.textContent = isEditing
+      ? (isMerchandise ? 'Editar Mercadería' : 'Editar Producto Terminado')
+      : (isMerchandise ? 'Nueva Mercadería' : 'Nuevo Producto Terminado');
+  }
+  if (costLabel) costLabel.textContent = isMerchandise ? 'Costo de Compra Unitario ($)' : 'Costo Estimado ($)';
 };
 
 window.openNewRawMaterialModal = () => {
@@ -3050,7 +3328,7 @@ window.populateProductDropdowns = (selector) => {
   window.findProductionProduct = window.findProductionProduct || ((rawValue) => {
     const value = String(rawValue || '').trim().toLowerCase();
     if (!value) return null;
-    return state.products.find((product) => {
+    return getFinishedProducts().find((product) => {
       const code = String(product.code || '').trim().toLowerCase();
       const name = String(product.name || '').trim().toLowerCase();
       const label = window.formatProductionProductLabel(product).toLowerCase();
@@ -3073,7 +3351,7 @@ window.populateProductDropdowns = (selector) => {
   const selects = document.querySelectorAll(selector);
   const optionsHtml = `
   <option value="">Seleccione...</option>
-    ${state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
+    ${getFinishedProducts().slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
       <option value="${window.formatProductionProductLabel(p)}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>
     `).join('')}
 `;
@@ -3086,7 +3364,7 @@ window.populateProductDropdowns = (selector) => {
   // Also update datalist if present
   const dl = document.getElementById('production-products-list');
   if (dl) {
-    dl.innerHTML = state.products.slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
+    dl.innerHTML = getFinishedProducts().slice().sort((a, b) => (a.code || '').localeCompare(b.code || '')).map(p => `
       <option value="${window.formatProductionProductLabel(p)}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>
     `).join('');
   }
@@ -3982,6 +4260,7 @@ views.quotations = () => {
           <table class="summary-table" style="width:100%">
             <tr><td>Neto (Facturas)</td><td id="res-cost-net" style="text-align:right">$0</td></tr>
             <tr><td>IVA Gasto (Boletas)</td><td id="res-cost-iva" style="text-align:right">$0</td></tr>
+            <tr><td>PPM (<span id="res-ppm-rate">0</span>%)</td><td id="res-cost-ppm" style="text-align:right">$0</td></tr>
             <tr style="border-top: 1px solid var(--border)"><td style="padding-top:0.5rem"><strong>Costo Total</strong></td><td id="res-cost-total" style="text-align:right; font-weight:bold; padding-top:0.5rem">$0</td></tr>
             <tr><td style="color:var(--primary)">Costo Unitario (CTU)</td><td id="res-ctu" style="text-align:right; font-weight:bold; color:var(--primary)">$0</td></tr>
           </table>
@@ -4027,6 +4306,29 @@ window.getQuotationItemUnitNet = (item) => {
   return parseFloat(item?.unit_value_net ?? item?.unit_cost) || 0;
 };
 
+window.getPpmPercentage = (quote = null) => {
+  const quotePpm = parseFloat(String(quote?.ppm_percentage ?? '').replace(',', '.'));
+  const activePpm = parseFloat(String(window.activeQuotationPpmPercentage ?? '').replace(',', '.'));
+  const rawValue = quotePpm > 0
+    ? quotePpm
+    : (activePpm > 0 ? activePpm : state.settings?.ppm_percentage ?? 0);
+  const normalized = String(rawValue).replace(',', '.');
+  return Math.max(0, parseFloat(normalized) || 0);
+};
+
+window.calculatePpmAmount = (baseCost, utilityPerc, ppmPerc) => {
+  const cost = Math.max(0, parseFloat(baseCost) || 0);
+  const utilityRate = Math.max(0, parseFloat(utilityPerc) || 0) / 100;
+  const ppmRate = Math.max(0, parseFloat(ppmPerc) || 0) / 100;
+  if (!cost || !ppmRate) return 0;
+
+  const denominator = 1 - (ppmRate * (1 + utilityRate));
+  if (denominator <= 0) return Math.round(cost * ppmRate);
+
+  const estimatedNetSale = (cost * (1 + utilityRate)) / denominator;
+  return Math.round(estimatedNetSale * ppmRate);
+};
+
 window.getStoredQuotationTotals = (quote) => {
   const products = Array.isArray(quote?.products_list) && quote.products_list.length
     ? quote.products_list
@@ -4038,6 +4340,8 @@ window.getStoredQuotationTotals = (quote) => {
       products,
       totalQuantity: products.reduce((sum, p) => sum + (parseFloat(p.quantity) || 0), 0),
       totalNetCost: quote?.total_net_cost || 0,
+      ppmPerc: window.getPpmPercentage(quote),
+      ppmAmount: parseFloat(quote?.ppm_amount) || 0,
       totalPriceNet: quote?.total_price_net || 0,
       totalIva: quote?.total_iva || 0,
       totalPriceGross: quote?.total_price_gross || 0,
@@ -4100,26 +4404,63 @@ window.getStoredQuotationTotals = (quote) => {
     }
   });
 
-  let totalPriceNet = 0;
-  const productSummaries = Object.values(productMap).map((product) => {
+  const ppmPerc = window.getPpmPercentage(quote);
+  let baseCostGlobal = 0;
+  let factNetAcc = 0;
+  let bolIVAAcc = 0;
+  const productCostRows = Object.values(productMap).map((product) => {
     const productQty = parseFloat(product.quantity) || 0;
     const share = totalQuantity > 0 ? (productQty / totalQuantity) : 0;
     const totalCost = product.cost + (generalFixedCost * share);
-    const unitPriceNet = Math.round((totalCost / (productQty || 1)) * (1 + (utilityPerc / 100)));
-    const subtotalNet = unitPriceNet * productQty;
 
-    totalPriceNet += subtotalNet;
-    totalNetCost += totalCost;
-    factNetGlobal += product.net + (generalFixedNet * share);
-    bolIVAGlobal += product.iva + (generalFixedIVA * share);
+    baseCostGlobal += totalCost;
+    factNetAcc += product.net + (generalFixedNet * share);
+    bolIVAAcc += product.iva + (generalFixedIVA * share);
 
     return {
       ...product,
-      totalCost,
-      unitPriceNet,
-      subtotalNet
+      totalCost
     };
   });
+
+  const storedPpmAmount = quote?.ppm_amount !== undefined && quote?.ppm_amount !== null
+    ? parseFloat(quote.ppm_amount)
+    : NaN;
+  const hasStoredPpmAmount = Number.isFinite(storedPpmAmount) && storedPpmAmount > 0;
+  let ppmAmount = hasStoredPpmAmount
+    ? storedPpmAmount
+    : window.calculatePpmAmount(baseCostGlobal, utilityPerc, ppmPerc);
+  let productSummaries = [];
+  let totalPriceNet = 0;
+
+  for (let i = 0; i < 2; i += 1) {
+    totalPriceNet = 0;
+    productSummaries = productCostRows.map((product) => {
+      const productQty = parseFloat(product.quantity) || 0;
+      const share = baseCostGlobal > 0
+        ? (product.totalCost / baseCostGlobal)
+        : (totalQuantity > 0 ? (productQty / totalQuantity) : 0);
+      const totalCost = product.totalCost + (ppmAmount * share);
+      const unitPriceNet = Math.round((totalCost / (productQty || 1)) * (1 + (utilityPerc / 100)));
+      const subtotalNet = unitPriceNet * productQty;
+
+      totalPriceNet += subtotalNet;
+
+      return {
+        ...product,
+        totalCost,
+        unitPriceNet,
+        subtotalNet
+      };
+    });
+    if (!hasStoredPpmAmount) {
+      ppmAmount = Math.round(totalPriceNet * (ppmPerc / 100));
+    }
+  }
+
+  totalNetCost = baseCostGlobal + ppmAmount;
+  factNetGlobal = factNetAcc;
+  bolIVAGlobal = bolIVAAcc;
 
   const totalIva = Math.round(totalPriceNet * 0.19);
   const totalPriceGross = totalPriceNet + totalIva;
@@ -4130,6 +4471,8 @@ window.getStoredQuotationTotals = (quote) => {
     totalNetCost,
     factNetGlobal,
     bolIVAGlobal,
+    ppmPerc,
+    ppmAmount,
     totalPriceNet,
     totalIva,
     totalPriceGross,
@@ -5267,24 +5610,40 @@ function renderView(viewName) {
       const provGroup = document.getElementById('pur-prov-group');
       const projectGroup = document.getElementById('pur-project-group');
       const titleEl = document.getElementById('buy-modal-title');
+      const itemHeader = document.getElementById('pur-item-name-header');
+      const categoryEl = document.getElementById('pur-category');
+      const isEditing = document.getElementById('pur-edit-mode')?.value === 'true';
+      const editId = document.getElementById('pur-edit-id')?.value;
 
       if (!mpContainer || !expenseContainer || !summarySection || !descGroup || !provGroup || !projectGroup) return;
 
       if (type === 'expense') {
-        if (titleEl) titleEl.textContent = 'Informe de Gasto / Caja Chica';
+        if (titleEl) titleEl.textContent = isEditing ? `Editar Gasto #${editId}` : 'Informe de Gasto / Caja Chica';
         mpContainer.style.display = 'none';
         expenseContainer.style.display = 'block';
         summarySection.style.display = 'none';
         descGroup.style.display = 'block';
         provGroup.style.display = 'none';
       } else {
-        if (titleEl) titleEl.textContent = 'Nueva Compra de Insumos (Materiales)';
+        if (titleEl) {
+          titleEl.textContent = isEditing
+            ? `Editar ${type === 'merchandise' ? 'Compra de Mercadería' : 'Compra de Insumos'} #${editId}`
+            : (type === 'merchandise' ? 'Nueva Compra de Mercadería' : 'Nueva Compra de Insumos (Materiales)');
+        }
         mpContainer.style.display = 'block';
         expenseContainer.style.display = 'none';
         summarySection.style.display = 'block';
         descGroup.style.display = 'none';
         provGroup.style.display = 'block';
       }
+
+      if (itemHeader) itemHeader.textContent = type === 'merchandise' ? 'Mercadería' : 'Insumo';
+      if (categoryEl) {
+        if (type === 'merchandise') categoryEl.value = 'comercializacion';
+        else if (categoryEl.value === 'comercializacion') categoryEl.value = 'general';
+        categoryEl.disabled = type === 'merchandise';
+      }
+      window.populatePurchaseItemOptions();
     };
 
     window.togglePurCategory = function () {
@@ -5397,7 +5756,7 @@ function renderView(viewName) {
           }
         }
 
-        if (type === 'mp') {
+        if (type === 'mp' || type === 'merchandise') {
           body.providerId = document.getElementById('pur-prov')?.value;
           body.items = getTableItems('pur');
           body.net = parseInt(document.getElementById('pur-net')?.value) || 0;
@@ -5923,7 +6282,7 @@ function renderView(viewName) {
       }
 
       // Standard products from master
-      const standardOptions = state.products
+      const standardOptions = getFinishedProducts()
         .slice()
         .sort((a, b) => (a.code || '').localeCompare(b.code || ''))
         .map(p => `<option value="${window.formatProductionProductLabel(p)}">${p.code} | ${p.name || ''}${p.color ? ' (' + p.color + ')' : ''}${p.size ? ' [' + p.size + ']' : ''}</option>`);
@@ -6072,7 +6431,17 @@ function renderView(viewName) {
 
           if (productCode && quantity > 0) {
             // Check if product exists in master (by code or by name)
-            const exists = window.findProductionProduct(productInput) || state.products.find(p =>
+            const merchandiseMatch = getMerchandiseProducts().find(p =>
+              (p.code && p.code.toLowerCase().trim() === productCode.toLowerCase()) ||
+              (p.name && p.name.toLowerCase().trim() === productCode.toLowerCase())
+            );
+            if (merchandiseMatch) {
+              btn.disabled = false;
+              btn.innerHTML = originalText;
+              return alert(`"${merchandiseMatch.name}" es una mercadería y no debe pasar por producción.`);
+            }
+
+            const exists = window.findProductionProduct(productInput) || getFinishedProducts().find(p =>
               (p.code && p.code.toLowerCase().trim() === productCode.toLowerCase()) ||
               (p.name && p.name.toLowerCase().trim() === productCode.toLowerCase())
             );
@@ -6528,6 +6897,14 @@ function renderView(viewName) {
     fetch(`${API_BASE}/settings`, { headers: { 'Authorization': `Bearer ${token}` } })
       .then(r => r.json())
       .then(settings => {
+        state.settings = settings || {};
+        window.erpSettings = state.settings;
+        if (settings.ppm_percentage !== undefined) {
+          localStorage.setItem('erp_ppm_percentage', String(settings.ppm_percentage));
+        }
+        if (settings.ppm_percentage && document.getElementById('ppm-percentage')) {
+          document.getElementById('ppm-percentage').value = settings.ppm_percentage;
+        }
         if (settings.telegram_bot_token) document.getElementById('tg-token').value = settings.telegram_bot_token;
         if (settings.telegram_chat_id) document.getElementById('tg-chatid').value = settings.telegram_chat_id;
       });
@@ -6606,6 +6983,27 @@ window.deleteProvider = async (id) => {
   if (!confirm('¿Seguro que desea eliminar este proveedor?')) return;
   await deleteData(`/providers/${id}`);
   fetchData();
+};
+
+window.saveTaxSettings = async () => {
+  const input = document.getElementById('ppm-percentage');
+  const ppm = Math.max(0, parseFloat(String(input?.value || '0').replace(',', '.')) || 0);
+
+  try {
+    const res = await fetch(`${API_BASE}/settings`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'ppm_percentage', value: String(ppm) })
+    }).then(r => r.json());
+
+    if (!res.success) throw new Error(res.error || 'No se pudo guardar PPM');
+    state.settings = { ...(state.settings || {}), ppm_percentage: String(ppm) };
+    window.erpSettings = state.settings;
+    localStorage.setItem('erp_ppm_percentage', String(ppm));
+    alert('PPM guardado correctamente.');
+  } catch (e) {
+    alert('Error al guardar PPM: ' + e.message);
+  }
 };
 
 window.saveAlertSettings = async () => {
@@ -6947,6 +7345,39 @@ function setupItemTable(prefix) {
   });
 }
 
+window.populatePurchaseItemOptions = function () {
+  const type = document.getElementById('pur-type')?.value || 'mp';
+  const merchandise = getMerchandiseProducts().slice().sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+  const rawMaterials = state.rawMaterials.slice().sort((a, b) => (a.code || '').localeCompare(b.code || ''));
+
+  const options = type === 'merchandise'
+    ? merchandise.map(product => `
+        <option value="${product.code}" data-price="${product.cost_unit || 0}">${product.code} | ${product.name || ''}</option>
+      `).join('')
+    : rawMaterials.map(material => `
+        <option value="${material.code}" data-price="${(material.cost_net || 0) / (material.batch_size || 1)}">${material.code} | ${material.name || ''}</option>
+      `).join('');
+
+  document.querySelectorAll('#pur-items-body .item-row').forEach(row => {
+    const select = row.querySelector('.item-code');
+    if (!select) return;
+    const previousValue = select.value;
+    select.innerHTML = `
+      <option value="">Seleccione...</option>
+      ${options}
+      ${type === 'mp' ? '<option value="__otros__">+ Otros (escribir nombre)</option>' : ''}
+    `;
+    select.value = previousValue;
+    if (previousValue && !select.value) {
+      row.querySelector('.item-price').value = 0;
+      row.querySelector('.item-qty').value = 0;
+      row.querySelector('.item-subtotal').value = 0;
+      delete row.dataset.realPrice;
+    }
+  });
+  calculateTotals('pur');
+};
+
 function calculateTotals(prefix) {
   const body = document.getElementById(`${prefix}-items-body`);
   const subtotals = Array.from(body.querySelectorAll('.item-subtotal')).map(i => parseInt(i.value) || 0);
@@ -7072,7 +7503,10 @@ function getTableItems(prefix) {
       if (prefix === 'sale') {
         items.push({ productCode: code, quantity: qty, unitPrice: price, subtotal });
       } else {
-        const item = { mpCode: code, quantity: qty, unitPrice: price, subtotal };
+        const purchaseType = document.getElementById('pur-type')?.value;
+        const item = purchaseType === 'merchandise'
+          ? { productCode: code, quantity: qty, unitPrice: price, subtotal }
+          : { mpCode: code, quantity: qty, unitPrice: price, subtotal };
         if (code === '__otros__' && customName) {
           item.customName = customName;
         }
@@ -7145,9 +7579,11 @@ async function deleteData(endpoint) {
 
 // Export Functions
 window.exportProducts = function () {
-  const formatted = formatProductsForExport(state.products);
-  exportToExcel(formatted, 'Inventario_Productos', 'Productos');
-  alert('Productos exportados a Excel exitosamente');
+  const isMerchandise = state.productCatalogFilter === 'merchandise';
+  const catalog = isMerchandise ? getMerchandiseProducts() : getFinishedProducts();
+  const formatted = formatProductsForExport(catalog);
+  exportToExcel(formatted, isMerchandise ? 'Inventario_Mercaderias' : 'Inventario_Productos_Terminados', isMerchandise ? 'Mercaderías' : 'Productos Terminados');
+  alert(`${isMerchandise ? 'Mercaderías' : 'Productos terminados'} exportados a Excel exitosamente`);
 };
 
 window.exportRawMaterials = function () {

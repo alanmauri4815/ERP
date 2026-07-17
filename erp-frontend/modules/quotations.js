@@ -174,6 +174,7 @@ window.openQuotationModal = () => {
     document.getElementById('btn-save-quote').disabled = false;
     document.getElementById('btn-save-quote').textContent = '💾 Guardar Cotización';
 
+    window.activeQuotationPpmPercentage = null;
     window.quotationItems = [];
     window.quotationProducts = [
         { id: 'p' + Date.now(), name: '', quantity: 1 }
@@ -203,6 +204,8 @@ window.editQuotation = async (id) => {
     document.getElementById('quote-purchase-order').value = q.purchase_order_id || '';
     document.getElementById('quote-utility').value = q.utility_percentage || 0;
     document.getElementById('quote-budget').value = q.budget || 0;
+    const quotePpm = parseFloat(String(q.ppm_percentage ?? '').replace(',', '.'));
+    window.activeQuotationPpmPercentage = quotePpm > 0 ? quotePpm : null;
 
     window.quotationProducts = q.products_list || [
         { id: 'p' + Date.now(), name: q.name, quantity: q.quantity || 1 }
@@ -388,24 +391,81 @@ window.calculateQuotation = () => {
         }
     });
 
-    let totalNetoVisual = 0;
     const totalQty = window.quotationProducts.reduce((sum, p) => sum + (parseFloat(p.quantity) || 0), 0);
+    const productCostRows = [];
 
     Object.values(products).forEach(p => {
         const share = totalQty > 0 ? (parseFloat(p.quantity) / totalQty) : 0;
         const pTotalCost = p.cost + (generalFixedCost * share);
-        const unitPriceNetRaw = (pTotalCost / (parseFloat(p.quantity) || 1)) * (1 + (utilityPerc / 100));
-        const unitPriceNetRounded = Math.round(unitPriceNetRaw);
-        const productSubtotalNet = unitPriceNetRounded * (parseFloat(p.quantity) || 0);
-        totalNetoVisual += productSubtotalNet;
-        p.unitPriceNet = unitPriceNetRounded;
-        p.subtotalNet = productSubtotalNet;
+        productCostRows.push({ product: p, totalCost: pTotalCost });
         totalCostGlobal += pTotalCost;
         factNetGlobal += p.net + (generalFixedNet * share);
         bolIVAGlobal += p.iva + (generalFixedIVA * share);
     });
 
-    const priceNet = totalNetoVisual;
+    const baseCostGlobal = totalCostGlobal;
+    const fallbackPpm = parseFloat(String(
+        window.erpSettings?.ppm_percentage ??
+        window.state?.settings?.ppm_percentage ??
+        localStorage.getItem('erp_ppm_percentage') ??
+        0
+    ).replace(',', '.')) || 0;
+    const helperPpm = typeof window.getPpmPercentage === 'function' ? window.getPpmPercentage() : 0;
+    const ppmPerc = helperPpm > 0 ? helperPpm : Math.max(0, fallbackPpm);
+
+    if (ppmPerc <= 0 && !window._ppmSettingsLoading) {
+        window._ppmSettingsLoading = true;
+        const token = localStorage.getItem('erp_token');
+        const apiBase = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+            ? `http://${window.location.hostname}:3001/api`
+            : 'https://erp-universal-backend.onrender.com/api';
+
+        fetch(`${apiBase}/settings`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+            .then(r => r.ok ? r.json() : null)
+            .then(settings => {
+                if (settings?.ppm_percentage !== undefined) {
+                    window.erpSettings = { ...(window.erpSettings || {}), ...settings };
+                    localStorage.setItem('erp_ppm_percentage', String(settings.ppm_percentage));
+                    window.calculateQuotation();
+                }
+            })
+            .catch(err => console.warn('No se pudo cargar PPM para cotizacion:', err))
+            .finally(() => { window._ppmSettingsLoading = false; });
+    }
+
+    const fallbackCalculatePpm = (baseCost, utility, ppm) => {
+        const cost = Math.max(0, parseFloat(baseCost) || 0);
+        const utilityRate = Math.max(0, parseFloat(utility) || 0) / 100;
+        const ppmRate = Math.max(0, parseFloat(ppm) || 0) / 100;
+        if (!cost || !ppmRate) return 0;
+        const denominator = 1 - (ppmRate * (1 + utilityRate));
+        if (denominator <= 0) return Math.round(cost * ppmRate);
+        return Math.round(((cost * (1 + utilityRate)) / denominator) * ppmRate);
+    };
+    let ppmAmount = typeof window.calculatePpmAmount === 'function'
+        ? window.calculatePpmAmount(baseCostGlobal, utilityPerc, ppmPerc)
+        : fallbackCalculatePpm(baseCostGlobal, utilityPerc, ppmPerc);
+    let priceNet = 0;
+
+    for (let i = 0; i < 2; i += 1) {
+        priceNet = 0;
+        productCostRows.forEach(({ product: p, totalCost }) => {
+            const qty = parseFloat(p.quantity) || 0;
+            const share = baseCostGlobal > 0 ? (totalCost / baseCostGlobal) : (totalQty > 0 ? qty / totalQty : 0);
+            const totalCostWithPpm = totalCost + (ppmAmount * share);
+            const unitPriceNetRaw = (totalCostWithPpm / (qty || 1)) * (1 + (utilityPerc / 100));
+            const unitPriceNetRounded = Math.round(unitPriceNetRaw);
+            const productSubtotalNet = unitPriceNetRounded * qty;
+
+            p.unitPriceNet = unitPriceNetRounded;
+            p.subtotalNet = productSubtotalNet;
+            priceNet += productSubtotalNet;
+        });
+
+        ppmAmount = Math.round(priceNet * (ppmPerc / 100));
+    }
+
+    totalCostGlobal = baseCostGlobal + ppmAmount;
     const iva = Math.round(priceNet * 0.19);
     const priceGross = priceNet + iva;
 
@@ -423,6 +483,10 @@ window.calculateQuotation = () => {
 
     document.getElementById('res-cost-net').textContent = `$${Math.round(factNetGlobal).toLocaleString()}`;
     document.getElementById('res-cost-iva').textContent = `$${Math.round(bolIVAGlobal).toLocaleString()}`;
+    const ppmRateEl = document.getElementById('res-ppm-rate');
+    if (ppmRateEl) ppmRateEl.textContent = ppmPerc.toLocaleString('es-CL', { maximumFractionDigits: 2 });
+    const ppmCostEl = document.getElementById('res-cost-ppm');
+    if (ppmCostEl) ppmCostEl.textContent = `$${Math.round(ppmAmount).toLocaleString()}`;
     document.getElementById('res-cost-total').textContent = `$${Math.round(totalCostGlobal).toLocaleString()}`;
     document.getElementById('res-ctu').textContent = `$${Math.round(totalCostGlobal / (totalQty || 1)).toLocaleString()}`;
     document.getElementById('res-price-net').textContent = `$${Math.round(priceNet).toLocaleString()}`;
@@ -441,6 +505,8 @@ window.calculateQuotation = () => {
         total_price_net: priceNet,
         total_iva: iva,
         total_price_gross: priceGross,
+        ppm_percentage: ppmPerc,
+        ppm_amount: ppmAmount,
         budget: budget,
         success_probability: probPercent
     };

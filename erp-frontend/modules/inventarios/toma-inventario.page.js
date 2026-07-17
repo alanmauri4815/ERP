@@ -9,7 +9,7 @@ export async function renderTomaInventario(containerId = 'main-content') {
     if (!container) return;
 
     // Estado local del módulo
-    let currentTab = 'mp'; // 'mp', 'pt' o 'history'
+    let currentTab = 'mp'; // 'mp', 'pt', 'merchandise' o 'history'
     let data = [];
     let history = [];
     let physicalStocks = {}; // code -> quantity
@@ -25,8 +25,13 @@ export async function renderTomaInventario(containerId = 'main-content') {
         try {
             if (currentTab === 'mp') {
                 data = await erpFetch('/raw-materials');
-            } else if (currentTab === 'pt') {
+            } else if (currentTab === 'pt' || currentTab === 'merchandise') {
                 data = await erpFetch('/products');
+                data = (data || []).filter(item => {
+                    const normalized = String(item.type || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+                    const isMerchandise = normalized === 'merchandise' || normalized === 'mercaderia';
+                    return currentTab === 'merchandise' ? isMerchandise : !isMerchandise;
+                });
             } else {
                 history = await erpFetch('/inventory/takes');
             }
@@ -54,6 +59,7 @@ export async function renderTomaInventario(containerId = 'main-content') {
                 <div class="tabs">
                     <button class="tab ${currentTab === 'mp' ? 'active' : ''}" id="tab-mp">Insumos (MP)</button>
                     <button class="tab ${currentTab === 'pt' ? 'active' : ''}" id="tab-pt">Productos (PT)</button>
+                    <button class="tab ${currentTab === 'merchandise' ? 'active' : ''}" id="tab-merchandise">Mercaderías</button>
                     <button class="tab ${currentTab === 'history' ? 'active' : ''}" id="tab-history">Historial de Tomas</button>
                 </div>
 
@@ -241,10 +247,12 @@ export async function renderTomaInventario(containerId = 'main-content') {
     function attachEvents() {
         const tabMP = document.getElementById('tab-mp');
         const tabPT = document.getElementById('tab-pt');
+        const tabMerchandise = document.getElementById('tab-merchandise');
         const tabHis = document.getElementById('tab-history');
 
         if (tabMP) tabMP.onclick = () => { currentTab = 'mp'; physicalStocks = {}; loadData(); };
         if (tabPT) tabPT.onclick = () => { currentTab = 'pt'; physicalStocks = {}; loadData(); };
+        if (tabMerchandise) tabMerchandise.onclick = () => { currentTab = 'merchandise'; physicalStocks = {}; loadData(); };
         if (tabHis) tabHis.onclick = () => { currentTab = 'history'; loadData(); };
 
         if (currentTab === 'history') {

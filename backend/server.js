@@ -60,6 +60,11 @@ const T = {
     ACCOUNTING_ACCOUNTS: 'plan_cuentas'
 };
 
+function isMerchandiseType(type) {
+    const normalized = String(type || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return normalized === 'merchandise' || normalized === 'mercaderia';
+}
+
 // Accounting Helper
 async function createAccountingEntry({ date, description, type, document_number, lines, userId, empresaId }) {
     try {
@@ -153,8 +158,10 @@ async function sendTelegramMessage(message) {
     }
 }
 
-async function checkLowStockAlerts(mpCode) {
-    const { data: rm } = await supabase.from(T.MP).select('stock, name').eq('code', mpCode).single();
+async function checkLowStockAlerts(mpCode, empresaId = null) {
+    let rmQuery = supabase.from(T.MP).select('stock, name').eq('code', mpCode);
+    if (empresaId) rmQuery = rmQuery.eq('empresa_id', empresaId);
+    const { data: rm } = await rmQuery.maybeSingle();
     const { data: config } = await supabase.from(T.ALERTS).select('threshold').eq('mp_code', mpCode).single();
     if (config && rm && rm.stock < config.threshold) {
         await sendTelegramMessage(
@@ -529,6 +536,7 @@ app.post('/api/raw-materials', authenticateToken, async (req, res) => {
         .from(T.MP)
         .select('code, name')
         .eq('code', code)
+        .eq('empresa_id', req.empresa_id)
         .maybeSingle();
     if (existingError) return res.status(500).json({ error: existingError.message });
     if (existingMp) {
@@ -538,6 +546,7 @@ app.post('/api/raw-materials', authenticateToken, async (req, res) => {
         .from(T.PRODUCTS)
         .select('code, name')
         .eq('code', code)
+        .eq('empresa_id', req.empresa_id)
         .maybeSingle();
     if (existingProductCodeError) return res.status(500).json({ error: existingProductCodeError.message });
     if (existingProductCode) {
@@ -766,6 +775,7 @@ app.get('/api/admin/migrate-purchases', async (req, res) => {
             ALTER TABLE production ADD COLUMN IF NOT EXISTS production_category text DEFAULT 'push';
             ALTER TABLE production ADD COLUMN IF NOT EXISTS quotation_id int8 REFERENCES quotations(id);
             ALTER TABLE purchase_items ADD COLUMN IF NOT EXISTS custom_name text;
+            ALTER TABLE purchase_items ADD COLUMN IF NOT EXISTS product_code text;
             ALTER TABLE quotations ADD COLUMN IF NOT EXISTS external_quote_id text;
             ALTER TABLE quotations ADD COLUMN IF NOT EXISTS purchase_order_id text;
             ALTER TABLE ventas ADD COLUMN IF NOT EXISTS commission numeric DEFAULT 0;
@@ -854,7 +864,7 @@ app.post('/api/purchase-items/migrate-to-mp', authenticateToken, async (req, res
     const { item_id, custom_name, unit_price } = req.body;
     try {
         // Generate code for eventual item: EVT-XXX
-        const { data: existing } = await supabase.from(T.MP).select('code').like('code', 'EVT-%').order('code', { ascending: false }).limit(1);
+        const { data: existing } = await supabase.from(T.MP).select('code').like('code', 'EVT-%').eq('empresa_id', req.empresa_id).order('code', { ascending: false }).limit(1);
         let nextNum = 1;
         if (existing && existing.length > 0) {
             const lastCode = existing[0].code;
@@ -869,7 +879,8 @@ app.post('/api/purchase-items/migrate-to-mp', authenticateToken, async (req, res
             name: custom_name || 'Producto Eventual',
             unit: 'UN',
             cost_net: unit_price || 0,
-            stock: 0
+            stock: 0,
+            empresa_id: req.empresa_id
         });
         if (mpError) throw mpError;
 
@@ -895,14 +906,16 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
         if (error) throw error;
 
         // Fetch lookup tables
-        const [provs, accs, quotes] = await Promise.all([
+        const [provs, accs, quotes, products] = await Promise.all([
             supabase.from(T.PROVIDERS).select('id, name, rut').eq('empresa_id', req.empresa_id),
             supabase.from(T.ACCOUNTS).select('id, name').eq('empresa_id', req.empresa_id),
-            supabase.from(T.QUOTATIONS).select(`id, name, purchase_order_id, clients:${T.CLIENTS}(name)`).eq('empresa_id', req.empresa_id).limit(1000)
+            supabase.from(T.QUOTATIONS).select(`id, name, purchase_order_id, clients:${T.CLIENTS}(name)`).eq('empresa_id', req.empresa_id).limit(1000),
+            supabase.from(T.PRODUCTS).select('code, name, color, size, type').eq('empresa_id', req.empresa_id)
         ]);
 
         const provMap = {}; provs.data?.forEach(p => provMap[p.id] = { name: p.name, rut: p.rut });
         const accMap = {}; accs.data?.forEach(a => accMap[a.id] = a.name);
+        const productMap = {}; products.data?.forEach(p => productMap[p.code] = p);
         const quoteMap = {}; quotes.data?.forEach(q => {
             const clientName = Array.isArray(q.clients) ? q.clients[0]?.name : q.clients?.name;
             quoteMap[q.id] = {
@@ -924,9 +937,11 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
             if (itemData) {
                 items = itemData.map(i => ({
                     ...i,
-                    mp_name: i.raw_materials?.name || '?',
-                    color: i.raw_materials?.color,
-                    size: i.raw_materials?.size
+                    mp_name: i.raw_materials?.name || null,
+                    product_name: productMap[i.product_code]?.name || null,
+                    color: i.raw_materials?.color || productMap[i.product_code]?.color,
+                    size: i.raw_materials?.size || productMap[i.product_code]?.size,
+                    item_type: i.product_code ? 'merchandise' : 'mp'
                 }));
             }
 
@@ -943,6 +958,7 @@ app.get(['/api/history/purchases', '/api/purchases'], authenticateToken, async (
                 provider_rut: provInfo.rut,
                 account_name: accMap[p.account_id] || 'N/A',
                 project_name: projectName,
+                quotation_name: qData?.name || null,
                 purchase_order_id: qData?.oc || null,
                 items: items
             });
@@ -1067,9 +1083,49 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         if (result.error) throw result.error;
         const purchase = result.data;
 
-        if (type === 'mp' && items && items.length > 0) {
+        if ((type === 'mp' || type === 'merchandise') && items && items.length > 0) {
             for (let i = 0; i < items.length; i++) {
                 const item = items[i];
+                if (type === 'merchandise' && item.productCode && item.quantity > 0) {
+                    const quantity = Number(item.quantity) || 0;
+                    const unitPrice = Number(item.unitPrice) || 0;
+                    const { data: product, error: productError } = await supabase
+                        .from(T.PRODUCTS)
+                        .select('stock, cost_unit, type')
+                        .eq('code', item.productCode)
+                        .eq('empresa_id', req.empresa_id)
+                        .maybeSingle();
+
+                    if (productError) throw productError;
+                    if (!product || !isMerchandiseType(product.type)) {
+                        throw new Error(`La mercaderia ${item.productCode} no existe o no esta clasificada como mercaderia.`);
+                    }
+
+                    const { error: itemError } = await supabase.from(T.PURCHASE_ITEMS).insert({
+                        purchase_id: purchase.id,
+                        item_number: i + 1,
+                        product_code: item.productCode,
+                        quantity,
+                        unit_price: unitPrice,
+                        subtotal: item.subtotal
+                    });
+                    if (itemError) throw itemError;
+
+                    const currentStock = Number(product.stock) || 0;
+                    const currentCost = Number(product.cost_unit) || 0;
+                    const finalStock = currentStock + quantity;
+                    const averageCost = finalStock > 0
+                        ? Math.round(((currentStock * currentCost) + (quantity * unitPrice)) / finalStock)
+                        : Math.round(unitPrice);
+
+                    const { error: stockError } = await supabase.from(T.PRODUCTS)
+                        .update({ stock: finalStock, cost_unit: averageCost })
+                        .eq('code', item.productCode)
+                        .eq('empresa_id', req.empresa_id);
+                    if (stockError) throw stockError;
+                    continue;
+                }
+
                 if (item.mpCode && item.quantity > 0) {
                     const insertItem = {
                         purchase_id: purchase.id,
@@ -1134,11 +1190,15 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         const paymentAccount = '2.1.01';
 
         const docRef = document_number || purchase.id;
-        const glosa = type === 'expense' ? `Gasto: ${description} (Doc #${docRef})` : `Compra a proveedor (Doc #${docRef})`;
+        const glosa = type === 'expense'
+            ? `Gasto: ${description} (Doc #${docRef})`
+            : type === 'merchandise'
+                ? `Compra de mercaderia (Doc #${docRef})`
+                : `Compra a proveedor (Doc #${docRef})`;
         const inventoryAccount = type === 'expense' ? '5.1.02' : '1.1.09'; 
 
         let centroCostoId = centro_costo_id || null;
-        if (!centroCostoId && type === 'mp') {
+        if (!centroCostoId && (type === 'mp' || type === 'merchandise')) {
             const { data: cc } = await supabase.from(T.COST_CENTERS).select('id').eq('codigo', 'OPER').single();
             centroCostoId = cc?.id || null;
         }
@@ -1155,7 +1215,11 @@ app.post('/api/purchases', authenticateToken, async (req, res) => {
         await createAccountingEntry({
             date,
             description: glosa,
-            type: type === 'expense' ? 'gasto' : ((quotation_id || project_ref) ? 'compra_pull' : 'compra_push'),
+            type: type === 'expense'
+                ? 'gasto'
+                : type === 'merchandise'
+                    ? 'compra_mercaderia'
+                    : ((quotation_id || project_ref) ? 'compra_pull' : 'compra_push'),
             document_number: purchase.id.toString(),
             userId: req.user.id,
             empresaId: req.empresa_id,
@@ -1336,10 +1400,18 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
         const { data: oldItems } = await supabase.from(T.PURCHASE_ITEMS).select('*').eq('purchase_id', purchaseId);
         if (oldItems) {
             for (const it of oldItems) {
-                const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', it.mp_code).single();
+                if (it.product_code) {
+                    const { data: product } = await supabase.from(T.PRODUCTS).select('stock').eq('code', it.product_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                    if (product) {
+                        const oldQty = Number(it.quantity) || 0;
+                        await supabase.from(T.PRODUCTS).update({ stock: Math.max(0, (Number(product.stock) || 0) - oldQty) }).eq('code', it.product_code).eq('empresa_id', req.empresa_id);
+                    }
+                    continue;
+                }
+                const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', it.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
                 if (rm) {
                     const oldQty = Number(it.quantity) || 0;
-                    await supabase.from(T.MP).update({ stock: Math.max(0, (rm.stock || 0) - oldQty) }).eq('code', it.mp_code);
+                    await supabase.from(T.MP).update({ stock: Math.max(0, (rm.stock || 0) - oldQty) }).eq('code', it.mp_code).eq('empresa_id', req.empresa_id);
                 }
             }
         }
@@ -1382,9 +1454,48 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
         // 3. Delete & Re-insert items + Add back to stock
         await supabase.from(T.PURCHASE_ITEMS).delete().eq('purchase_id', purchaseId);
 
-        if (type === 'mp' && items && items.length > 0) {
+        if ((type === 'mp' || type === 'merchandise') && items && items.length > 0) {
             for (let i = 0; i < items.length; i++) {
                 const item = items[i];
+                if (type === 'merchandise' && item.productCode && item.quantity > 0) {
+                    const quantity = Number(item.quantity) || 0;
+                    const unitPrice = Number(item.unitPrice) || 0;
+                    const { data: product, error: productError } = await supabase
+                        .from(T.PRODUCTS)
+                        .select('stock, cost_unit, type')
+                        .eq('code', item.productCode)
+                        .eq('empresa_id', req.empresa_id)
+                        .maybeSingle();
+
+                    if (productError) throw productError;
+                    if (!product || !isMerchandiseType(product.type)) {
+                        throw new Error(`La mercaderia ${item.productCode} no existe o no esta clasificada como mercaderia.`);
+                    }
+
+                    const { error: itemError } = await supabase.from(T.PURCHASE_ITEMS).insert({
+                        purchase_id: purchaseId,
+                        item_number: i + 1,
+                        product_code: item.productCode,
+                        quantity,
+                        unit_price: unitPrice,
+                        subtotal: item.subtotal
+                    });
+                    if (itemError) throw itemError;
+
+                    const currentStock = Number(product.stock) || 0;
+                    const currentCost = Number(product.cost_unit) || 0;
+                    const finalStock = currentStock + quantity;
+                    const averageCost = finalStock > 0
+                        ? Math.round(((currentStock * currentCost) + (quantity * unitPrice)) / finalStock)
+                        : Math.round(unitPrice);
+
+                    await supabase.from(T.PRODUCTS)
+                        .update({ stock: finalStock, cost_unit: averageCost })
+                        .eq('code', item.productCode)
+                        .eq('empresa_id', req.empresa_id);
+                    continue;
+                }
+
                 if (item.mpCode && item.quantity > 0) {
                     const insertItem = {
                         purchase_id: purchaseId,
@@ -1406,10 +1517,10 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
                         }
                     } else {
                         await supabase.from(T.PURCHASE_ITEMS).insert(insertItem);
-                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).single();
+                        const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', item.mpCode).eq('empresa_id', req.empresa_id).maybeSingle();
                         if (rm) {
                             const newQty = Number(item.quantity) || 0;
-                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + newQty }).eq('code', item.mpCode);
+                            await supabase.from(T.MP).update({ stock: (rm.stock || 0) + newQty }).eq('code', item.mpCode).eq('empresa_id', req.empresa_id);
                         }
                     }
                 }
@@ -1421,7 +1532,7 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             .from(T.PC_ASIENTOS)
             .select('id')
             .eq('referencia_id', purchaseId.toString())
-            .in('tipo_origen', ['compra', 'compra_push', 'compra_pull', 'gasto', 'erp_compra', 'pago_compra_auto']);
+            .in('tipo_origen', ['compra', 'compra_push', 'compra_pull', 'compra_mercaderia', 'gasto', 'erp_compra', 'pago_compra_auto']);
 
         if (oldEntriesPro && oldEntriesPro.length > 0) {
             const proIds = oldEntriesPro.map(e => e.id);
@@ -1450,14 +1561,18 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
             centroCostoId = null;
         }
 
-        if (!centroCostoId && type === 'mp') {
+        if (!centroCostoId && (type === 'mp' || type === 'merchandise')) {
             const { data: cc } = await supabase.from(T.COST_CENTERS).select('id').eq('codigo', 'OPER').single();
             centroCostoId = cc?.id || null;
             debugLog('Using default cost center Operaciones:', centroCostoId);
         }
 
         const docRef = req.body.document_number || purchaseId;
-        const glosa = type === 'expense' ? `Gasto: ${description} (Doc #${docRef})` : `Compra a proveedor (Doc #${docRef})`;
+        const glosa = type === 'expense'
+            ? `Gasto: ${description} (Doc #${docRef})`
+            : type === 'merchandise'
+                ? `Compra de mercaderia (Doc #${docRef})`
+                : `Compra a proveedor (Doc #${docRef})`;
         const inventoryAccount = type === 'expense' ? '5.1.02' : '1.1.09';
 
         const journalLines = [
@@ -1474,7 +1589,11 @@ app.put('/api/purchases/:id', authenticateToken, async (req, res) => {
         const acResult = await createAccountingEntry({
             date,
             description: glosa,
-            type: type === 'expense' ? 'gasto' : ((quotation_id || project_ref) ? 'compra_pull' : 'compra_push'),
+            type: type === 'expense'
+                ? 'gasto'
+                : type === 'merchandise'
+                    ? 'compra_mercaderia'
+                    : ((quotation_id || project_ref) ? 'compra_pull' : 'compra_push'),
             document_number: purchaseId.toString(),
             userId: req.user.id,
             empresaId: req.empresa_id,
@@ -1535,11 +1654,19 @@ app.delete('/api/purchases/:id', authenticateToken, async (req, res) => {
         const { data: items } = await supabase.from(T.PURCHASE_ITEMS).select('*').eq('purchase_id', purchaseId);
         if (items) {
             for (const it of items) {
+                if (it.product_code) {
+                    const { data: product } = await supabase.from(T.PRODUCTS).select('stock').eq('code', it.product_code).eq('empresa_id', req.empresa_id).maybeSingle();
+                    if (product) {
+                        const qty = Number(it.quantity) || 0;
+                        await supabase.from(T.PRODUCTS).update({ stock: Math.max(0, (Number(product.stock) || 0) - qty) }).eq('code', it.product_code).eq('empresa_id', req.empresa_id);
+                    }
+                    continue;
+                }
                 if (it.mp_code && it.mp_code !== '__otros__') {
-                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', it.mp_code).single();
+                    const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', it.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
                     if (rm) {
                         const qty = Number(it.quantity) || 0;
-                        await supabase.from(T.MP).update({ stock: Math.max(0, (rm.stock || 0) - qty) }).eq('code', it.mp_code);
+                        await supabase.from(T.MP).update({ stock: Math.max(0, (rm.stock || 0) - qty) }).eq('code', it.mp_code).eq('empresa_id', req.empresa_id);
                     }
                 }
             }
@@ -1550,7 +1677,7 @@ app.delete('/api/purchases/:id', authenticateToken, async (req, res) => {
             .from(T.PC_ASIENTOS)
             .select('id')
             .eq('referencia_id', purchaseId.toString())
-            .in('tipo_origen', ['compra', 'compra_push', 'compra_pull', 'gasto', 'erp_compra', 'pago_compra_auto']);
+            .in('tipo_origen', ['compra', 'compra_push', 'compra_pull', 'compra_mercaderia', 'gasto', 'erp_compra', 'pago_compra_auto']);
 
         if (entries && entries.length > 0) {
             const ids = entries.map(e => e.id);
@@ -1584,10 +1711,10 @@ app.delete('/api/sales/:id', authenticateToken, async (req, res) => {
         if (items) {
             for (const it of items) {
                 if (it.product_code) {
-                    const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', it.product_code).single();
+                    const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', it.product_code).eq('empresa_id', req.empresa_id).maybeSingle();
                     if (p) {
                         const qty = Number(it.quantity) || 0;
-                        await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) + qty }).eq('code', it.product_code);
+                        await supabase.from(T.PRODUCTS).update({ stock: (p.stock || 0) + qty }).eq('code', it.product_code).eq('empresa_id', req.empresa_id);
                     }
                 }
             }
@@ -1598,7 +1725,7 @@ app.delete('/api/sales/:id', authenticateToken, async (req, res) => {
             .from(T.PC_ASIENTOS)
             .select('id')
             .eq('referencia_id', saleId.toString())
-            .in('tipo_origen', ['venta_push', 'venta_pull', 'pago_venta_auto']);
+            .in('tipo_origen', ['venta', 'venta_push', 'venta_pull', 'pago_venta_auto', 'costo_venta']);
 
         if (entries && entries.length > 0) {
             const entryIds = entries.map(e => e.id);
@@ -1655,7 +1782,8 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
 
         if (sError) throw sError;
 
-        let totalCogs = 0;
+        let finishedProductCogs = 0;
+        let merchandiseCogs = 0;
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.productCode && item.quantity > 0) {
@@ -1669,10 +1797,12 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
                 });
 
                 // Fetch current stock AND cost_unit for COGS
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock, cost_unit').eq('code', item.productCode).eq('empresa_id', req.empresa_id).maybeSingle();
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock, cost_unit, type').eq('code', item.productCode).eq('empresa_id', req.empresa_id).maybeSingle();
                 if (p) {
                     await supabase.from(T.PRODUCTS).update({ stock: (parseFloat(p.stock) || 0) - item.quantity }).eq('code', item.productCode).eq('empresa_id', req.empresa_id);
-                    totalCogs += (parseFloat(p.cost_unit) || 0) * item.quantity;
+                    const itemCogs = (parseFloat(p.cost_unit) || 0) * item.quantity;
+                    if (isMerchandiseType(p.type)) merchandiseCogs += itemCogs;
+                    else finishedProductCogs += itemCogs;
                 }
             }
         }
@@ -1711,7 +1841,19 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
         });
 
         // 1.2 NEW: COGS Accounting Entry (Costo de Ventas)
+        const totalCogs = finishedProductCogs + merchandiseCogs;
         if (totalCogs > 0) {
+            const finishedProductCogsRounded = Math.round(finishedProductCogs);
+            const merchandiseCogsRounded = Math.round(merchandiseCogs);
+            const cogsLines = [
+                { account_code: '5.1', debit: finishedProductCogsRounded + merchandiseCogsRounded, glosa: 'Reconocimiento Costo de Venta' }
+            ];
+            if (finishedProductCogs > 0) {
+                cogsLines.push({ account_code: '1.1.08', credit: finishedProductCogsRounded, glosa: 'Salida de Inventario PT' });
+            }
+            if (merchandiseCogs > 0) {
+                cogsLines.push({ account_code: '1.1.09', credit: merchandiseCogsRounded, glosa: 'Salida de Inventario Mercaderias' });
+            }
             await createAccountingEntry({
                 date,
                 description: `Costo de Ventas Doc #${docRef}`,
@@ -1719,10 +1861,7 @@ app.post('/api/sales', authenticateToken, async (req, res) => {
                 document_number: sale.id.toString(),
                 userId: req.user.id,
                 empresaId: req.empresa_id,
-                lines: [
-                    { account_code: '5.1', debit: Math.round(totalCogs), glosa: 'Reconocimiento Costo de Venta' }, // Gasto (Costo de Venta)
-                    { account_code: '1.1.08', credit: Math.round(totalCogs), glosa: 'Salida de Inventario PT' } // Inventario PT (Activo -)
-                ]
+                lines: cogsLines
             });
         }
 
@@ -1839,7 +1978,8 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
         await supabase.from(T.SALE_ITEMS).delete().eq('sale_id', saleId);
 
         // 4. Insert NEW items and calculate COGS
-        let totalCogsUpdate = 0;
+        let finishedProductCogsUpdate = 0;
+        let merchandiseCogsUpdate = 0;
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             if (item.productCode && item.quantity > 0) {
@@ -1852,9 +1992,11 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
                     subtotal: item.subtotal
                 });
 
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock, cost_unit').eq('code', item.productCode).eq('empresa_id', req.empresa_id).maybeSingle();
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock, cost_unit, type').eq('code', item.productCode).eq('empresa_id', req.empresa_id).maybeSingle();
                 if (p) {
-                    totalCogsUpdate += (parseFloat(p.cost_unit) || 0) * (Number(item.quantity) || 0);
+                    const itemCogs = (parseFloat(p.cost_unit) || 0) * (Number(item.quantity) || 0);
+                    if (isMerchandiseType(p.type)) merchandiseCogsUpdate += itemCogs;
+                    else finishedProductCogsUpdate += itemCogs;
                 }
             }
         }
@@ -1906,8 +2048,20 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
         });
 
         // 5.2 NEW: COGS for updated sale
+        const totalCogsUpdate = finishedProductCogsUpdate + merchandiseCogsUpdate;
         if (totalCogsUpdate > 0) {
             const docRef = document_number || saleId;
+            const finishedProductCogsRounded = Math.round(finishedProductCogsUpdate);
+            const merchandiseCogsRounded = Math.round(merchandiseCogsUpdate);
+            const cogsLines = [
+                { account_code: '5.1', debit: finishedProductCogsRounded + merchandiseCogsRounded, glosa: 'Reconocimiento Costo de Venta' }
+            ];
+            if (finishedProductCogsUpdate > 0) {
+                cogsLines.push({ account_code: '1.1.08', credit: finishedProductCogsRounded, glosa: 'Salida de Inventario PT' });
+            }
+            if (merchandiseCogsUpdate > 0) {
+                cogsLines.push({ account_code: '1.1.09', credit: merchandiseCogsRounded, glosa: 'Salida de Inventario Mercaderias' });
+            }
             await createAccountingEntry({
                 date: targetDate,
                 description: `Costo de Ventas Doc #${docRef}`,
@@ -1915,10 +2069,7 @@ app.put('/api/sales/:id', authenticateToken, async (req, res) => {
                 document_number: saleId.toString(),
                 userId: req.user.id,
                 empresaId: req.empresa_id,
-                lines: [
-                    { account_code: '5.1', debit: Math.round(totalCogsUpdate) }, 
-                    { account_code: '1.1.08', credit: Math.round(totalCogsUpdate) } 
-                ]
+                lines: cogsLines
             });
         }
 
@@ -2097,7 +2248,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                         const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
                         if (rm) {
                             await supabase.from(T.MP).update({ stock: (parseFloat(rm.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
-                            await checkLowStockAlerts(code);
+                            await checkLowStockAlerts(code, req.empresa_id);
                         }
                         totalProductionCost += cost;
                     }
@@ -2144,7 +2295,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                                 if (rmComp) {
                                     const currentStock = parseFloat(rmComp.stock) || 0;
                                     await supabase.from(T.MP).update({ stock: currentStock - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
-                                    await checkLowStockAlerts(r.mp_code);
+                                    await checkLowStockAlerts(r.mp_code, req.empresa_id);
                                 }
                             }
                         }
@@ -2157,7 +2308,7 @@ app.post('/api/production', authenticateToken, async (req, res) => {
                     if (rmDir && rmDir.type === 'MP') {
                         await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
                         totalProductionCost += (parseFloat(rmDir.cost_net) || 0) * qty;
-                        await checkLowStockAlerts(code);
+                        await checkLowStockAlerts(code, req.empresa_id);
                     }
                 }
             }
@@ -2318,7 +2469,7 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
                         const { data: rm } = await supabase.from(T.MP).select('stock').eq('code', code).eq('empresa_id', req.empresa_id).maybeSingle();
                         if (rm) {
                             await supabase.from(T.MP).update({ stock: (parseFloat(rm.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
-                            await checkLowStockAlerts(code);
+                            await checkLowStockAlerts(code, req.empresa_id);
                         }
                         totalProductionCost += cost;
                     }
@@ -2361,7 +2512,7 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
                                 const { data: rmComp } = await supabase.from(T.MP).select('stock').eq('code', r.mp_code).eq('empresa_id', req.empresa_id).maybeSingle();
                                 if (rmComp) {
                                     await supabase.from(T.MP).update({ stock: (parseFloat(rmComp.stock) || 0) - cQty }).eq('code', r.mp_code).eq('empresa_id', req.empresa_id);
-                                    await checkLowStockAlerts(r.mp_code);
+                                    await checkLowStockAlerts(r.mp_code, req.empresa_id);
                                 }
                             }
                         }
@@ -2374,7 +2525,7 @@ app.put('/api/production/:id', authenticateToken, async (req, res) => {
                     if (rmDir && rmDir.type === 'MP') {
                         await supabase.from(T.MP).update({ stock: (parseFloat(rmDir.stock) || 0) - qty }).eq('code', code).eq('empresa_id', req.empresa_id);
                         totalProductionCost += (parseFloat(rmDir.cost_net) || 0) * qty;
-                        await checkLowStockAlerts(code);
+                        await checkLowStockAlerts(code, req.empresa_id);
                     }
                 }
             }
@@ -2493,9 +2644,9 @@ app.delete('/api/production/:id', authenticateToken, async (req, res) => {
         if (oldItems) {
             for (const item of oldItems) {
                 // Subtract from PT stock
-                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.product_code).single();
+                const { data: p } = await supabase.from(T.PRODUCTS).select('stock').eq('code', item.product_code).eq('empresa_id', req.empresa_id).maybeSingle();
                 if (p) {
-                    await supabase.from(T.PRODUCTS).update({ stock: Math.max(0, (p.stock || 0) - item.quantity) }).eq('code', item.product_code);
+                    await supabase.from(T.PRODUCTS).update({ stock: Math.max(0, (p.stock || 0) - item.quantity) }).eq('code', item.product_code).eq('empresa_id', req.empresa_id);
                 }
 
                 // Add back to MP stock based on recipe (multi-tenant)
@@ -2720,12 +2871,14 @@ app.get('/api/logistics/pending', authenticateToken, async (req, res) => {
 app.post('/api/products', authenticateToken, async (req, res) => {
     let { code, name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total } = req.body;
     code = String(code || '').trim();
+    type = isMerchandiseType(type) ? 'merchandise' : 'finished';
     if (!code) return res.status(400).json({ error: 'Debe ingresar un codigo de producto.' });
 
     const { data: existingProduct, error: existingError } = await supabase
         .from(T.PRODUCTS)
         .select('code, name')
         .eq('code', code)
+        .eq('empresa_id', req.empresa_id)
         .maybeSingle();
     if (existingError) return res.status(500).json({ error: existingError.message });
     if (existingProduct) {
@@ -2735,6 +2888,7 @@ app.post('/api/products', authenticateToken, async (req, res) => {
         .from(T.MP)
         .select('code, name')
         .eq('code', code)
+        .eq('empresa_id', req.empresa_id)
         .maybeSingle();
     if (existingRawCodeError) return res.status(500).json({ error: existingRawCodeError.message });
     if (existingRawCode) {
@@ -2756,6 +2910,7 @@ app.post('/api/products', authenticateToken, async (req, res) => {
 app.put('/api/products/:code', authenticateToken, async (req, res) => {
     let { code, name, type, price_net, price_sale, cost_unit, color, size, parent_code, iva, total } = req.body;
     const originalCode = String(req.params.code || '').trim();
+    type = isMerchandiseType(type) ? 'merchandise' : 'finished';
     const requestedCode = String(code || originalCode).trim();
 
     if (requestedCode && requestedCode !== originalCode) {
@@ -2907,17 +3062,33 @@ app.get('/api/stats', authenticateToken, async (req, res) => {
 });
 
 // Settings & Alerts Config
+function scopedSettingKey(key, empresaId) {
+    return `${empresaId}:${key}`;
+}
+
 app.get('/api/settings', authenticateToken, async (req, res) => {
     const { data, error } = await supabase.from(T.SETTINGS).select('*');
     if (error) return res.status(500).json({ error: error.message });
     const settings = {};
-    data?.forEach(s => settings[s.key] = s.value);
+    const prefix = `${req.empresa_id}:`;
+    data?.forEach(s => {
+        if (!String(s.key || '').includes(':')) settings[s.key] = s.value;
+    });
+    data?.forEach(s => {
+        const key = String(s.key || '');
+        if (key.startsWith(prefix)) settings[key.slice(prefix.length)] = s.value;
+    });
     res.json(settings);
 });
 
 app.post('/api/settings', authenticateToken, async (req, res) => {
     const { key, value } = req.body;
-    const { error } = await supabase.from(T.SETTINGS).upsert({ key, value });
+    const scopedKey = scopedSettingKey(key, req.empresa_id);
+    let { error } = await supabase.from(T.SETTINGS).upsert({ key: scopedKey, value, empresa_id: req.empresa_id });
+    if (error && error.message && error.message.includes('empresa_id')) {
+        const retry = await supabase.from(T.SETTINGS).upsert({ key: scopedKey, value });
+        error = retry.error;
+    }
     if (error) return res.status(500).json({ error: error.message });
     res.json({ success: true });
 });
@@ -3465,7 +3636,7 @@ app.post('/api/inventory/adjust', authenticateToken, async (req, res) => {
     try {
         let totalVariationValue = 0;
         const targetTable = category === 'mp' ? T.MP : T.PRODUCTS;
-        const targetAccount = category === 'mp' ? '1.1.09' : '1.1.08';
+        const targetAccount = category === 'mp' || category === 'merchandise' ? '1.1.09' : '1.1.08';
 
         // 1. Crear Registro de Toma de Inventario (Header)
         const { data: takeHeader, error: headerError } = await supabase
@@ -3546,6 +3717,7 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
     const {
         client_id, name, quantity, utility_percentage,
         total_net_cost, total_price_net, total_iva, total_price_gross,
+        ppm_percentage, ppm_amount,
         budget, success_probability, products_list,
         items, rut, address, description_proposal, images,
         external_quote_id, purchase_order_id,
@@ -3561,6 +3733,7 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
         const insertData = {
             client_id, name, quantity, utility_percentage,
             total_net_cost, total_price_net, total_iva, total_price_gross,
+            ppm_percentage, ppm_amount,
             budget, success_probability, products_list,
             rut, address, description_proposal, images,
             external_quote_id, purchase_order_id,
@@ -3572,10 +3745,12 @@ app.post('/api/quotations', authenticateToken, async (req, res) => {
         let { data: quote, error: qError } = await supabase.from(T.QUOTATIONS).insert(insertData).select().single();
 
         // Fallback if columns don't exist
-        if (qError && qError.message.includes('column') && (qError.message.includes('external_quote_id') || qError.message.includes('purchase_order_id'))) {
-            console.warn('Fallback: Columns missing. Retrying without external_quote_id and purchase_order_id');
+        if (qError && qError.message.includes('column') && (qError.message.includes('external_quote_id') || qError.message.includes('purchase_order_id') || qError.message.includes('ppm_percentage') || qError.message.includes('ppm_amount'))) {
+            console.warn('Fallback: Optional quote columns missing. Retrying without optional fields');
             delete insertData.external_quote_id;
             delete insertData.purchase_order_id;
+            delete insertData.ppm_percentage;
+            delete insertData.ppm_amount;
             const retry = await supabase.from(T.QUOTATIONS).insert(insertData).select().single();
             quote = retry.data;
             qError = retry.error;
@@ -3616,6 +3791,7 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
     const {
         client_id, name, quantity, utility_percentage,
         total_net_cost, total_price_net, total_iva, total_price_gross,
+        ppm_percentage, ppm_amount,
         budget, success_probability, products_list,
         items, rut, address, description_proposal, images,
         external_quote_id, purchase_order_id,
@@ -3627,6 +3803,7 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
         const updateData = {
             client_id, name, quantity, utility_percentage,
             total_net_cost, total_price_net, total_iva, total_price_gross,
+            ppm_percentage, ppm_amount,
             budget, success_probability, products_list,
             rut, address, description_proposal, images,
             external_quote_id, purchase_order_id,
@@ -3636,10 +3813,12 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
         let { error: qError } = await supabase.from(T.QUOTATIONS).update(updateData).eq('id', id).eq('empresa_id', req.empresa_id);
 
         // Fallback if columns don't exist
-        if (qError && qError.message.includes('column') && (qError.message.includes('external_quote_id') || qError.message.includes('purchase_order_id'))) {
-            console.warn('Fallback: Columns missing. Retrying without external_quote_id and purchase_order_id');
+        if (qError && qError.message.includes('column') && (qError.message.includes('external_quote_id') || qError.message.includes('purchase_order_id') || qError.message.includes('ppm_percentage') || qError.message.includes('ppm_amount'))) {
+            console.warn('Fallback: Optional quote columns missing. Retrying without optional fields');
             delete updateData.external_quote_id;
             delete updateData.purchase_order_id;
+            delete updateData.ppm_percentage;
+            delete updateData.ppm_amount;
             const retry = await supabase.from(T.QUOTATIONS).update(updateData).eq('id', id).eq('empresa_id', req.empresa_id);
             qError = retry.error;
         }
@@ -3856,13 +4035,14 @@ app.post('/api/admin/recalculate-all-stock', authenticateToken, checkSuperAdmin,
         const { data: recipes } = await supabase.from(T.RECIPES).select('*').eq('empresa_id', empresaId);
         
         // 2. Fetch all products and raw materials
-        const { data: products } = await supabase.from(T.PRODUCTS).select('code').eq('empresa_id', empresaId);
+        const { data: products } = await supabase.from(T.PRODUCTS).select('code, type').eq('empresa_id', empresaId);
         const { data: rmList } = await supabase.from(T.MP).select('code').eq('empresa_id', empresaId);
 
         if (!products || !rmList) throw new Error("No se pudieron cargar productos o insumos.");
 
         const productStock = {};
         products.forEach(p => productStock[p.code] = 0);
+        const merchandiseCodes = new Set(products.filter(p => isMerchandiseType(p.type)).map(p => p.code));
 
         const rmStock = {};
         rmList.forEach(rm => rmStock[rm.code] = 0);
@@ -3871,11 +4051,14 @@ app.post('/api/admin/recalculate-all-stock', authenticateToken, checkSuperAdmin,
         const { data: purchases } = await supabase.from(T.PURCHASES).select('id').eq('empresa_id', empresaId);
         if (purchases && purchases.length > 0) {
             const purchaseIds = purchases.map(p => p.id);
-            const { data: pItems } = await supabase.from(T.PURCHASE_ITEMS).select('mp_code, quantity').in('purchase_id', purchaseIds);
+            const { data: pItems } = await supabase.from(T.PURCHASE_ITEMS).select('mp_code, product_code, quantity').in('purchase_id', purchaseIds);
             if (pItems) {
                 pItems.forEach(item => {
                     if (rmStock[item.mp_code] !== undefined) {
                         rmStock[item.mp_code] += (parseFloat(item.quantity) || 0);
+                    }
+                    if (productStock[item.product_code] !== undefined) {
+                        productStock[item.product_code] += (parseFloat(item.quantity) || 0);
                     }
                 });
             }
@@ -3916,7 +4099,7 @@ app.post('/api/admin/recalculate-all-stock', authenticateToken, checkSuperAdmin,
                     const header = productions.find(h => h.id === pItem.production_id);
 
                     // Add PT
-                    if (productStock[pCode] !== undefined) {
+                    if (productStock[pCode] !== undefined && !merchandiseCodes.has(pCode)) {
                         productStock[pCode] += pQty;
                     }
 

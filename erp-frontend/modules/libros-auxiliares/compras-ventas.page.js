@@ -101,6 +101,7 @@ async function renderAuxiliar(container, tipo, titulo, subtitulo) {
               <th style="padding:0.75rem 0.6rem;text-align:left;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);background:var(--surface-light);">Fecha</th>
               <th style="padding:0.75rem 0.6rem;text-align:left;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);background:var(--surface-light);">N° Doc</th>
               <th style="padding:0.75rem 0.6rem;text-align:left;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);background:var(--surface-light);">${tipo === 'compras' ? 'Proveedor' : 'Cliente'}</th>
+              ${tipo === 'compras' ? '<th style="padding:0.75rem 0.6rem;text-align:left;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);background:var(--surface-light);">Cotizaci&oacute;n</th>' : ''}
               <th style="padding:0.75rem 0.6rem;text-align:right;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);background:var(--surface-light);">Total</th>
               <th style="padding:0.75rem 0.6rem;text-align:right;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);background:var(--surface-light);">Pagado</th>
               <th style="padding:0.75rem 0.6rem;text-align:right;font-size:0.7rem;text-transform:uppercase;color:var(--text-muted);background:var(--surface-light);">Saldo</th>
@@ -110,7 +111,7 @@ async function renderAuxiliar(container, tipo, titulo, subtitulo) {
           </thead>
           <tbody>
             ${items.length === 0 ? `
-              <tr><td colspan="8" style="text-align:center;padding:3rem;color:var(--text-muted);opacity:0.6;">
+              <tr><td colspan="${tipo === 'compras' ? 9 : 8}" style="text-align:center;padding:3rem;color:var(--text-muted);opacity:0.6;">
                 <i class="fas fa-inbox" style="font-size:2rem;display:block;margin-bottom:0.5rem;"></i>
                 No hay ${tipo === 'compras' ? 'compras' : 'ventas'} registradas
               </td></tr>
@@ -119,7 +120,7 @@ async function renderAuxiliar(container, tipo, titulo, subtitulo) {
           ${items.length > 0 ? `
           <tfoot>
             <tr style="background:var(--surface-light);font-weight:bold;">
-              <td colspan="3" style="padding:0.75rem 0.6rem;">TOTALES</td>
+              <td colspan="${tipo === 'compras' ? 4 : 3}" style="padding:0.75rem 0.6rem;">TOTALES</td>
               <td style="padding:0.75rem 0.6rem;text-align:right;font-family:monospace;">${formatCLP(totalBruto)}</td>
               <td style="padding:0.75rem 0.6rem;text-align:right;font-family:monospace;color:#10b981;">${formatCLP(totalPagado)}</td>
               <td style="padding:0.75rem 0.6rem;text-align:right;font-family:monospace;color:#ef4444;">${formatCLP(Math.max(0, totalPendiente))}</td>
@@ -199,6 +200,7 @@ function renderRow(item, tipo) {
         ${docNum}
       </td>
       <td style="padding:0.6rem;font-weight:500;">${nombre}</td>
+      ${tipo === 'compras' ? `<td style="padding:0.6rem;">${item.quotation_name || item.project_name || '-'}</td>` : ''}
       <td style="padding:0.6rem;text-align:right;font-family:monospace;font-weight:bold;">${formatCLP(total)}</td>
       <td style="padding:0.6rem;text-align:right;font-family:monospace;color:#10b981;">${formatCLP(pagado)}</td>
       <td style="padding:0.6rem;text-align:right;font-family:monospace;color:${saldo > 0 ? '#ef4444' : '#10b981'};font-weight:${saldo > 0 ? '600' : '400'};">

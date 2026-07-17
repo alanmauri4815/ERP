@@ -8,6 +8,13 @@ import { formatCLP } from '../../utils/formatters.js';
 const PPM_TASA_BASE = 0.0125;
 const TASA_1CAT_PROPYME = 0.25;
 
+function getConfiguredPpmRate() {
+    const raw = window.state?.settings?.ppm_percentage;
+    const parsed = parseFloat(String(raw ?? '').replace(',', '.'));
+    if (!Number.isFinite(parsed)) return PPM_TASA_BASE;
+    return Math.max(0, parsed) / 100;
+}
+
 export async function renderTributario(container) {
     container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">
     <div class="spinner" style="margin:0 auto 1rem;"></div>
@@ -24,7 +31,8 @@ export async function renderTributario(container) {
         getEstadoResultados()
     ]);
 
-    const ppmBase = Math.round(iva.totalVentasNeto * PPM_TASA_BASE);
+    const ppmRate = getConfiguredPpmRate();
+    const ppmBase = Math.round(iva.totalVentasNeto * ppmRate);
     const totalF29 = Math.max(0, iva.ivaPorPagar) + ppmBase;
     const rli = Math.max(0, er.utilidadNeta);
     const impuesto1Cat = Math.round(rli * TASA_1CAT_PROPYME);
@@ -102,7 +110,7 @@ export async function renderTributario(container) {
               <span>Base imponible (ventas netas)</span>
               <span style="text-align:right;font-family:monospace;">${formatCLP(iva.totalVentasNeto)}</span>
               <span>Tasa PPM vigente</span>
-              <span style="text-align:right;font-family:monospace;">1,25%</span>
+              <span style="text-align:right;font-family:monospace;">${(ppmRate * 100).toLocaleString('es-CL', { maximumFractionDigits: 2 })}%</span>
             </div>
             <div style="border-top:2px solid var(--border,#333);margin-top:0.75rem;padding-top:0.75rem;display:flex;justify-content:space-between;align-items:center;">
               <strong>PPM a Pagar</strong>
