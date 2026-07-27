@@ -8,7 +8,6 @@ const QUOTE_STATUS_LABELS = {
     sent: 'Enviada',
     approved: 'Aprobada',
     rejected: 'Rechazada',
-    production: 'En Producción',
     cancelled: 'Cancelada'
 };
 
@@ -17,18 +16,18 @@ const QUOTE_STATUS_COLORS = {
     sent: '#3b82f6',
     approved: '#10b981',
     rejected: '#ef4444',
-    production: '#8b5cf6',
     cancelled: '#64748b'
 };
 
 const QUOTE_TRANSITIONS = {
     draft: ['sent', 'cancelled'],
     sent: ['approved', 'rejected', 'cancelled'],
-    approved: ['production', 'cancelled', 'draft'],
+    approved: ['cancelled'],
     rejected: ['sent', 'draft'],
-    production: ['approved', 'sent', 'cancelled'],
     cancelled: ['draft']
 };
+
+const getCommercialQuoteStatus = (status) => status === 'production' ? 'approved' : (status || 'draft');
 
 window.initializeQuotations = () => {
     // Definición de la vista en el objeto global views
@@ -36,11 +35,11 @@ window.initializeQuotations = () => {
         window.views.quotations = () => {
             const filtered = state.quoteStatusFilter === 'all'
                 ? state.quotations
-                : state.quotations.filter(q => q.status === state.quoteStatusFilter);
+                : state.quotations.filter(q => getCommercialQuoteStatus(q.status) === state.quoteStatusFilter);
 
             const statusCounts = {};
             state.quotations.forEach(q => {
-                const s = q.status || 'draft';
+                const s = getCommercialQuoteStatus(q.status);
                 statusCounts[s] = (statusCounts[s] || 0) + 1;
             });
 
@@ -58,7 +57,7 @@ window.initializeQuotations = () => {
                 </div>
                 <div style="display: flex; gap: 0.5rem">
                     ${currentUser.role === 'superadmin' ? `
-                        <button onclick="window.bulkPromoteQuotes()" style="background: var(--accent); color: white;" title="Sincronizar cotizaciones antiguas a productos">🚀 Sincronización Histórica</button>
+                        <button onclick="window.bulkPromoteQuotes()" style="background: var(--accent); color: white;" title="Sincronizar cotizaciones aprobadas con el catálogo">Sincronización Histórica</button>
                         <button onclick="window.syncHistoryItems()" style="background: var(--primary); color: white;" title="Vincular ventas y producciones viejas con los nuevos códigos">📦 Vincular Historial</button>
                     ` : ''}
                     <button onclick="window.openQuotationModal()">+ Nueva Cotización</button>
@@ -97,7 +96,7 @@ window.initializeQuotations = () => {
                         <tbody>
                             ${filtered.length === 0 ? '<tr><td colspan="8" style="text-align:center; padding:3rem; opacity:0.5">No hay cotizaciones en este filtro</td></tr>' :
                             filtered.map(q => {
-                                const status = q.status || 'draft';
+                                const status = getCommercialQuoteStatus(q.status);
                                 const transitions = QUOTE_TRANSITIONS[status] || [];
                                 return `
                                     <tr>
@@ -118,6 +117,7 @@ window.initializeQuotations = () => {
                                             <div style="display:flex; gap:0.3rem; justify-content:center; flex-wrap:wrap">
                                                 <button class="btn-sm" onclick="window.viewQuotation('${q.id}')">👁️ Ver</button>
                                                 ${status !== 'rejected' && status !== 'cancelled' ? `<button class="btn-sm" style="background:var(--accent)" onclick="window.editQuotation('${q.id}')">✏️</button>` : ''}
+                                                ${status === 'approved' ? `<button class="btn-sm" style="background:var(--secondary)" onclick="window.openQuotationProcess('${q.id}')">Proceso</button>` : ''}
                                                 ${transitions.length > 0 ? `
                                                     <select onchange="if(this.value) window.changeQuoteStatus('${q.id}', this.value); this.value='';" style="padding:0.25rem 0.4rem; font-size:0.78rem; border-radius:6px; border:1px solid var(--border); background:var(--surface-light); color:var(--text); cursor:pointer; max-width:120px">
                                                         <option value="">⚡ Estado...</option>
@@ -258,7 +258,7 @@ window.saveQuotation = async () => {
     let finalExternalId = externalQuoteId;
 
     // Lógica de Versionado para Super Admin
-    if (quoteId && currentUser.role === 'superadmin' && (window.currentQuotationStatus === 'sent' || window.currentQuotationStatus === 'production')) {
+    if (quoteId && currentUser.role === 'superadmin' && ['sent', 'approved', 'production'].includes(window.currentQuotationStatus)) {
         const createNewVersion = confirm(`Esta cotización ya tiene estado "${QUOTE_STATUS_LABELS[window.currentQuotationStatus]}". \n\n¿Deseas guardarla como una NUEVA VERSIÓN para no sobreescribir la original?`);
         
         if (createNewVersion) {
@@ -539,7 +539,8 @@ window.changeQuoteStatus = async (id, newStatus) => {
             body: JSON.stringify({ status: newStatus })
         });
         if (res && res.success) {
-            alert(`✅ ${res.message}`);
+            const warning = res.warning ? `\n\nAdvertencia de preparación: ${res.warning}` : '';
+            alert(`✅ ${res.message}${warning}`);
             fetchData();
         } else {
             alert('Error: ' + (res?.error || 'Error desconocido'));

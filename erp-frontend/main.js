@@ -743,7 +743,7 @@ const views = {
             <label style="font-weight: 600; color: var(--secondary)">📁 Proyecto Asociado</label>
             <select id="pur-project" style="border: 1px solid var(--secondary)44">
               <option value="">Gasto General (Sin Proyecto)</option>
-              <optgroup label="Cotizaciones Aprobadas / En Producción">
+              <optgroup label="Cotizaciones Aprobadas">
                 ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">📋 ${q.name || ('Cotización #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''}</option>`).join('')}
               </optgroup>
               <optgroup label="Ventas Realizadas">
@@ -915,7 +915,7 @@ const views = {
             <label style="font-weight: 600; color: var(--secondary)">📁 Asociar a Proyecto (ABC)</label>
             <select id="sale-quotation" style="border: 1px solid var(--secondary)">
               <option value="">Sin Proyecto / Venta Directa</option>
-              <optgroup label="Cotizaciones Aprobadas / En Producción">
+              <optgroup label="Cotizaciones Aprobadas">
                 ${state.quotations.filter(q => q.status === 'approved' || q.status === 'production').map(q => `<option value="${q.id}">${q.name || ('Cotizacion #' + q.id)} ${q.purchase_order_id ? '[OC: ' + q.purchase_order_id + ']' : ''} - Cliente: ${q.clients?.name || 'Cliente Particular'}</option>`).join('')}
               </optgroup>
             </select>
@@ -1990,7 +1990,7 @@ const views = {
 };
 
 // ========== PIPELINE VIEW ==========
-window.pipelineActiveTab = window.pipelineActiveTab || 'draft';
+window.pipelineActiveTab = window.pipelineActiveTab || 'overview';
 window.setPipelineTab = (tab) => { window.pipelineActiveTab = tab; renderView('pipeline'); };
 
 views.pipeline = () => {
@@ -2327,8 +2327,590 @@ views.pipeline = () => {
   }).join('')}
       </div>
     </div>
-  ` : ''}
+` : ''}
 `;
+};
+
+// Gestión de Procesos: los estados operativos se derivan de transacciones reales.
+// Esta vista reemplaza el embudo legacy que trataba esos hitos como estados manuales.
+window.openQuotationProcess = (quotationId) => {
+  window.pipelineQuoteFocus = String(quotationId);
+  window.pipelineActiveTab = 'overview';
+  renderView('pipeline');
+};
+
+window.clearQuotationProcessFocus = () => {
+  window.pipelineQuoteFocus = null;
+  renderView('pipeline');
+};
+
+views.pipeline = () => {
+  const quotations = state.quotations || [];
+  const purchases = state.history?.purchases || [];
+  const productions = state.history?.production || [];
+  const sales = state.history?.sales || [];
+  const logistics = state.logistics || [];
+  const commercialStatus = (status) => status === 'production' ? 'approved' : (status || 'draft');
+  const formatMoney = (value) => {
+    const amount = Math.round(Number(value) || 0);
+    const sign = amount < 0 ? '-' : '';
+    return `${sign}$${Math.abs(amount).toLocaleString('es-CL')}`;
+  };
+
+  const groupByQuotation = (records) => records.reduce((groups, record) => {
+    if (!record.quotation_id) return groups;
+    const key = String(record.quotation_id);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(record);
+    return groups;
+  }, {});
+
+  const purchasesByQuote = groupByQuotation(purchases);
+  const productionsByQuote = groupByQuotation(productions);
+  const salesByQuote = groupByQuotation(sales);
+  const logisticsBySale = logistics.reduce((groups, record) => {
+    if (record.type !== 'outbound' || record.transaction_type !== 'venta' || !record.transaction_id) return groups;
+    const key = String(record.transaction_id);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(record);
+    return groups;
+  }, {});
+
+  const getQuoteProducts = (quotation) => {
+    if (Array.isArray(quotation.products_list)) return quotation.products_list;
+    if (typeof quotation.products_list === 'string') {
+      try {
+        const parsed = JSON.parse(quotation.products_list);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const getProcess = (quotation) => {
+    const key = String(quotation.id);
+    const quoteProducts = getQuoteProducts(quotation);
+    const quotePurchases = purchasesByQuote[key] || [];
+    const quoteProductions = productionsByQuote[key] || [];
+    const quoteSales = salesByQuote[key] || [];
+    const quoteDispatches = quoteSales.flatMap(sale => logisticsBySale[String(sale.id)] || []);
+    const purchasedNet = quotePurchases.reduce((sum, purchase) => sum + (Number(purchase.net) || 0), 0);
+    const purchasedGross = quotePurchases.reduce((sum, purchase) => sum + (Number(purchase.total) || 0), 0);
+    const producedQuantity = quoteProductions.reduce((sum, production) => {
+      return sum + (production.items || []).reduce((itemSum, item) => itemSum + (Number(item.quantity) || 0), 0);
+    }, 0);
+    const quotedQuantity = quoteProducts.reduce((sum, product) => sum + (Number(product.quantity) || 0), 0);
+    const requiresProduction = quoteProducts.length === 0 || quoteProducts.some(product => {
+      const productCode = product.master_code || product.code || product.id;
+      const catalogProduct = state.products.find(item =>
+        String(item.code || '').toLowerCase() === String(productCode || '').toLowerCase() ||
+        String(item.name || '').toLowerCase() === String(product.name || '').toLowerCase()
+      );
+      return !isMerchandiseProduct(catalogProduct || product);
+    });
+    const invoicedNet = quoteSales.reduce((sum, sale) => sum + (Number(sale.net) || 0), 0);
+    const invoicedGross = quoteSales.reduce((sum, sale) => sum + (Number(sale.total) || 0), 0);
+    const paid = quoteSales.reduce((sum, sale) => {
+      if (sale.payment_status === 'pagado') return sum + (Number(sale.total) || 0);
+      return sum + (Number(sale.paid_amount) || 0);
+    }, 0);
+    const paymentProgress = invoicedGross > 0 ? Math.min(100, paid / invoicedGross * 100) : 0;
+    const invoiceTarget = Number(quotation.total_price_gross) || 0;
+    const invoiceProgress = invoiceTarget > 0 ? Math.min(100, invoicedGross / invoiceTarget * 100) : 0;
+
+    return {
+      purchases: quotePurchases,
+      productions: quoteProductions,
+      sales: quoteSales,
+      dispatches: quoteDispatches,
+      purchasedNet,
+      purchasedGross,
+      producedQuantity,
+      quotedQuantity,
+      invoicedNet,
+      invoicedGross,
+      paid,
+      paymentProgress,
+      invoiceProgress,
+      requiresProduction,
+      hasPurchases: quotePurchases.length > 0,
+      hasProduction: quoteProductions.length > 0,
+      hasDispatch: quoteDispatches.length > 0,
+      hasInvoices: quoteSales.length > 0,
+      hasPayments: paid > 0
+    };
+  };
+
+  const approvedQuotes = quotations.filter(q => commercialStatus(q.status) === 'approved');
+  const processMap = {};
+  approvedQuotes.forEach(q => { processMap[String(q.id)] = getProcess(q); });
+
+  const stageDefinitions = [
+    { key: 'overview', label: 'Seguimiento', color: '#2563eb' },
+    { key: 'draft', label: 'Borradores', color: '#64748b' },
+    { key: 'sent', label: 'Enviadas', color: '#0ea5e9' },
+    { key: 'approved', label: 'Aprobadas', color: '#059669' },
+    { key: 'produccion', label: 'Producción', color: '#d97706' },
+    { key: 'compras', label: 'Compras', color: '#7c3aed' },
+    { key: 'despacho', label: 'Despacho', color: '#0891b2' },
+    { key: 'facturacion', label: 'Facturación', color: '#db2777' },
+    { key: 'pago', label: 'Pago', color: '#16a34a' }
+  ];
+
+  const quotesForStage = (stage) => {
+    if (stage === 'overview' || stage === 'approved') return approvedQuotes;
+    if (stage === 'draft' || stage === 'sent') {
+      return quotations.filter(q => commercialStatus(q.status) === stage);
+    }
+    const predicate = {
+      produccion: process => process.hasProduction,
+      compras: process => process.hasPurchases,
+      despacho: process => process.hasDispatch,
+      facturacion: process => process.hasInvoices,
+      pago: process => process.hasPayments
+    }[stage];
+    return predicate ? approvedQuotes.filter(q => predicate(processMap[String(q.id)])) : [];
+  };
+
+  const focusedId = window.pipelineQuoteFocus ? String(window.pipelineQuoteFocus) : null;
+  const activeTab = stageDefinitions.some(stage => stage.key === window.pipelineActiveTab)
+    ? window.pipelineActiveTab
+    : 'overview';
+  let visibleQuotes = quotesForStage(activeTab);
+  if (focusedId) visibleQuotes = visibleQuotes.filter(q => String(q.id) === focusedId);
+
+  const milestone = (stateKey, detail) => {
+    const palette = {
+      pending: { label: 'Pendiente', color: '#64748b', bg: 'rgba(100,116,139,0.12)' },
+      partial: { label: 'Parcial', color: '#d97706', bg: 'rgba(217,119,6,0.12)' },
+      complete: { label: 'Registrado', color: '#059669', bg: 'rgba(5,150,105,0.12)' },
+      na: { label: 'No aplica', color: '#475569', bg: 'rgba(71,85,105,0.08)' }
+    };
+    const style = palette[stateKey] || palette.pending;
+    return `<span title="${detail || style.label}" style="display:inline-flex; align-items:center; gap:0.3rem; padding:0.25rem 0.5rem; border-radius:6px; color:${style.color}; background:${style.bg}; border:1px solid ${style.color}33; font-size:0.72rem; font-weight:700; white-space:nowrap">
+      <span style="width:6px; height:6px; border-radius:50%; background:${style.color}"></span>${style.label}
+    </span>`;
+  };
+
+  window.openProcessFinancials = async (quotationId) => {
+    let quotation = quotations.find(item => String(item.id) === String(quotationId));
+    if (!quotation) return;
+
+    try {
+      const quotationDetail = await apiFetch(`/quotations/${quotationId}`);
+      if (quotationDetail && !quotationDetail.error) {
+        quotation = { ...quotation, ...quotationDetail };
+      }
+    } catch (error) {
+      console.warn('No se pudo cargar el detalle completo de la cotización:', error);
+    }
+
+    const process = processMap[String(quotation.id)] || getProcess(quotation);
+    const quotedCost = Number(quotation.total_net_cost) || 0;
+    const quotedSaleNet = Number(quotation.total_price_net) || 0;
+    const quotedSaleIva = Number(quotation.total_iva) || 0;
+    const quotedSaleGross = Number(quotation.total_price_gross) || 0;
+    const hasQuotedPpm = quotation.ppm_percentage !== undefined && quotation.ppm_percentage !== null;
+    const ppmPercentage = hasQuotedPpm
+      ? (Number(quotation.ppm_percentage) || 0)
+      : (Number(state.settings?.ppm_percentage) || 0);
+    const ppmAmount = quotation.ppm_amount !== undefined && quotation.ppm_amount !== null
+      ? (Number(quotation.ppm_amount) || 0)
+      : Math.round(quotedSaleNet * ppmPercentage / 100);
+    const quotationItems = Array.isArray(quotation.items) ? quotation.items : [];
+    const itemBudget = quotationItems.reduce((sum, item) => sum + (Number(item.total_cost) || 0), 0);
+    const estimatedBaseCost = itemBudget > 0 ? itemBudget : Math.max(0, quotedCost - ppmAmount);
+    const purchaseIva = process.purchases.reduce((sum, purchase) => {
+      return sum + (purchase.document_type === 'factura' ? (Number(purchase.iva) || 0) : 0);
+    }, 0);
+    const purchaseEconomicCost = process.purchases.reduce((sum, purchase) => {
+      return sum + (purchase.document_type === 'factura'
+        ? (Number(purchase.net) || 0)
+        : (Number(purchase.total) || 0));
+    }, 0);
+    const productionCosts = process.productions.reduce((sum, production) => {
+      return sum + (Number(production.material_cost) || 0) + (Number(production.general_expenses) || 0);
+    }, 0);
+    const invoicedIva = process.sales.reduce((sum, sale) => sum + (Number(sale.iva) || 0), 0);
+    const actualEconomicCost = purchaseEconomicCost + productionCosts;
+    const costVariance = actualEconomicCost - quotedCost;
+    const baseCostVariance = purchaseEconomicCost - estimatedBaseCost;
+    const netSaleVariance = process.invoicedNet - quotedSaleNet;
+    const grossSaleVariance = process.invoicedGross - quotedSaleGross;
+    const pendingCollection = Math.max(0, process.invoicedGross - process.paid);
+    const realNetResult = process.invoicedNet - actualEconomicCost;
+    const grossCashBalance = process.invoicedGross - process.purchasedGross - productionCosts;
+    const ivaDifference = invoicedIva - purchaseIva;
+    const netMargin = process.invoicedNet > 0 ? realNetResult / process.invoicedNet * 100 : 0;
+    const grossMargin = process.invoicedGross > 0 ? grossCashBalance / process.invoicedGross * 100 : 0;
+    const quoteProducts = getQuoteProducts(quotation);
+    const quoteCodeCounts = quoteProducts.reduce((counts, product) => {
+      const code = String(product.master_code || product.code || '').trim().toLowerCase();
+      if (code) counts[code] = (counts[code] || 0) + 1;
+      return counts;
+    }, {});
+    const producedByCode = {};
+    process.productions.forEach(production => {
+      (production.items || []).forEach(item => {
+        const keys = [item.product_code, item.product_name].filter(Boolean);
+        keys.forEach(key => {
+          const normalized = String(key).trim().toLowerCase();
+          producedByCode[normalized] = (producedByCode[normalized] || 0) + (Number(item.quantity) || 0);
+        });
+      });
+    });
+    const getProducedQuantity = (product) => {
+      const productCode = String(product.master_code || product.code || '').trim().toLowerCase();
+      const keys = [product.name]
+        .filter(Boolean)
+        .map(value => String(value).trim().toLowerCase());
+      if (productCode && quoteCodeCounts[productCode] === 1) keys.push(productCode);
+      return keys.reduce((maximum, key) => Math.max(maximum, producedByCode[key] || 0), 0);
+    };
+    const productionOrderIds = process.productions
+      .map(production => production.id ? `#${production.id}` : null)
+      .filter(Boolean);
+    const productionRows = quoteProducts.map(product => {
+      const requested = Number(product.quantity) || 0;
+      const catalogProduct = state.products.find(item =>
+        String(item.code || '').toLowerCase() === String(product.master_code || product.code || '').toLowerCase() ||
+        String(item.name || '').toLowerCase() === String(product.name || '').toLowerCase()
+      );
+      const merchandise = isMerchandiseProduct(catalogProduct || product);
+      const produced = merchandise ? 0 : getProducedQuantity(product);
+      const pending = merchandise ? 0 : Math.max(0, requested - produced);
+      const status = merchandise
+        ? { label: 'No aplica', color: 'var(--text-muted)' }
+        : produced >= requested && requested > 0
+          ? { label: 'Completo', color: 'var(--success)' }
+          : produced > 0
+            ? { label: 'Parcial', color: 'var(--warning)' }
+            : { label: 'Pendiente', color: 'var(--text-muted)' };
+      return { product, requested, produced, pending, status, merchandise };
+    });
+    const varianceColor = (value) => value > 0 ? 'var(--danger)' : (value < 0 ? 'var(--success)' : 'var(--text)');
+    const saleVarianceColor = (value) => value < 0 ? 'var(--danger)' : (value > 0 ? 'var(--success)' : 'var(--text)');
+
+    let modal = document.getElementById('process-financial-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'process-financial-modal';
+      modal.className = 'modal';
+      document.body.appendChild(modal);
+    }
+
+    const quoteNumber = quotation.external_quote_id || `#${quotation.id}`;
+    modal.innerHTML = `
+      <div class="card modal-content modal-wide animate-fade" style="max-width:1100px; max-height:90vh; overflow:auto">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:1rem">
+          <div>
+            <h3 style="margin:0">Comparación financiera del circuito</h3>
+            <div style="margin-top:0.25rem; color:var(--text-muted)">${quoteNumber} · ${quotation.name || 'Sin nombre'} · ${quotation.clients?.name || 'Sin cliente'}</div>
+          </div>
+          <button class="btn-sm" onclick="document.getElementById('process-financial-modal').style.display='none'" title="Cerrar">Cerrar</button>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); border:1px solid var(--border); margin-bottom:1.25rem">
+          <div style="padding:1rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">Presupuesto (costo estimado)</small>
+            <div style="font-size:1.35rem; font-weight:900">${formatMoney(estimatedBaseCost)}</div>
+            <small style="color:var(--text-muted)">Costo interno total: ${formatMoney(quotedCost)}</small>
+          </div>
+          <div style="padding:1rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">Gasto real (compras)</small>
+            <div style="font-size:1.35rem; font-weight:900">${formatMoney(process.purchasedGross)}</div>
+            <small style="color:var(--text-muted)">Monto bruto documentado</small>
+          </div>
+          <div style="padding:1rem">
+            <small style="color:var(--text-muted)">Ingreso real (ventas)</small>
+            <div style="font-size:1.35rem; font-weight:900">${formatMoney(process.invoicedGross)}</div>
+            <small style="color:var(--text-muted)">Monto bruto facturado</small>
+          </div>
+        </div>
+
+        <h4 style="margin:0 0 0.6rem">Comparación neto con neto y bruto con bruto</h4>
+        <div class="table-container" style="margin-bottom:1.25rem">
+          <table>
+            <thead>
+              <tr><th>Concepto</th><th style="text-align:right">Neto</th><th style="text-align:right">IVA</th><th style="text-align:right">Bruto</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Venta cotizada</strong></td>
+                <td style="text-align:right">${formatMoney(quotedSaleNet)}</td>
+                <td style="text-align:right">${formatMoney(quotedSaleIva)}</td>
+                <td style="text-align:right"><strong>${formatMoney(quotedSaleGross)}</strong></td>
+              </tr>
+              <tr>
+                <td><strong>Venta facturada</strong></td>
+                <td style="text-align:right">${formatMoney(process.invoicedNet)}</td>
+                <td style="text-align:right">${formatMoney(invoicedIva)}</td>
+                <td style="text-align:right"><strong>${formatMoney(process.invoicedGross)}</strong></td>
+              </tr>
+              <tr>
+                <td><strong>Compras reales</strong></td>
+                <td style="text-align:right">${formatMoney(process.purchasedNet)}</td>
+                <td style="text-align:right">${formatMoney(purchaseIva)}</td>
+                <td style="text-align:right"><strong>${formatMoney(process.purchasedGross)}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); border:1px solid var(--border); margin-bottom:1.25rem">
+          <div style="padding:0.85rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">Costo interno cotizado</small>
+            <div style="font-size:1.15rem; font-weight:800">${formatMoney(quotedCost)}</div>
+          </div>
+          <div style="padding:0.85rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">Costo real económico</small>
+            <div style="font-size:1.15rem; font-weight:800">${formatMoney(actualEconomicCost)}</div>
+            <small style="color:var(--text-muted)">Boletas a bruto + facturas a neto + producción</small>
+          </div>
+          <div style="padding:0.85rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">Diferencia de costo</small>
+            <div style="font-size:1.15rem; font-weight:800; color:${varianceColor(costVariance)}">${costVariance > 0 ? '+' : ''}${formatMoney(costVariance)}</div>
+          </div>
+          <div style="padding:0.85rem">
+            <small style="color:var(--text-muted)">${hasQuotedPpm ? 'PPM cotizado' : 'PPM estimado'} (${ppmPercentage.toLocaleString('es-CL')}%)</small>
+            <div style="font-size:1.15rem; font-weight:800">${formatMoney(ppmAmount)}</div>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); border:1px solid var(--border); margin-bottom:1.25rem">
+          <div style="padding:0.85rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">Variación venta neta</small>
+            <div style="font-size:1.1rem; font-weight:800; color:${saleVarianceColor(netSaleVariance)}">${netSaleVariance > 0 ? '+' : ''}${formatMoney(netSaleVariance)}</div>
+          </div>
+          <div style="padding:0.85rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">Variación venta bruta</small>
+            <div style="font-size:1.1rem; font-weight:800; color:${saleVarianceColor(grossSaleVariance)}">${grossSaleVariance > 0 ? '+' : ''}${formatMoney(grossSaleVariance)}</div>
+          </div>
+          <div style="padding:0.85rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">Cobrado / pendiente</small>
+            <div style="font-size:1.1rem; font-weight:800">${formatMoney(process.paid)} / ${formatMoney(pendingCollection)}</div>
+          </div>
+          <div style="padding:0.85rem">
+            <small style="color:var(--text-muted)">Resultado neto real estimado</small>
+            <div style="font-size:1.1rem; font-weight:800; color:${realNetResult >= 0 ? 'var(--success)' : 'var(--danger)'}">${formatMoney(realNetResult)}</div>
+          </div>
+        </div>
+
+        <h4 style="margin:0 0 0.6rem">Detalle impositivo y resultado neto</h4>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); border:1px solid var(--border); margin-bottom:1.25rem">
+          <div style="padding:0.85rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">IVA de ventas</small>
+            <div style="font-size:1.1rem; font-weight:800">${formatMoney(invoicedIva)}</div>
+          </div>
+          <div style="padding:0.85rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">IVA de compras (sólo facturas)</small>
+            <div style="font-size:1.1rem; font-weight:800">${formatMoney(purchaseIva)}</div>
+          </div>
+          <div style="padding:0.85rem; border-right:1px solid var(--border)">
+            <small style="color:var(--text-muted)">Diferencia IVA por pagar</small>
+            <div style="font-size:1.1rem; font-weight:800; color:${ivaDifference > 0 ? 'var(--danger)' : 'var(--success)'}">${formatMoney(ivaDifference)}</div>
+          </div>
+          <div style="padding:0.85rem">
+            <small style="color:var(--text-muted)">Utilidad neta (sin IVAs)</small>
+            <div style="font-size:1.1rem; font-weight:800; color:${realNetResult >= 0 ? 'var(--success)' : 'var(--danger)'}">${formatMoney(realNetResult)}</div>
+            <small style="color:var(--text-muted)">Margen neto: ${netMargin.toLocaleString('es-CL', { maximumFractionDigits: 1 })}%</small>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem; padding:0.9rem 0; border-top:2px solid var(--border); border-bottom:2px solid var(--border); margin-bottom:1.25rem">
+          <div>
+            <strong>Balance del proyecto (margen bruto real)</strong>
+            <div style="font-size:0.76rem; color:var(--text-muted)">Facturación bruta menos compras brutas y costos adicionales de producción · Margen ${grossMargin.toLocaleString('es-CL', { maximumFractionDigits: 1 })}%</div>
+          </div>
+          <div style="font-size:1.35rem; font-weight:900; color:${grossCashBalance >= 0 ? 'var(--success)' : 'var(--danger)'}">${formatMoney(grossCashBalance)}</div>
+        </div>
+
+        <h4 style="margin:0 0 0.6rem">Control de producción</h4>
+        <div class="table-container" style="margin-bottom:1.25rem">
+          <table>
+            <thead><tr><th>Producto</th><th style="text-align:right">Pedido</th><th style="text-align:right">Fabricado</th><th style="text-align:right">Pendiente</th><th>Estado</th></tr></thead>
+            <tbody>
+              ${productionRows.length > 0 ? productionRows.map(row => `<tr>
+                <td><strong>${row.product.name || row.product.code || 'Producto'}</strong><div style="font-size:0.76rem; color:var(--text-muted)">${row.product.master_code || row.product.code || ''}${row.merchandise ? ' · Mercadería' : ''}</div></td>
+                <td style="text-align:right">${row.requested.toLocaleString('es-CL')}</td>
+                <td style="text-align:right">${row.merchandise ? '-' : row.produced.toLocaleString('es-CL')}</td>
+                <td style="text-align:right">${row.merchandise ? '-' : row.pending.toLocaleString('es-CL')}</td>
+                <td><strong style="color:${row.status.color}">${row.status.label}</strong></td>
+              </tr>`).join('') : '<tr><td colspan="5" style="text-align:center; padding:1.5rem; color:var(--text-muted)">La cotización no tiene productos registrados.</td></tr>'}
+            </tbody>
+            ${productionOrderIds.length > 0 ? `<tfoot><tr><td colspan="5"><strong>Órdenes:</strong> ${productionOrderIds.join(', ')}</td></tr></tfoot>` : ''}
+          </table>
+        </div>
+
+        <h4 style="margin:0 0 0.6rem">Ventas realizadas</h4>
+        <div class="table-container" style="margin-bottom:1.25rem">
+          <table>
+            <thead><tr><th>Documento</th><th>Fecha</th><th>Cliente</th><th style="text-align:right">Neto</th><th style="text-align:right">IVA</th><th style="text-align:right">Bruto</th><th style="text-align:right">Pagado</th></tr></thead>
+            <tbody>
+              ${process.sales.length > 0 ? process.sales.map(sale => `<tr>
+                <td>${String(sale.document_type || 'venta').toUpperCase()} ${sale.document_number || `#${sale.id}`}</td>
+                <td>${sale.date ? String(sale.date).split('T')[0] : '-'}</td>
+                <td>${sale.client_name || quotation.clients?.name || 'Venta directa'}</td>
+                <td style="text-align:right">${formatMoney(sale.net)}</td>
+                <td style="text-align:right">${formatMoney(sale.iva)}</td>
+                <td style="text-align:right"><strong>${formatMoney(sale.total)}</strong></td>
+                <td style="text-align:right">${formatMoney(sale.payment_status === 'pagado' ? sale.total : sale.paid_amount)}</td>
+              </tr>`).join('') : '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:var(--text-muted)">No hay ventas asociadas.</td></tr>'}
+            </tbody>
+            ${process.sales.length > 0 ? `<tfoot><tr>
+              <td colspan="3"><strong>Total ventas</strong></td>
+              <td style="text-align:right"><strong>${formatMoney(process.invoicedNet)}</strong></td>
+              <td style="text-align:right"><strong>${formatMoney(invoicedIva)}</strong></td>
+              <td style="text-align:right"><strong>${formatMoney(process.invoicedGross)}</strong></td>
+              <td style="text-align:right"><strong>${formatMoney(process.paid)}</strong></td>
+            </tr></tfoot>` : ''}
+          </table>
+        </div>
+
+        <h4 style="margin:0 0 0.6rem">Compras asociadas y glosas</h4>
+        <div class="table-container">
+          <table>
+            <thead><tr><th>Documento</th><th>Fecha</th><th>Proveedor / glosa</th><th style="text-align:right">Neto</th><th style="text-align:right">Bruto</th></tr></thead>
+            <tbody>
+              ${process.purchases.length > 0 ? process.purchases.map(purchase => {
+                const provider = state.providers.find(item => String(item.id) === String(purchase.provider_id));
+                const itemNames = (purchase.items || []).map(item => item.product_name || item.mp_name || item.product_code || item.mp_code).filter(Boolean).join(', ');
+                const glosa = purchase.description || itemNames || 'Sin glosa';
+                return `<tr>
+                  <td>${String(purchase.document_type || 'documento').toUpperCase()} ${purchase.document_number || `#${purchase.id}`}</td>
+                  <td>${purchase.date ? String(purchase.date).split('T')[0] : '-'}</td>
+                  <td><strong>${provider?.name || 'Sin proveedor'}</strong><div style="font-size:0.76rem; color:var(--text-muted)">${glosa}</div></td>
+                  <td style="text-align:right">${formatMoney(purchase.net)}</td>
+                  <td style="text-align:right">${formatMoney(purchase.total)}</td>
+                </tr>`;
+              }).join('') : '<tr><td colspan="5" style="text-align:center; padding:1.5rem; color:var(--text-muted)">No hay compras asociadas.</td></tr>'}
+            </tbody>
+            ${process.purchases.length > 0 ? `<tfoot><tr>
+              <td colspan="3"><strong>Total compras</strong><div style="font-size:0.72rem; color:var(--text-muted)">Variación contra presupuesto base: <span style="color:${varianceColor(baseCostVariance)}">${baseCostVariance > 0 ? '+' : ''}${formatMoney(baseCostVariance)}</span></div></td>
+              <td style="text-align:right"><strong>${formatMoney(process.purchasedNet)}</strong></td>
+              <td style="text-align:right"><strong>${formatMoney(process.purchasedGross)}</strong></td>
+            </tr></tfoot>` : ''}
+          </table>
+        </div>
+
+        <div class="form-actions" style="margin-top:1.25rem">
+          <button onclick="document.getElementById('process-financial-modal').style.display='none'">Cerrar</button>
+          <button style="background:var(--secondary)" onclick="document.getElementById('process-financial-modal').style.display='none'; window.viewQuotation('${quotation.id}')">Ver cotización</button>
+        </div>
+      </div>
+    `;
+    modal.style.display = 'flex';
+  };
+
+  const renderProcessRow = (quotation) => {
+    const process = processMap[String(quotation.id)] || getProcess(quotation);
+    const invoiceState = !process.hasInvoices ? 'pending' : (process.invoiceProgress >= 99.5 ? 'complete' : 'partial');
+    const paymentState = !process.hasPayments ? 'pending' : (process.paymentProgress >= 99.5 ? 'complete' : 'partial');
+    const quoteNumber = quotation.external_quote_id || `#${quotation.id}`;
+    return `<tr style="${focusedId === String(quotation.id) ? 'background:rgba(37,99,235,0.08)' : ''}">
+      <td>
+        <strong>${quoteNumber}</strong>
+        <div style="font-size:0.76rem; color:var(--text-muted); margin-top:0.15rem">${quotation.name || 'Sin nombre interno'}</div>
+      </td>
+      <td>${quotation.clients?.name || 'Sin cliente'}</td>
+      <td style="text-align:center">${milestone(
+        process.requiresProduction ? (process.hasProduction ? 'complete' : 'pending') : 'na',
+        process.requiresProduction
+          ? (process.hasProduction ? `${process.productions.length} orden(es), ${process.producedQuantity} unidad(es)` : 'Sin producción registrada')
+          : 'La cotización contiene sólo mercaderías'
+      )}</td>
+      <td style="text-align:center">${milestone(process.hasPurchases ? 'complete' : 'pending', process.hasPurchases ? `${process.purchases.length} compra(s), ${formatMoney(process.purchasedGross)} bruto` : 'Sin compras registradas')}</td>
+      <td style="text-align:center">${milestone(process.hasDispatch ? 'complete' : 'pending', process.hasDispatch ? `${process.dispatches.length} despacho(s)` : 'Sin despacho registrado')}</td>
+      <td style="text-align:center">${milestone(invoiceState, process.hasInvoices ? `${formatMoney(process.invoicedNet)} neto / ${formatMoney(process.invoicedGross)} bruto` : 'Sin venta facturada')}</td>
+      <td style="text-align:center">${milestone(paymentState, process.hasInvoices ? `${formatMoney(process.paid)} de ${formatMoney(process.invoicedGross)}` : 'Sin venta facturada')}</td>
+      <td style="text-align:center">
+        <div style="display:flex; gap:0.35rem; justify-content:center; flex-wrap:wrap">
+          <button class="btn-sm" style="background:var(--secondary)" onclick="window.openProcessFinancials('${quotation.id}')">Montos</button>
+          <button class="btn-sm" onclick="window.viewQuotation('${quotation.id}')">Cotización</button>
+        </div>
+      </td>
+    </tr>`;
+  };
+
+  const totalQuoted = approvedQuotes.reduce((sum, quote) => sum + (Number(quote.total_price_gross) || 0), 0);
+  const totalInvoiced = approvedQuotes.reduce((sum, quote) => sum + processMap[String(quote.id)].invoicedGross, 0);
+  const totalCollected = approvedQuotes.reduce((sum, quote) => sum + processMap[String(quote.id)].paid, 0);
+  const activeProcesses = approvedQuotes.filter(quote => processMap[String(quote.id)].paymentProgress < 99.5).length;
+
+  return `
+    <style>
+      .process-tabs { display:flex; gap:0.45rem; overflow-x:auto; padding-bottom:0.35rem; }
+      .process-tab { border:1px solid var(--border); background:var(--surface-light); color:var(--text-muted); padding:0.45rem 0.7rem; border-radius:6px; white-space:nowrap; font-size:0.78rem; }
+      .process-tab.active { color:white; border-color:transparent; }
+      .process-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; margin-bottom:1.25rem; }
+      @media (max-width: 900px) { .process-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+      @media (max-width: 560px) { .process-kpis { grid-template-columns:1fr; } }
+    </style>
+
+    <header class="animate-fade">
+      <div>
+        <h1 style="margin:0">Gestión de Procesos</h1>
+        <div class="date-display" style="font-size:0.82rem; opacity:0.72">Seguimiento automático desde la aprobación hasta el pago</div>
+      </div>
+      <button onclick="fetchData()" style="background:var(--surface-light)">Actualizar</button>
+    </header>
+
+    ${focusedId ? `
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.7rem 1rem; margin-bottom:1rem; border-left:3px solid #2563eb; background:rgba(37,99,235,0.08)">
+        <span>Mostrando la cotización seleccionada</span>
+        <button class="btn-sm" onclick="window.clearQuotationProcessFocus()">Ver todas</button>
+      </div>
+    ` : ''}
+
+    <div class="process-kpis animate-fade">
+      <div class="card" style="padding:1rem"><small style="color:var(--text-muted)">Procesos activos</small><div style="font-size:1.6rem; font-weight:800">${activeProcesses}</div></div>
+      <div class="card" style="padding:1rem"><small style="color:var(--text-muted)">Valor aprobado</small><div style="font-size:1.35rem; font-weight:800">${formatMoney(totalQuoted)}</div></div>
+      <div class="card" style="padding:1rem"><small style="color:var(--text-muted)">Facturado</small><div style="font-size:1.35rem; font-weight:800; color:#db2777">${formatMoney(totalInvoiced)}</div></div>
+      <div class="card" style="padding:1rem"><small style="color:var(--text-muted)">Cobrado</small><div style="font-size:1.35rem; font-weight:800; color:#16a34a">${formatMoney(totalCollected)}</div></div>
+    </div>
+
+    <div class="card animate-fade" style="padding:1rem; margin-bottom:1rem">
+      <div class="process-tabs">
+        ${stageDefinitions.map(stage => {
+          const count = quotesForStage(stage.key).length;
+          const isActive = stage.key === activeTab;
+          return `<button class="process-tab ${isActive ? 'active' : ''}" onclick="window.pipelineActiveTab='${stage.key}'; window.pipelineQuoteFocus=null; renderView('pipeline')" style="${isActive ? `background:${stage.color}` : ''}">
+            ${stage.label} <strong>${count}</strong>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <div class="card animate-fade" style="padding:0">
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Cotización</th>
+              <th>Cliente</th>
+              <th style="text-align:center">Producción</th>
+              <th style="text-align:center">Compras</th>
+              <th style="text-align:center">Despacho</th>
+              <th style="text-align:center">Facturación</th>
+              <th style="text-align:center">Pago</th>
+              <th style="text-align:center">Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${visibleQuotes.length > 0
+              ? visibleQuotes.map(renderProcessRow).join('')
+              : '<tr><td colspan="8" style="text-align:center; padding:3rem; color:var(--text-muted)">No hay cotizaciones para este filtro.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="margin-top:0.8rem; font-size:0.76rem; color:var(--text-muted)">
+      Los hitos se actualizan al registrar producción, compras, despachos, ventas y pagos vinculados a la cotización.
+    </div>
+  `;
 };
 
 views.acc_plan_cuentas = () => `<header class="animate-fade"><h1>Plan de Cuentas</h1></header><div id="accounting-container" class="animate-fade"></div>`;
@@ -4522,7 +5104,7 @@ window.saveQuotation = async () => {
   let finalExternalId = externalQuoteId;
 
   // Lógica de Versionado para Super Admin (Sincronizado con módulo)
-  if (quoteId && currentUser.role === 'superadmin' && (window.currentQuotationStatus === 'sent' || window.currentQuotationStatus === 'production')) {
+  if (quoteId && currentUser.role === 'superadmin' && ['sent', 'approved', 'production'].includes(window.currentQuotationStatus)) {
     const createNewVersion = confirm(`Esta cotizacion ya tiene estado "${QUOTE_STATUS_LABELS[window.currentQuotationStatus]}". \n\nDeseas guardarla como una NUEVA VERSION para no sobreescribir la original?`);
 
     if (createNewVersion) {
@@ -4972,7 +5554,6 @@ window.viewQuotation = async (id) => {
           <div class="tab-group">
             <button class="tab-btn ${viewType === 'internal' ? 'active' : ''}" onclick="window.updateViewQuoteType('internal')">Vista Interna</button>
             <button class="tab-btn ${viewType === 'client' ? 'active' : ''}" onclick="window.updateViewQuoteType('client')">Vista Cliente (PVP)</button>
-            <button class="tab-btn ${viewType === 'circuit' ? 'active' : ''}" onclick="window.updateViewQuoteType('circuit')" style="border-color: var(--secondary); color: var(--secondary)">📊 Monitoréo de Circuito</button>
           </div>
         </div>
 
@@ -5008,13 +5589,21 @@ window.viewQuotation = async (id) => {
 
         <div class="form-actions" style="margin-top:2rem">
           <button onclick="document.getElementById('${modalId}').style.display='none'">Cerrar</button>
+          ${q.status === 'approved' || q.status === 'production' ? `<button style="background:var(--secondary)" onclick="document.getElementById('${modalId}').style.display='none'; window.openQuotationProcess('${q.id}')">Ver en Gestión de Procesos</button>` : ""}
           ${viewType === "client" ? `<button class="btn-primary" onclick="window.printQuotation()">Imprimir / PDF</button>` : ""}
         </div>
       </div>
     `;
   };
 
-  window.updateViewQuoteType = (type) => renderContent(type);
+  window.updateViewQuoteType = (type) => {
+    if (type === 'circuit') {
+      modal.style.display = 'none';
+      window.openQuotationProcess(q.id);
+      return;
+    }
+    renderContent(type);
+  };
   window.currentViewedQuote = q;
   renderContent('client'); // Default to client view
   modal.style.display = 'flex';
@@ -7138,7 +7727,7 @@ window.calculateProfitabilityByProject = function () {
       'draft': 'Borrador',
       'sent': 'Enviada',
       'approved': 'Aprobada',
-      'production': 'En Producción',
+      'production': 'Aprobada',
       'ready': 'Lista',
       'delivered': 'Entregada',
       'rejected': 'Rechazada'
@@ -7969,7 +8558,7 @@ document.addEventListener('submit', async (e) => {
 });
 // Borrar si existía (limpieza de turnos previos si falló)
 window.bulkPromoteQuotes = async () => {
-  if (!confirm('¿Estás seguro de sincronizar todas las cotizaciones históricas? \n\nEsta acción buscará todas las cotizaciones en "Producción" que no han sido promocionadas y creará automáticamente sus productos, insumos y recetas en el catálogo.')) return;
+  if (!confirm('¿Estás seguro de sincronizar todas las cotizaciones aprobadas? \n\nEsta acción creará los productos, insumos y recetas que todavía no existan en el catálogo.')) return;
 
   const btn = event.target;
   const originalText = btn.textContent;
@@ -7980,7 +8569,7 @@ window.bulkPromoteQuotes = async () => {
     const data = await apiFetch('/admin/bulk-promote-quotes', { method: 'POST' });
     if (data && data.success) {
       alert(data.message);
-      window.filterQuoteStatus('production'); // Refrescar vista
+      window.filterQuoteStatus('approved');
     } else if (data) {
       alert('Error: ' + (data.error || 'Operación fallida'));
     } else {

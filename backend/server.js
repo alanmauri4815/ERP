@@ -3293,8 +3293,14 @@ async function promoteQuoteToMaster(quoteId, empresaId, userId) {
                     });
                 }
 
-                // Update the quotation item with the master code for later linkage
-                await supabase.from(T.QUOTE_ITEMS).update({ item_code: newCode }).eq('id', comp.id);
+                // Keep material lines linked to their own catalog item. The
+                // finished product code is stored in products_list.master_code.
+                if (comp.item_type === 'material' && mpCode) {
+                    await supabase.from(T.QUOTE_ITEMS)
+                        .update({ item_code: mpCode })
+                        .eq('id', comp.id)
+                        .eq('empresa_id', empresaId);
+                }
             }
 
             // 5. Update Entry with Master Code
@@ -3322,6 +3328,7 @@ app.get('/api/quotations', authenticateToken, async (req, res) => {
     if (error) return res.status(500).json({ error: error.message });
     const formatted = (data || []).map(q => ({
         ...q,
+        status: q.status === 'production' ? 'approved' : q.status,
         clients: Array.isArray(q.clients) ? q.clients[0] : q.clients
     }));
     res.json(formatted);
@@ -3361,6 +3368,7 @@ app.get('/api/quotations/:id', authenticateToken, async (req, res) => {
 
     res.json({
         ...quotation,
+        status: quotation.status === 'production' ? 'approved' : quotation.status,
         clients: clientData,
         products_list: productsList || [],
         images: images || [],
@@ -3864,17 +3872,19 @@ app.put('/api/quotations/:id', authenticateToken, async (req, res) => {
 const QUOTE_TRANSITIONS = {
     draft: ['sent', 'cancelled'],
     sent: ['approved', 'rejected', 'cancelled'],
-    approved: ['production', 'cancelled', 'draft'],
+    approved: ['cancelled'],
     rejected: ['sent', 'draft'],
-    production: ['approved', 'sent', 'cancelled'],
+    // Compatibility for records created by the previous workflow.
+    production: ['approved', 'cancelled'],
     cancelled: ['draft']
 };
 
 app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const { status: newStatus } = req.body;
+    const validStatuses = new Set(['draft', 'sent', 'approved', 'rejected', 'cancelled']);
 
-    if (!newStatus || !QUOTE_TRANSITIONS[newStatus] && !Object.keys(QUOTE_TRANSITIONS).includes(newStatus)) {
+    if (!newStatus || !validStatuses.has(newStatus)) {
         return res.status(400).json({ error: `Estado inválido: ${newStatus}` });
     }
 
@@ -3908,12 +3918,26 @@ app.patch('/api/quotations/:id/status', authenticateToken, async (req, res) => {
 
         if (updateErr) throw updateErr;
 
-        // TRIGGER: Promote to Master if status changed to 'production'
-        if (newStatus === 'production' && currentStatus !== 'production') {
-            await promoteQuoteToMaster(id, req.empresa_id, req.user.id);
+        // Prepare the approved quote for later production without creating
+        // an additional commercial status.
+        let preparationWarning = null;
+        if (newStatus === 'approved' && currentStatus !== 'approved') {
+            try {
+                await promoteQuoteToMaster(id, req.empresa_id, req.user.id);
+            } catch (promotionError) {
+                preparationWarning = promotionError.message;
+                console.error(`[QUOTE] Approved quote #${id} could not be prepared for production:`, promotionError.message);
+            }
         }
 
-        res.json({ success: true, message: `Estado actualizado a: ${newStatus}`, newStatus });
+        res.json({
+            success: true,
+            message: newStatus === 'approved'
+                ? 'Cotización aprobada. Su avance continuará automáticamente en Gestión de Procesos.'
+                : `Estado actualizado a: ${newStatus}`,
+            newStatus,
+            warning: preparationWarning
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -3927,12 +3951,12 @@ app.post('/api/admin/bulk-promote-quotes', authenticateToken, checkSuperAdmin, a
         const { data: quotes, error: qErr } = await supabase
             .from(T.QUOTATIONS)
             .select('id')
-            .eq('status', 'production')
+            .in('status', ['approved', 'production'])
             .eq('empresa_id', req.empresa_id);
 
         if (qErr) throw qErr;
         if (!quotes || quotes.length === 0) {
-            return res.json({ success: true, message: 'No hay cotizaciones en estado de producción para procesar.' });
+            return res.json({ success: true, message: 'No hay cotizaciones aprobadas pendientes de sincronización.' });
         }
 
         let processedCount = 0;
